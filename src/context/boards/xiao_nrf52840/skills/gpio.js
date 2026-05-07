@@ -8,31 +8,45 @@ export const gpioSkill = {
   },
   systemPrompt: `## GPIO & 按键 (Arduino)
 
+### 可用 GPIO（引脚头 D0-D10）
+\`\`\`cpp
+D0 = P0.02  — 模拟输入 AIN0
+D1 = P0.03  — 模拟输入 AIN1
+D2 = P0.28  — 模拟输入 AIN4
+D3 = P0.29  — 模拟输入 AIN5
+D4 = P0.04  — I2C SDA（默认给 I2C 用）
+D5 = P0.05  — I2C SCL（默认给 I2C 用）
+D6 = P1.11  — UART TX
+D7 = P1.12  — UART RX
+D8 = P1.13  — SPI SCK
+D9 = P1.14  — SPI MISO
+D10 = P1.15 — SPI MOSI
+\`\`\`
+
 ### 数字输出
 \`\`\`cpp
-pinMode(D10, OUTPUT);
-digitalWrite(D10, HIGH);
+pinMode(D0, OUTPUT);
+digitalWrite(D0, HIGH);
 \`\`\`
 
 ### 数字输入（带内部上拉）
 \`\`\`cpp
-pinMode(D0, INPUT_PULLUP);
-int val = digitalRead(D0);
+pinMode(D3, INPUT_PULLUP);
+int val = digitalRead(D3);
 \`\`\`
 
-### 模拟输入（ADC）
+### 模拟输入（nRF52 ADC 12-bit）
 \`\`\`cpp
-pinMode(A0, INPUT);
-int val = analogRead(A0);  // 0-1023, 0-3.3V
+int val = analogRead(D0);  // 0-4095, 0-3.3V
 \`\`\`
 
-### PWM 输出（仅 D0-D3, D10-D13）
+### PWM（nRF52 任意 GPIO 均支持）
 \`\`\`cpp
-analogWrite(D10, 128);  // 0-255
+analogWrite(D0, 128);  // 0-255, 约 488Hz
 \`\`\`
 
 ### Pitfalls
-- PWM only works on D0-D3, D10-D13
-- BOOT button is not broken out on XIAO — use external button
-- analogWrite() frequency is ~488Hz on nRF52 Arduino core`,
-}
+- nRF52840 为 3.3V 逻辑，不可接 5V
+- P0.14 为 ADC_BAT（电池电压），不可作为 GPIO
+- P0.17 为 CHARGE_LED，由充电 IC 控制
+- P0.09/P0.10 为 NFC 天线引脚`}

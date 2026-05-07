@@ -133,10 +133,11 @@
    133|│   └── skills/                #   11 个外设 Skill
    134|│       ├── lvgl.js, audio.js, camera.js, imu.js, wifi.js ...
    135|│
-   136|├── xiao_nrf52840/             # [Arduino] Seeed XIAO nRF52840
-   137|│   ├── definition.js          #   ARM M4F 引脚、NeoPixel、充电管理
-   138|│   └── skills/                #   5 个外设 Skill
-   139|│       ├── neopixel.js, ble.js, i2c.js, gpio.js, battery.js
+├── xiao_nrf52840/             # [Arduino] Seeed XIAO nRF52840 Sense
+│   ├── definition.js          #   ARM M4F 引脚、RGB LED、IMU、PDM 麦、NFC
+│   └── skills/                #   10 个外设 Skill
+│       ├── gpio.js, led.js, uart.js, spi.js, i2c.js, ble.js
+│       └── battery.js, imu.js, pdm_mic.js, nfc.js
    140|│
    141|└── stm32f103c8/               # [STM32Cube] STM32F103C8 Blue Pill
    142|    ├── definition.js          #   Cortex-M3 引脚、时钟系统、HAL 模块
@@ -219,8 +220,8 @@
    219|| 板子 | 芯片 | 框架 | Skill 数量 |
    220||---|---|---|---|
    221|| 立创实战派 ESP32-S3 | ESP32-S3 (Xtensa LX7) | ESP-IDF v5.4 | 11 |
-   222|| Seeed XIAO nRF52840 | nRF52840 (ARM M4F) | Arduino | 5 |
-   223|| STM32F103C8T6 Blue Pill | STM32F103C8 (ARM M3) | STM32Cube HAL | 4 |
+| Seeed XIAO nRF52840 Sense | nRF52840 (ARM M4F) | Arduino | 10（GPIO/LED/UART/SPI/I2C/BLE/电池/IMU/PDM麦/NFC） |
+| STM32F103C8T6 Blue Pill | STM32F103C8 (ARM M3) | STM32Cube HAL | 4 |
    224|| 更多... | | | 欢迎贡献 |
    225|
    226|### 立创实战派 ESP32-S3 硬件陷阱（AI 已预置）
