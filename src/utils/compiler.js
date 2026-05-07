@@ -6,13 +6,13 @@
  *   {done: true, error: "..."}                failure
  */
 
-export async function compileFirmware(code, projectFiles, onStatus, onLog) {
+export async function compileFirmware(code, projectFiles, projectMeta = {}, onStatus, onLog) {
   onStatus('正在连接编译服务器...')
 
   const res = await fetch('/compile', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code, projectFiles }),
+    body: JSON.stringify({ code, projectFiles, projectMeta }),
   })
 
   if (!res.ok) {

@@ -116,9 +116,325 @@ idf.py build flash monitor
 
 ---
 
-## 目标硬件
+## 多板支持架构
 
-**立创实战派ESP32-S3**（SZPI）
+该项目支持多块开发板。每块板子是一个独立的"硬件语境包"，包含完整的引脚定义、外设陷阱知识、BSP 文档，以及该板专属的 AI Skill 文件。
+
+```
+src/context/boards/
+├── index.js               # 注册表 — 登记所有支持的板子
+└── szpi_esp32s3/           # 立创实战派 ESP32-S3
+    ├── definition.js       # 板级定义 + 硬件上下文 (喂给 AI 的 basePrompt)
+    └── skills/             # 该板专属的外设 Skill 文件
+        ├── index.js        # 聚合导出
+        ├── lvgl.js         # LVGL 显示 (ST7789 320x240)
+        ├── audio.js        # 音频 (ES8311+ES7210)
+        ├── camera.js       # 摄像头 (GC0308)
+        ├── imu.js          # IMU (QMI8658)
+        ├── wifi.js         # WiFi
+        ├── ble.js          # BLE
+        ├── sdcard.js       # SD卡/SPIFFS
+        ├── gpio.js         # GPIO/按键
+        ├── speech.js       # 语音识别
+        ├── vision.js       # 人脸/目标检测
+        └── handheld.js     # 综合手持设备
+```
+
+### 新增一块板子（示例：ESP32-C3-DevKit）
+
+如果你想增加一块新的开发板，只需 4 步：
+
+**第 1 步：创建板子目录**
+
+```
+mkdir -p src/context/boards/esp32c3_devkit/skills
+```
+
+**第 2 步：编写 `definition.js`**
+
+这是最重要的文件 —— 它定义了这块板子的"硬件 DNA"，AI 会以此为依据生成代码：
+
+```js
+// src/context/boards/esp32c3_devkit/definition.js
+
+const basePrompt = `You are an expert embedded engineer for the ESP32-C3-DevKit-M-1.
+Use ESP-IDF v5.4.
+
+## Board: ESP32-C3-DevKit-M-1
+Module: ESP32-C3-WROOM-02 (4MB Flash, No PSRAM, single-core RISC-V @ 160MHz)
+
+## Pin Assignments
+\`\`\`
+Onboard LED: GPIO8 (active HIGH)
+BOOT btn:   GPIO9 (active LOW)
+UART:       TX=GPIO21, RX=GPIO20
+\`\`\`
+
+## Critical Pitfalls
+1. ESP32-C3 is RISC-V — NOT Xtensa; toolchain is different
+2. No PSRAM — MALLOC_CAP_SPIRAM will fail
+3. GPIO12-15 used for JTAG — avoid when debugging
+4. Only 4MB Flash — partitions must be tight
+...`
+
+export const esp32c3_devkitBoard = {
+  id: 'esp32c3_devkit',
+  name: 'ESP32-C3-DevKit-M-1',
+  chip: 'ESP32-C3',
+  idfTarget: 'esp32c3',
+  idfVersion: '5.4',
+  flashSize: '4MB',
+  description: 'RISC-V single-core, 4MB Flash, onboard LED GPIO8',
+  basePrompt,
+  skills: [],  // 第 3 步填充
+}
+```
+
+> **关键原则**：`basePrompt` 里放的是 AI **不可能从公开语料学到**的东西。你的板子有什么特殊的 I2C 地址？哪个引脚是 PSRAM 保留的？哪个外设必须按特定顺序初始化？这些踩坑经验才是最有价值的。
+
+**第 3 步：编写该板子可用的 Skill**
+
+Skill 是 AI 能理解的外设模块。不是所有外设都适用于每块板子：
+
+- 立创实战派有 11 个 Skill（因为板载外设多）
+- 一块简单的 ESP32-C3 开发板可能只有 3 个：WiFi、BLE、GPIO
+
+每个 Skill 的结构如下（以 WiFi 为例）：
+
+```js
+// src/context/boards/esp32c3_devkit/skills/wifi.js
+export const wifiSkill = {
+  id: 'wifi',
+  label: 'WiFi',
+  projectConfig: {
+    srcs: [],
+    sdkconfig: [
+      'CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_160=y',
+    ],
+    idfComponents: [],
+    partitions: null,
+    spiffs: false,
+  },
+  systemPrompt: `## WiFi (ESP32-C3)
+\`\`\`c
+// C3 has only one core — no need for task pinning
+esp_netif_init();
+esp_event_loop_create_default();
+...
+\`\`\`
+
+### Pitfalls
+- NVS must be init before WiFi
+- No PSRAM — small heap, avoid large buffers`,
+}
+```
+
+然后在 `skills/index.js` 中聚合导出：
+
+```js
+import { wifiSkill } from './wifi'
+import { bleSkill } from './ble'
+import { gpioSkill } from './gpio'
+export const esp32c3_devkitSkills = [wifiSkill, bleSkill, gpioSkill]
+```
+
+回到 `definition.js`，补上 skills 引用：
+
+```js
+import { esp32c3_devkitSkills } from './skills/index'
+// ...
+export const esp32c3_devkitBoard = {
+  // ...
+  skills: esp32c3_devkitSkills,
+}
+```
+
+**第 4 步：注册到注册表**
+
+编辑 `src/context/boards/index.js`，在 BOARD_MAP 中添加一行：
+
+```js
+import { esp32c3_devkitBoard } from './esp32c3_devkit/definition'
+
+const BOARD_MAP = {
+  szpi_esp32s3: szpi_esp32s3Board,
+  esp32c3_devkit: esp32c3_devkitBoard,  // ← 新增
+}
+```
+
+**完成。** 刷新页面，顶部的板子选择下拉框会自动出现新选项。选中后，整个系统 —— AI 系统提示、编译配置、外设 Skill 列表 —— 全部自动切换。
+
+### 核心思路
+
+| 有了这个架构 | 以前是这样 |
+|---|---|
+| 每块板子独立目录，互不干扰 | 所有硬件信息写死在 `base.js` 里 |
+| 加新板只需要 new directory + 4 行配置 | 加新板要改 N 个文件还怕弄坏旧的 |
+| Skill 按板定制，同一名字不同内容 | Skill 全局共享，换板子就失效 |
+| 硬件上下文就是你的知识资产，可复用可积累 | 经验只存在于聊天记录或脑子里 |
+
+**你支持的板子越多，这个系统的护城河就越深。** 因为每块板子的硬件上下文 —— 那些从实际调试中踩过的坑、正确的初始化顺序、特殊的 I2C 地址 —— 是 LLM 永远无法从公开语料中学到的。
+
+---
+
+### 跨平台 / 跨框架扩展
+
+当板子使用的芯片架构和开发框架完全不同时，系统通过 `framework` 字段做**重度隔离**。
+
+当前支持两种框架：
+
+| framework | 芯片架构 | 构建系统 | 适用板子 |
+|---|---|---|---|
+| `esp-idf` | ESP32 (Xtensa/RISC-V) | idf.py + CMake | 立创实战派 ESP32-S3 |
+| `arduino` | ARM Cortex-M / AVR / RP2040 | Arduino CLI | Seeed XIAO nRF52840 |
+| `stm32cube` | ARM Cortex-M | arm-none-eabi-gcc + Makefile | STM32F103C8 Blue Pill |
+
+每块板子的 `definition.js` 中声明所属框架：
+
+```js
+// ESP32-S3 board (IDF)
+{
+  framework: 'esp-idf',
+  ...
+}
+
+// nRF52840 board (Arduino)
+{
+  framework: 'arduino',
+  arduinoBoardId: 'Seeeduino:nrf52:XIAO_nRF52840',
+  ...
+}
+
+// STM32 board (Cube HAL)
+{
+  framework: 'stm32cube',
+  mcuType: 'STM32F103C8',
+  linkerscript: 'STM32F103C8Tx_FLASH.ld',
+  ...
+}
+```
+
+#### `buildProjectFiles()` 自动分流
+
+系统根据 `board.framework` 自动选择不同的项目文件生成逻辑：
+
+- **ESP-IDF 框架**：生成 `CMakeLists.txt`、`sdkconfig.defaults`、`main/idf_component.yml`
+- **Arduino 框架**：生成 `sketch.ino`，附带元数据（`__libraries[]`、`__boardFqbn`）
+
+#### Arduino 版 Skill 示例
+
+Arduino skill 使用 `arduinoLibraries[]` 替代 `idfComponents[]`：
+
+```js
+// Seeed XIAO nRF52840 的 NeoPixel Skill
+export const neopixelSkill = {
+  id: 'neopixel',
+  label: 'RGB LED (NeoPixel)',
+  projectConfig: {
+    srcs: [],
+    arduinoLibraries: ['Adafruit NeoPixel'],  // Arduino 库
+    buildFlags: [],
+  },
+  systemPrompt: `## 板载 WS2812 RGB LED
+...
+### Pitfalls
+- DO NOT use pinMode(D14, OUTPUT) — NeoPixel data line is NOT a regular GPIO`,
+}
+```
+
+系统根据 `board.framework` 自动选择不同的项目文件生成逻辑：
+
+- **ESP-IDF 框架**：生成 `CMakeLists.txt`、`sdkconfig.defaults`、`main/idf_component.yml`
+- **Arduino 框架**：生成 `sketch.ino`，附带元数据（`__libraries[]`、`__boardFqbn`）
+- **STM32Cube 框架**：生成 `Makefile`、`Src/main.c`、`Inc/` 头文件、`startup_stm32f103xb.s`、链接脚本
+
+#### STM32Cube 版 Skill 示例
+
+STM32Cube skill 使用 `stm32HalModules[]` 声明 HAL 驱动依赖：
+
+```js
+// STM32F103C8 Blue Pill 的 UART Skill
+export const uartSkill = {
+  id: 'uart',
+  label: 'UART 串口',
+  projectConfig: {
+    srcs: [],
+    stm32HalModules: [
+      'stm32f1xx_hal_uart',
+      'stm32f1xx_hal_gpio',
+      'stm32f1xx_hal_rcc',
+    ],
+    defines: ['STM32F103xB'],
+    buildFlags: [],
+  },
+  systemPrompt: `## UART 串口 (STM32Cube HAL)
+### USART1（PA9=TX, PA10=RX）
+\`\`\`c
+UART_HandleTypeDef huart1;
+void MX_USART1_UART_Init(void) {
+  huart1.Instance = USART1;
+  huart1.Init.BaudRate = 115200;
+  ...
+  HAL_UART_Init(&huart1);
+}
+\`\`\`
+### Pitfalls
+- USART1 的 TX/RX 是 PA9/PA10，不是 PA2/PA3
+- APB2 总线 72MHz vs APB1 36MHz — 影响波特率精度`,
+}
+```
+
+#### 编译服务需要新增对应容器
+
+当选择不同框架的板子时，前端的 metadata 会告诉编译器使用哪个容器：
+
+ESP-IDF：
+```json
+{"__framework": "esp-idf", "__idfTarget": "esp32s3"}
+```
+
+Arduino：
+```json
+{"__framework": "arduino", "__boardFqbn": "Seeeduino:nrf52:XIAO_nRF52840", "__libraries": "..."}
+```
+
+STM32Cube：
+```json
+{"__framework": "stm32cube", "__mcuType": "STM32F103C8", "__halModules": "..."}
+```
+
+编译器层解包后，用对应工具链编译：
+
+```bash
+# ESP-IDF
+idf.py build
+
+# Arduino
+arduino-cli compile --fqbn Seeeduino:nrf52:XIAO_nRF52840 sketch.ino
+
+# STM32Cube
+arm-none-eabi-gcc -mcpu=cortex-m3 -mthumb -DSTM32F103xB ... Src/main.c
+arm-none-eabi-ld -T STM32F103C8Tx_FLASH.ld ... -o firmware.elf
+arm-none-eabi-objcopy -O ihex firmware.elf firmware.hex
+```
+
+后端 Docker 部署时，需要为 Arduino 框架单独建一个容器（`esp32-compiler-arduino`），
+不同框架的编译请求路由到对应的容器。详情见 `compiler-service/` 目录。
+
+---
+
+### 当前支持的板子
+
+| 板子 | 芯片 | 框架 | 目前状态 |
+|---|---|---|---|
+| 立创实战派 ESP32-S3 | ESP32-S3 | ESP-IDF v5.4 | ✅ 已完成，11 个 Skill |
+| Seeed XIAO nRF52840 | nRF52840 (ARM M4F) | Arduino | ✅ 已完成，5 个 Skill |
+| STM32F103C8T6 Blue Pill | STM32F103C8 (ARM M3) | STM32Cube HAL | ✅ 已完成，4 个 Skill |
+| 更多... | | | 欢迎贡献 |
+
+---
+
+## 目标硬件
 
 | 项目 | 参数 |
 |---|---|

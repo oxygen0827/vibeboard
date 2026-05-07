@@ -64,6 +64,19 @@
   gap: 8px;
 }
 
+.board-select-input {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  outline: none;
+  max-width: 280px;
+}
+
 .board-selector-chip {
   background: var(--accent-muted);
   color: var(--accent-hover);

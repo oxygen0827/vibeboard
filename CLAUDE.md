@@ -12,7 +12,7 @@ Users bring their own AI API key, describe what they want in Chinese, and get ES
 **Framework:** ESP-IDF v5.4
 **BSP:** `esp32_s3_szp.h` / `esp32_s3_szp.c`
 
-Key hardware facts baked into the AI system prompt (see `src/context/base.js`):
+Key hardware facts baked into the AI system prompt (see board definition `src/context/boards/<board_id>/definition.js`):
 - I2C bus: GPIO1 (SDA) / GPIO2 (SCL), shared by 5+ devices
 - PCA9557 IO expander @ 0x19: BIT0=LCD_CS, BIT1=PA_EN, BIT2=DVP_PWDN
 - ES7210 ADC @ **0x41** (not default 0x40), I2S TDM mode
@@ -40,13 +40,16 @@ esp32-vibe-coder/
 ├── src/
 │   ├── App.jsx                  # Root layout, handleInsertCode, projectFiles state
 │   ├── context/
-│   │   ├── base.js              # Board identity, pin map, AI output format rules
-│   │   ├── index.js             # buildSystemPrompt(), buildProjectFiles(), patchSkill()
-│   │   └── skills/              # Per-peripheral skill prompts + config generators
+│   │   ├── index.js             # Board-aware API: buildSystemPrompt(), buildProjectFiles(), patchSkill()
+│   │   ├── boards.js            # Backward-compat re-export (BOARDS map + methods attached)
+│   │   └── boards/              # ===== BOARD PACKAGES =====
+│   │       ├── index.js         # Registry: getBoard(), BOARD_IDS, getBoardList()
+│   │       └── szpi_esp32s3/    # 立创实战派ESP32-S3 board package
+│   │           ├── definition.js  # Board identity + full hardware basePrompt
+│   │           └── skills/        # 11 board-specific peripheral skills
 │   ├── utils/
 │   │   ├── aiApi.js             # streamChat() + PROVIDER_PRESETS
 │   │   ├── compiler.js          # SSE-based compile client → /compile
-│   │   ├── storage.js           # Centralized localStorage (namespace: esp32vc:)
 │   │   ├── ota.js               # WiFi OTA push (re-exports loadOtaIp/saveOtaIp)
 │   │   ├── bleOta.js            # BLE OTA flash
 │   │   └── logStream.js         # WebSocket + Serial log stream
@@ -89,9 +92,81 @@ esp32-vibe-coder/
 | Key | Content |
 |---|---|
 | `esp32vc:settings` | `{ apiKey, baseUrl, model }` |
+| `esp32vc:board` | Selected board ID (e.g. `szpi_esp32s3`) |
 | `esp32vc:ota-ip` | Last OTA device IP |
 | `esp32vc:skill-patches` | Self-evolution knowledge patches |
 | `esp32vc:selected-skills` | Active peripheral skill IDs |
+
+## Board Architecture (Multi-Board Support)
+
+The project supports multiple development boards via a package-based architecture:
+
+```
+src/context/boards/
+├── index.js             # Registry — getBoard(), BOARD_IDS, getBoardList()
+└── <board_id>/          # One directory per board
+    ├── definition.js    # Board identity + basePrompt (hardware context)
+    └── skills/          # Board-specific peripheral skill prompts
+        ├── index.js     # Aggregates all skills for this board
+        ├── lvgl.js      # Skill: id, label, projectConfig, systemPrompt
+        └── ...
+```
+
+### Board Object
+```js
+{
+  id: 'szpi_esp32s3',
+  name: '立创实战派 ESP32-S3',
+  chip: 'ESP32-S3',
+  idfTarget: 'esp32s3',
+  idfVersion: '5.4',
+  module: 'ESP32-S3-WROOM-1-N16R8',
+  flashSize: '16MB',
+  psramSize: '8MB Octal',
+  basePrompt: '...',     // Hardware context — injected into AI system prompt
+  skills: [...],         // Board-specific skill objects
+}
+```
+
+### Adding a New Board
+1. Create `src/context/boards/<new_board_id>/`
+2. Create `definition.js` with board identity + full hardware basePrompt
+3. Create `skills/` with peripheral skills relevant to this board
+4. Register in `src/context/boards/index.js` BOARD_MAP
+5. Board appears in the UI dropdown automatically
+
+### Board Object with Framework Support
+```js
+{
+  id: 'xiao_nrf52840',
+  name: 'Seeed XIAO nRF52840',
+  chip: 'nRF52840',
+  framework: 'arduino',                          // 'esp-idf' | 'arduino' | 'stm32cube'
+  arduinoBoardId: 'Seeeduino:nrf52:XIAO_nRF52840',  // Arduino FQBN (only for arduino)
+  idfTarget: null,                               // ESP-IDF target (only for esp-idf)
+  mcuType: null,                                 // MCU model (only for stm32cube)
+  linkerscript: null,                            // Linker script (only for stm32cube)
+  basePrompt: '...',                              // Hardware context
+  skills: [...],                                  // Board-specific skills
+}
+```
+
+### Framework-Aware Project Builds
+`buildProjectFiles()` routes based on `board.framework`:
+- **esp-idf**: generates CMakeLists.txt, sdkconfig.defaults, idf_component.yml
+- **arduino**: generates sketch.ino + metadata (`__libraries[]`, `__boardFqbn`)
+- **stm32cube**: generates Makefile, Src/main.c, Inc/ headers, startup .s, linker script
+
+Arduino skills use `arduinoLibraries[]` instead of `idfComponents[]` in projectConfig.
+STM32Cube skills use `stm32HalModules[]` for HAL driver dependencies + `defines[]` for preprocessor flags.
+
+### Board-Aware API (`context/index.js`)
+All context functions now take `boardId` as first parameter:
+```js
+buildSystemPrompt(boardId, selectedSkillIds)
+buildProjectFiles(boardId, projectName, selectedSkillIds)
+patchSkill(boardId, skillId, type, content)
+```
 
 ## Development
 
