@@ -121,7 +121,7 @@ import bspCmake from '../compiler-service/template/components/esp32_s3_szp/CMake
    120	            >
    121	              {getBoardList().map(b => (
    122	                <option key={b.id} value={b.id}>
-   123	                  [{b.framework === 'arduino' ? 'Arduino' : 'ESP-IDF'}] {b.name} ({b.chip})
+   123	                  [{b.framework === 'arduino' ? 'Arduino' : b.framework === 'stm32cube' ? 'STM32Cube' : 'ESP-IDF'}] {b.name} ({b.chip})
    124	                </option>
    125	              ))}
    126	            </select>
