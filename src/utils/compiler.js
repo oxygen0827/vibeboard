@@ -1,15 +1,24 @@
 /**
  * Cloud compiler client — SSE streaming version
- * POST /compile -> Server-Sent Events stream:
- *   {log: "..."}                              build output line
- *   {done: true, bin: "base64...", size: N}   success
- *   {done: true, error: "..."}                failure
+ * POST /compile     -> ESP-IDF compiler (port 8760)
+ * POST /pio-compile -> PlatformIO compiler (port 8761), arduino + stm32cube
+ *
+ * SSE events:
+ *   {log: "..."}                                    build output line
+ *   {done: true, bin: "base64...", size: N}         success
+ *   {done: true, bin: "base64...", filename: "..."}  success with custom filename
+ *   {done: true, error: "..."}                      failure
  */
+
+const PIO_FRAMEWORKS = new Set(['arduino', 'stm32cube'])
 
 export async function compileFirmware(code, projectFiles, projectMeta = {}, onStatus, onLog) {
   onStatus('正在连接编译服务器...')
 
-  const res = await fetch('/compile', {
+  const framework = projectFiles.__framework || 'esp-idf'
+  const endpoint  = PIO_FRAMEWORKS.has(framework) ? '/pio-compile' : '/compile'
+
+  const res = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ code, projectFiles, projectMeta }),
@@ -41,7 +50,9 @@ export async function compileFirmware(code, projectFiles, projectMeta = {}, onSt
             reject(new Error(msg.error))
           } else {
             const bytes = Uint8Array.from(atob(msg.bin), c => c.charCodeAt(0))
-            resolve(new Blob([bytes], { type: 'application/octet-stream' }))
+            const blob  = new Blob([bytes], { type: 'application/octet-stream' })
+            blob.firmwareFilename = msg.filename || null
+            resolve(blob)
           }
         }
       } catch { /* ignore malformed lines */ }
@@ -61,10 +72,11 @@ export async function compileFirmware(code, projectFiles, projectMeta = {}, onSt
   })
 }
 
-export function downloadBin(blob, filename = 'firmware.bin') {
+export function downloadBin(blob, filename = null) {
+  filename = filename || blob.firmwareFilename || 'firmware.bin'
   const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
+  const a   = document.createElement('a')
+  a.href     = url
   a.download = filename
   a.click()
   URL.revokeObjectURL(url)
