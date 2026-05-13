@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ESP32 Vibe Coder | 投资人汇报</title>
+  <style>
+    :root {
+      --bg: #f6f8fb;
+      --ink: #111827;
+      --muted: #5b6472;
+      --line: #d9e0ea;
+      --panel: #ffffff;
+      --dark: #0f172a;
+      --blue: #2563eb;
+      --teal: #0f766e;
+      --green: #16a34a;
+      --amber: #d97706;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, "Segoe UI", "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+      line-height: 1.55;
+    }
+    img { max-width: 100%; display: block; }
+    .page { overflow: hidden; }
+    .section { padding: 72px 7vw; }
+    .inner { max-width: 1180px; margin: 0 auto; }
+    .hero {
+      min-height: 92vh;
+      padding: 34px 7vw 48px;
+      color: #fff;
+      background:
+        linear-gradient(90deg, rgba(15, 23, 42, .94) 0%, rgba(15, 23, 42, .76) 42%, rgba(15, 23, 42, .2) 100%),
+        url("assets/hero-product.png") center right / cover no-repeat;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      font-weight: 700;
+    }
+    .brand { font-size: 20px; letter-spacing: .2px; }
+    .tag { color: #a7f3d0; font-size: 14px; }
+    .hero-content { max-width: 720px; padding: 72px 0 28px; }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: #bfdbfe;
+      font-size: 14px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      margin-bottom: 18px;
+    }
+    h1 {
+      margin: 0 0 22px;
+      font-size: clamp(44px, 6vw, 78px);
+      line-height: .98;
+      letter-spacing: 0;
+    }
+    .lead {
+      margin: 0;
+      max-width: 650px;
+      color: #dbeafe;
+      font-size: clamp(18px, 2vw, 24px);
+    }
+    .hero-metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      max-width: 900px;
+    }
+    .metric {
+      border: 1px solid rgba(255,255,255,.22);
+      background: rgba(15, 23, 42, .52);
+      backdrop-filter: blur(10px);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .metric b { display: block; font-size: 22px; margin-bottom: 4px; }
+    .metric span { color: #cbd5e1; font-size: 13px; }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 34px;
+      align-items: center;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
+    }
+    h2 {
+      margin: 0 0 16px;
+      font-size: clamp(30px, 3.2vw, 46px);
+      line-height: 1.08;
+      letter-spacing: 0;
+    }
+    .sub {
+      margin: 0 0 28px;
+      color: var(--muted);
+      font-size: 18px;
+      max-width: 820px;
+    }
+    .panel, .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 18px 50px rgba(15, 23, 42, .07);
+    }
+    .panel { padding: 28px; }
+    .card { padding: 24px; min-height: 188px; }
+    .card h3, .panel h3 {
+      margin: 0 0 10px;
+      font-size: 21px;
+      letter-spacing: 0;
+    }
+    .card p, .panel p { margin: 0; color: var(--muted); }
+    .accent-blue { border-top: 5px solid var(--blue); }
+    .accent-teal { border-top: 5px solid var(--teal); }
+    .accent-green { border-top: 5px solid var(--green); }
+    .accent-amber { border-top: 5px solid var(--amber); }
+    .dark-band {
+      background: var(--dark);
+      color: #fff;
+    }
+    .dark-band .sub, .dark-band p { color: #cbd5e1; }
+    .image-frame {
+      overflow: hidden;
+      border-radius: 8px;
+      border: 1px solid rgba(15, 23, 42, .12);
+      box-shadow: 0 24px 70px rgba(15, 23, 42, .16);
+      background: #fff;
+    }
+    .list {
+      display: grid;
+      gap: 14px;
+      margin-top: 18px;
+    }
+    .item {
+      display: grid;
+      grid-template-columns: 28px minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+    }
+    .dot {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      background: var(--blue);
+      font-weight: 800;
+      font-size: 13px;
+    }
+    .item strong { display: block; margin-bottom: 2px; }
+    .item span { color: var(--muted); }
+    .dark-band .item span { color: #cbd5e1; }
+    .chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+    .chip {
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: #e8f0ff;
+      color: #1d4ed8;
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .dark-band .chip {
+      color: #d1fae5;
+      background: rgba(20, 184, 166, .18);
+      border: 1px solid rgba(45, 212, 191, .28);
+    }
+    .table {
+      display: grid;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fff;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 1.2fr 2fr 1.3fr;
+      gap: 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .row:last-child { border-bottom: 0; }
+    .cell { padding: 16px 18px; }
+    .head { background: #eef4fb; font-weight: 800; color: #334155; }
+    .cell:not(.head) { color: var(--muted); }
+    .cell strong { color: var(--ink); }
+    .quote {
+      font-size: clamp(24px, 3vw, 36px);
+      line-height: 1.22;
+      margin: 0;
+      color: #fff;
+      max-width: 920px;
+    }
+    .split-label {
+      display: inline-block;
+      margin-bottom: 14px;
+      padding: 7px 11px;
+      border-radius: 999px;
+      background: #e8f0ff;
+      color: #1d4ed8;
+      font-size: 13px;
+      font-weight: 800;
+    }
+    .footer {
+      padding: 34px 7vw;
+      background: #07111f;
+      color: #94a3b8;
+      font-size: 14px;
+    }
+    @media (max-width: 860px) {
+      .section { padding: 52px 22px; }
+      .hero { padding: 26px 22px 34px; min-height: auto; }
+      .hero-content { padding: 64px 0 38px; }
+      .hero-metrics, .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+      .row { grid-template-columns: 1fr; }
+      .cell { border-bottom: 1px solid var(--line); }
+      .row .cell:last-child { border-bottom: 0; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <div class="nav">
+        <div class="brand">ESP32 Vibe Coder</div>
+        <div class="tag">AI-native Embedded Development Platform</div>
+      </div>
+      <div class="hero-content">
+        <div class="eyebrow">标准化开发板 + AI 嵌入式开发平台</div>
+        <h1>我们不是只做 AI 写代码，而是把标准硬件做成 AI 能理解的开发入口。</h1>
+        <p class="lead">ESP32 Vibe Coder 由一组标准化 ESP32 开发板、结构化硬件上下文和浏览器 IDE 组成，让 AI 生成的固件能贴合真实板卡、能编译、能无线烧录、能从日志继续迭代。</p>
+      </div>
+      <div class="hero-metrics">
+        <div class="metric"><b>标准板卡</b><span>Core / Display / Vision / Audio / Sensor</span></div>
+        <div class="metric"><b>硬件上下文</b><span>引脚、BSP、驱动、依赖、陷阱</span></div>
+        <div class="metric"><b>结构外观</b><span>亚克力、塑胶、铝合金、手持、壁挂</span></div>
+        <div class="metric"><b>AI IDE + OTA</b><span>云编译、无线烧录、日志分析</span></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="inner grid-2">
+        <div>
+          <span class="split-label">硬件部分 50%</span>
+          <h2>核心资产之一：标准化开发板矩阵。</h2>
+          <p class="sub">我们提供的不是零散硬件，而是一组为 AI 开发流程设计的标准板卡。每块板都有固定外设组合、统一命名、统一 BSP、统一示例、统一 OTA 能力，方便 AI 生成可落地代码。</p>
+          <div class="list">
+            <div class="item"><div class="dot">1</div><div><strong>统一主控和基础能力</strong><span>以 ESP32-S3 为核心，统一 WiFi/BLE、USB-C、Flash/PSRAM、OTA 引导和调试接口。</span></div></div>
+            <div class="item"><div class="dot">2</div><div><strong>模块化场景板</strong><span>Display、Vision、Audio、Sensor 等板卡覆盖 AIoT 原型里最高频的输入、输出和感知场景。</span></div></div>
+            <div class="item"><div class="dot">3</div><div><strong>板卡即知识载体</strong><span>每块板的引脚表、外设地址、初始化顺序、组件依赖和示例代码都进入硬件上下文。</span></div></div>
+          </div>
+        </div>
+        <div class="image-frame"><img src="assets/hardware-lineup.png" alt="Standardized ESP32 development board lineup" /></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="inner">
+        <h2>标准开发板规划：用少量高频板型覆盖大量 AIoT 原型需求。</h2>
+        <p class="sub">投资人需要看到硬件抓手：标准板卡既是收入载体，也是数据和开发者生态入口。</p>
+        <div class="grid-4">
+          <div class="card accent-blue"><h3>Core Board</h3><p>统一 ESP32-S3 主控、无线能力、USB-C、OTA 引导和基础 GPIO，作为所有场景的最小开发底座。</p></div>
+          <div class="card accent-teal"><h3>Display Board</h3><p>内置 LCD、触控或按键、LVGL 配置和显示示例，面向仪表盘、控制面板和交互终端。</p></div>
+          <div class="card accent-green"><h3>Vision Board</h3><p>集成摄像头接口、图像采集链路和边缘视觉示例，面向识别、监控和 AI 传感入口。</p></div>
+          <div class="card accent-amber"><h3>Audio / Sensor Board</h3><p>覆盖麦克风、扬声器、IMU、环境传感器等能力，面向语音交互、运动检测和数据采集。</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="inner grid-2">
+        <div>
+          <span class="split-label">结构与外观</span>
+          <h2>同一套标准板卡，可以进入不同外壳、材质和产品形态。</h2>
+          <p class="sub">除了开发板本体，我们还可以提供外壳结构、材质选择、外观 ID 和小批量产品化支持。这样客户不是只拿到一块裸板，而是能快速进入可展示、可试产、可交付的设备形态。</p>
+          <div class="list">
+            <div class="item"><div class="dot">M</div><div><strong>多材质选择</strong><span>透明亚克力、注塑塑料、CNC 铝合金、硅胶防护、3D 打印样机等。</span></div></div>
+            <div class="item"><div class="dot">S</div><div><strong>结构适配</strong><span>手持、桌面、壁挂、传感器盒、屏幕终端等结构围绕同一核心板复用。</span></div></div>
+            <div class="item"><div class="dot">I</div><div><strong>外观定制</strong><span>面向教育套件、企业样机、行业终端做颜色、开孔、按键、铭牌和品牌化设计。</span></div></div>
+          </div>
+        </div>
+        <div class="image-frame"><img src="assets/enclosure-options.png" alt="Custom enclosure materials and product structures" /></div>
+      </div>
+    </section>
+
+    <section class="section dark-band">
+      <div class="inner grid-2">
+        <div class="image-frame"><img src="assets/hardware-context.png" alt="Hardware context knowledge graph" /></div>
+        <div>
+          <span class="split-label">硬件上下文</span>
+          <h2>让 AI 真正理解“这块板”。</h2>
+          <p class="sub">通用大模型知道 ESP32，但不知道你这块板的真实硬件连接。我们的关键壁垒是把板卡资料结构化，并在代码生成、编译配置和错误修复时自动注入。</p>
+          <div class="list">
+            <div class="item"><div class="dot">P</div><div><strong>Pin Map</strong><span>GPIO、I2C、SPI、I2S、LCD、摄像头、扩展口等连接关系。</span></div></div>
+            <div class="item"><div class="dot">B</div><div><strong>BSP APIs</strong><span>统一封装屏幕、音频、传感器、按键、电源等板级 API。</span></div></div>
+            <div class="item"><div class="dot">D</div><div><strong>Driver Init</strong><span>外设初始化顺序、锁机制、时钟配置和常见冲突。</span></div></div>
+            <div class="item"><div class="dot">C</div><div><strong>CMake / sdkconfig</strong><span>按板卡和 skill 自动生成依赖、分区和编译配置，减少 AI 乱写配置。</span></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section dark-band">
+      <div class="inner">
+        <span class="split-label">软件平台 50%</span>
+        <h2>软件平台：把标准板卡变成浏览器里的 AI 开发体验。</h2>
+        <p class="sub">硬件标准化解决“AI 知不知道板子”的问题，软件平台解决“代码能不能跑起来”的问题。</p>
+        <div class="grid-3">
+          <div class="card accent-blue"><h3>硬件上下文增强 AI</h3><p>系统提示注入开发板引脚、外设地址、BSP API、常见陷阱，让 AI 生成贴合具体板卡的 ESP-IDF 代码。</p></div>
+          <div class="card accent-teal"><h3>云端 ESP-IDF 编译</h3><p>Flask 编译服务封装 Docker 里的 ESP-IDF v5.4，浏览器提交项目文件即可获得构建日志和固件二进制。</p></div>
+          <div class="card accent-green"><h3>无线烧录与日志闭环</h3><p>支持 WiFi OTA、BLE OTA、WebSocket 日志和 WebSerial 日志，失败日志可直接交给 AI 分析修复。</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="inner grid-2">
+        <div class="image-frame"><img src="assets/ide-mockup.png" alt="ESP32 Vibe Coder Web IDE product mockup" /></div>
+        <div>
+          <h2>产品形态：浏览器中的嵌入式开发工作台。</h2>
+          <p class="sub">左侧是多文件工程编辑器，右侧是 AI 助手和设备日志。用户描述功能，AI 生成应用源码；系统负责生成关键构建配置，降低 CMake、sdkconfig、组件依赖出错概率。</p>
+          <div class="list">
+            <div class="item"><div class="dot">A</div><div><strong>多模型兼容</strong><span>支持 OpenAI 兼容接口、Anthropic、DeepSeek、Qwen、Groq、Ollama 等接入方式。</span></div></div>
+            <div class="item"><div class="dot">B</div><div><strong>Skills 化硬件知识</strong><span>LVGL、音频、摄像头、IMU、WiFi、BLE、SD 卡、GPIO 等能力按需注入。</span></div></div>
+            <div class="item"><div class="dot">C</div><div><strong>编译前校验</strong><span>本地已有改造方向：限制 AI 乱写系统配置，强化 include 和项目组装规则。</span></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="inner">
+        <h2>端到端工作流</h2>
+        <p class="sub">从自然语言需求到设备运行结果，形成可演示、可扩展、可商业化的工程闭环。</p>
+        <div class="image-frame"><img src="assets/workflow.png" alt="AI to firmware to OTA workflow" /></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="inner">
+        <h2>差异化与潜在壁垒</h2>
+        <div class="table">
+          <div class="row">
+            <div class="cell head">方向</div>
+            <div class="cell head">项目优势</div>
+            <div class="cell head">投资价值</div>
+          </div>
+          <div class="row">
+            <div class="cell"><strong>硬件知识资产</strong></div>
+            <div class="cell">把板级 BSP、外设初始化、组件依赖、常见错误沉淀为可复用 skills。</div>
+            <div class="cell">越多板卡和案例接入，知识库越难复制。</div>
+          </div>
+          <div class="row">
+            <div class="cell"><strong>工具链云化</strong></div>
+            <div class="cell">把复杂 ESP-IDF 环境封装成服务，用户只需要浏览器。</div>
+            <div class="cell">适合教育、企业内部平台、开发板厂商 SaaS 化。</div>
+          </div>
+          <div class="row">
+            <div class="cell"><strong>设备反馈数据</strong></div>
+            <div class="cell">编译日志、运行日志、烧录结果和修复建议形成闭环。</div>
+            <div class="cell">可持续提升生成质量，形成垂直 AI 工程数据。</div>
+          </div>
+          <div class="row">
+            <div class="cell"><strong>结构外观能力</strong></div>
+            <div class="cell">同一核心板支持不同材质外壳、结构件和终端形态，缩短从开发板到样机设备的距离。</div>
+            <div class="cell">增加单客户价值量，切入教育终端、行业样机和 OEM 定制机会。</div>
+          </div>
+          <div class="row">
+            <div class="cell"><strong>开发者入口</strong></div>
+            <div class="cell">覆盖从学习、原型、调试到 OTA 的日常开发路径。</div>
+            <div class="cell">具备成为 AIoT 开发入口和硬件生态分发入口的潜力。</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section dark-band">
+      <div class="inner grid-2">
+        <div>
+          <h2>商业化路径</h2>
+          <p class="sub">先用单板闭环验证产品价值，再扩展板卡库、团队协作、私有部署和教育/企业服务。</p>
+          <div class="chips">
+            <span class="chip">开发者订阅</span>
+            <span class="chip">云编译额度</span>
+            <span class="chip">企业私有化</span>
+            <span class="chip">开发板厂商合作</span>
+            <span class="chip">结构设计服务</span>
+            <span class="chip">课程与实验平台</span>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>近期里程碑建议</h3>
+          <div class="list">
+            <div class="item"><div class="dot">1</div><div><strong>完成 3-5 块标准板卡定义</strong><span>每块板配套 BOM、BSP、引脚表、示例和 OTA 固件。</span></div></div>
+            <div class="item"><div class="dot">2</div><div><strong>完成 2-3 套外壳结构样机</strong><span>覆盖展示型透明外壳、产品型塑胶外壳和行业型壁挂/手持外壳。</span></div></div>
+            <div class="item"><div class="dot">3</div><div><strong>沉淀硬件上下文规范</strong><span>把板卡资料转成 AI 可检索、可注入、可校验的结构化资产。</span></div></div>
+            <div class="item"><div class="dot">4</div><div><strong>完善 IDE 演示闭环</strong><span>让投资人现场看到从需求到真实开发板运行的完整路径。</span></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="inner">
+        <p class="quote" style="color:#0f172a;">“ESP32 Vibe Coder 的壁垒来自三层：标准化开发板，能产品化的外壳结构与外观方案，以及把真实硬件变成 AI 可理解上下文的软件闭环。”</p>
+      </div>
+    </section>
+  </main>
+  <footer class="footer">
+    <div class="inner">ESP32 Vibe Coder investor briefing · 本页面为本地静态 HTML，可直接用于演示或截图制作 PPT。</div>
+  </footer>
+</body>
+</html>
