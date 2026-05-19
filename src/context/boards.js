@@ -27,4 +27,4 @@ BOARD_IDS.forEach(id => { BOARDS_MAP[id] = getBoard(id) })
 
 export const BOARDS = BOARDS_MAP
 export const DEFAULT_BOARD_ID = 'szpi_esp32s3'
-export { getBoardList }
+export { getBoardList, getBoard }

@@ -4,6 +4,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { streamChat } from '../utils/aiApi'
 import { patchSkill } from '../context/index'
+import { filterInsertableFiles } from '../utils/projectAssembly'
 import './ChatPanel.css'
 
 const QUICK_PROMPTS = [
@@ -16,25 +17,14 @@ const QUICK_PROMPTS = [
   '生成适合这块板子的sdkconfig.defaults',
 ]
 
-/**
- * Generate board-appropriate quick prompts from available skills.
- * Boards with specific hardware get curated prompts; others get
- * one generic prompt per available skill.
- */
 function getQuickPrompts(board) {
-  // SZPI: return the curated set
   if (board.id === 'szpi_esp32s3') return QUICK_PROMPTS
-
-  // Other boards: generate from skill labels
   const skillLabels = board.skills.map(s => s.label).filter(Boolean)
   if (skillLabels.length === 0) return ['帮我写一个完整的示例程序']
-
   return skillLabels.map(label => `帮我实现${label}的功能`)
 }
 
-// Ask AI to extract new knowledge from a completed conversation turn
 async function extractKnowledge({ settings, board, userMsg, aiReply, selectedSkillIds }) {
-  // Build valid skill ID pattern from the board's actual skills
   const validIds = board.skills.map(s => s.id).join('|')
   const extractPrompt = `You just helped a user with embedded development.
 
@@ -69,7 +59,6 @@ If NO new knowledge, respond with ONLY: {"found": false}`
   }
 }
 
-// Load persisted skill patches from localStorage
 function loadPatches() {
   try { return JSON.parse(localStorage.getItem('skillPatches') || '[]') } catch { return [] }
 }
@@ -77,16 +66,31 @@ function savePatches(patches) {
   localStorage.setItem('skillPatches', JSON.stringify(patches))
 }
 
+function normalizeFilePath(raw) {
+  const p = raw.replace(/\\/g, '/').split('/').pop()
+  const rootCfgs = new Set(['CMakeLists.txt', 'sdkconfig.defaults', 'partitions.csv'])
+  const mainCfgs = new Set(['idf_component.yml'])
+  if (rootCfgs.has(p)) return p
+  if (mainCfgs.has(p)) return 'main/' + p
+  const parts = raw.replace(/\\/g, '/').split('/')
+  const idx = parts.lastIndexOf('main')
+  return idx !== -1 ? parts.slice(idx).join('/') : 'main/' + p
+}
+
+function insertFileMap(onInsertCode, fileMap) {
+  const { accepted } = filterInsertableFiles(fileMap)
+  if (Object.keys(accepted).length > 0) onInsertCode?.(accepted)
+}
+
 export default function ChatPanel({ settings, board, boardId, onInsertCode, initialPrompt, onConsumePrompt, selectedSkills = [], onSkillsChange }) {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
-  const [knowledgeCard, setKnowledgeCard] = useState(null) // {skillId, type, content}
+  const [knowledgeCard, setKnowledgeCard] = useState(null)
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
   const abortRef = useRef(null)
 
-  // Apply persisted patches on mount
   useEffect(() => {
     loadPatches().forEach(p => patchSkill(boardId, p.skillId, p.type, p.content))
   }, [boardId])
@@ -103,14 +107,10 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
   }, [initialPrompt]) // eslint-disable-line
 
   const hasConfig = settings.apiKey && settings.baseUrl && settings.model
-
-  // Board-appropriate quick prompts
   const quickPrompts = useMemo(() => getQuickPrompts(board), [board])
 
   function toggleSkill(id) {
-    onSkillsChange?.(prev =>
-      prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]
-    )
+    onSkillsChange?.(prev => prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id])
   }
 
   const sendMessage = useCallback(async (text) => {
@@ -131,31 +131,14 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
 
     let aborted = false
     let finalReply = ''
-    let streamBuf = ''  // buffer to detect code block boundaries while streaming
+    let streamBuf = ''
     abortRef.current = () => { aborted = true }
 
     const SKIP_LANGS = new Set(['bash', 'sh', 'shell', 'zsh', 'powershell', 'text', 'markdown', 'md'])
-    const SRC_LANGS  = new Set(['c', 'cpp', 'h', 'cc', 'cxx', ''])
-    const ROOT_CFGS  = new Set(['CMakeLists.txt', 'sdkconfig.defaults', 'partitions.csv'])
-    const MAIN_CFGS  = new Set(['idf_component.yml'])
+    const SRC_LANGS = new Set(['c', 'cpp', 'h', 'hpp', 'cc', 'cxx', 'ino', ''])
 
-    function normalizeFilePath(raw) {
-      const p = raw.replace(/\\/g, '/').split('/').pop()
-      if (ROOT_CFGS.has(p)) return p
-      if (MAIN_CFGS.has(p)) return 'main/' + p
-      const parts = raw.replace(/\\/g, '/').split('/')
-      const idx = parts.lastIndexOf('main')
-      return idx !== -1 ? parts.slice(idx).join('/') : 'main/' + p
-    }
-
-    // Extract { path: code } from a full text that may contain:
-    //   Pattern A: FILE: path\n```lang\ncode\n```   (FILE label ABOVE the block)
-    //   Pattern B: ```c\n// FILE: path\ncode\n```   (FILE marker INSIDE the block)
-    //   Pattern C: plain ```c\ncode\n```             (no label — C/C++ only)
     function extractFiles(text) {
       const result = {}
-
-      // Pattern A: optional whitespace, FILE: path, then a code block
       const patA = /FILE:\s*(\S+)[^\n]*\n[^\`]*```\w*\n([\s\S]*?)\n```/g
       let m
       while ((m = patA.exec(text)) !== null) {
@@ -163,7 +146,6 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
       }
       if (Object.keys(result).length > 0) return result
 
-      // Pattern B: FILE: marker inside a single code block
       const patB = /```\w*\n([\s\S]*?)\n```/g
       while ((m = patB.exec(text)) !== null) {
         const code = m[1]
@@ -180,11 +162,9 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
         }
       }
       if (Object.keys(result).length > 0) return result
-
-      return null  // no FILE markers found
+      return null
     }
 
-    // For streaming: flush completed code blocks one at a time
     function tryFlushCodeBlock(buf) {
       const re = /```(\w*)\n([\s\S]*?)\n```/g
       let m, last = null
@@ -195,30 +175,14 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
       const code = last[2].trim()
 
       if (!SKIP_LANGS.has(lang) && code.length > 0) {
-        // Check if there's a FILE: label in the text right before this block
         const before = buf.slice(0, last.index)
         const labelMatch = before.match(/FILE:\s*(\S+)\s*$/)
         if (labelMatch) {
-          // Pattern A: FILE label above block
-          onInsertCode?.({ [normalizeFilePath(labelMatch[1])]: code })
+          insertFileMap(onInsertCode, { [normalizeFilePath(labelMatch[1])]: code })
         } else {
-          // Check for FILE markers inside the block (Pattern B)
-          const inner = /(?:\/\/|#)\s*FILE:\s*(\S+)\n/g
-          const parts = []
-          let im
-          while ((im = inner.exec(code)) !== null) parts.push(im)
-          if (parts.length > 0) {
-            const fileMap = {}
-            parts.forEach((pm, i) => {
-              const start = pm.index + pm[0].length
-              const end = i + 1 < parts.length ? parts[i + 1].index : code.length
-              fileMap[normalizeFilePath(pm[1])] = code.slice(start, end).trim()
-            })
-            onInsertCode?.(fileMap)
-          } else if (SRC_LANGS.has(lang)) {
-            // Pattern C: plain C/C++ block, no label
-            onInsertCode?.(code)
-          }
+          const fileMap = extractFiles(`\`\`\`${lang}\n${code}\n\`\`\``)
+          if (fileMap) insertFileMap(onInsertCode, fileMap)
+          else if (SRC_LANGS.has(lang)) onInsertCode?.(code)
         }
       }
       return buf.slice(last.index + last[0].length)
@@ -233,7 +197,6 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
         if (aborted) return
         finalReply += chunk
         streamBuf += chunk
-        // Try to flush completed code blocks as they arrive
         streamBuf = tryFlushCodeBlock(streamBuf)
         setMessages(prev => {
           const updated = [...prev]
@@ -246,7 +209,6 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
       },
       onDone: async () => {
         setStreaming(false)
-        // Self-evolution: extract knowledge after reply
         if (!aborted && finalReply.length > 100) {
           const extracted = await extractKnowledge({
             settings, board,
@@ -270,7 +232,7 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
         setStreaming(false)
       },
     })
-  }, [messages, streaming, hasConfig, settings, board, selectedSkills])
+  }, [messages, streaming, hasConfig, settings, board, selectedSkills, onInsertCode])
 
   function handleKeyDown(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -308,7 +270,6 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
           <div className="code-actions">
             <button className="code-btn" onClick={() => navigator.clipboard.writeText(code)}>复制</button>
             <button className="code-btn code-btn-insert" onClick={() => {
-              // Parse // FILE: path markers into multi-file object
               const filePattern = /\/\/\s*FILE:\s*(\S+)\n([\s\S]*?)(?=\/\/\s*FILE:|$)/g
               const matches = [...code.matchAll(filePattern)]
               if (matches.length > 1) {
@@ -317,7 +278,7 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
                   const p = m[1].includes('/') ? m[1] : `main/${m[1]}`
                   fileMap[p] = m[2].trimEnd()
                 })
-                onInsertCode?.(fileMap)
+                insertFileMap(onInsertCode, fileMap)
               } else {
                 onInsertCode?.(code)
               }
@@ -352,7 +313,6 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
         </div>
       </div>
 
-      {/* Board badge — framework-aware */}
       <div className="board-badge">
         <span className="board-chip">{board.chip}</span>
         <span className="board-name">{board.name}</span>
@@ -361,7 +321,6 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
         {board.framework === 'stm32cube' && <span className="board-idf">{board.mcuType}</span>}
       </div>
 
-      {/* Skill selector */}
       <div className="skill-selector">
         <span className="skill-selector-label">外设模块：</span>
         {board.skills.map(skill => (
@@ -375,7 +334,6 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
         ))}
       </div>
 
-      {/* Messages area */}
       <div className="chat-messages">
         {messages.length === 0 && (
           <div className="chat-empty">
@@ -417,7 +375,6 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
         <div ref={bottomRef} />
       </div>
 
-      {/* Self-evolution knowledge card */}
       {knowledgeCard && (
         <div className="knowledge-card">
           <div className="knowledge-card-header">
@@ -435,7 +392,6 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
         </div>
       )}
 
-      {/* Input area */}
       <div className="chat-input-area">
         {!hasConfig && (
           <div className="no-config-hint">⚠️ 请点击右上角 ⚙ 配置 AI API Key</div>

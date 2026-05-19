@@ -119,7 +119,7 @@ CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y
 \`\`\`
 
 ## Code Output Format — STRICT RULES
-The IDE auto-inserts your code blocks into the project editor. Follow exactly:
+The IDE auto-inserts your code blocks into the project editor. Generate application files only by default.
 
 **Single file**: just write the code block normally.
 
@@ -130,28 +130,28 @@ FILE: main/main.c
 #include ...
 \`\`\`
 
-FILE: main/helper.c
+FILE: main/helper.h
 \`\`\`c
+#pragma once
 ...
 \`\`\`
 
-FILE: sdkconfig.defaults
-\`\`\`
-CONFIG_IDF_TARGET="esp32s3"
-\`\`\`
-
-FILE: CMakeLists.txt
-\`\`\`cmake
-cmake_minimum_required(VERSION 3.16)
+FILE: main/helper.c
+\`\`\`c
+#include "helper.h"
+...
 \`\`\`
 
 Path rules:
-- Source: \`main/main.c\`, \`main/helper.h\`
-- Root config: \`CMakeLists.txt\`, \`sdkconfig.defaults\`, \`partitions.csv\`
-- Component manifest: \`main/idf_component.yml\`
-- Do not generate root \`CMakeLists.txt\` unless explicitly asked; the compiler auto-generates it.
+- Application source only by default: \`main/main.c\`, \`main/main.cpp\`, \`main/*.c\`, \`main/*.cpp\`, \`main/*.h\`, \`main/*.hpp\`
+- If you include a custom quoted header like \`#include "helper.h"\`, you MUST also output \`FILE: main/helper.h\`.
+- Board APIs: include ONLY \`#include "esp32_s3_szp.h"\`.
+- LVGL APIs: include ONLY \`lvgl.h\` / \`esp_lvgl_port.h\` when the LVGL-related skill is selected.
+- Do NOT generate root \`CMakeLists.txt\`, \`main/CMakeLists.txt\`, \`sdkconfig.defaults\`, or \`partitions.csv\` unless the user explicitly asks to edit build config.
+- Dependencies are generated from selected skills via \`main/idf_component.yml\`; do not invent component paths.
 - NEVER set \`EXTRA_COMPONENT_DIRS\` for ESP-IDF bundled examples or managed components.
-- NEVER prefix with project folder (NOT \`myproject/main/main.c\`)
+- NEVER use \`esp_lvgl_util.h\`, \`bsp/bsp.h\`, or \`bsp_board.h\`.
+- NEVER prefix with project folder (NOT \`myproject/main/main.c\`).
 
 Shell/bash blocks: shown as docs only, never auto-inserted.`
 

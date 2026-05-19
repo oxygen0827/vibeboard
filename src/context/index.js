@@ -316,7 +316,7 @@ void assert_failed(uint8_t *file, uint32_t line)
   const files = {
     [mainFile]: mainStub,
     'Makefile': makefile,
-    board.linkerscript || 'STM32F103C8Tx_FLASH.ld': linkerscript,
+    [board.linkerscript || 'STM32F103C8Tx_FLASH.ld']: linkerscript,
     'Inc/main.h': `#ifndef __MAIN_H\n#define __MAIN_H\n\n#include "stm32f1xx_hal.h"\n\nvoid Error_Handler(void);\n\n#endif /* __MAIN_H */\n`,
     'Inc/gpio.h': `#ifndef __GPIO_H\n#define __GPIO_H\n\n#include "stm32f1xx_hal.h"\n\nvoid MX_GPIO_Init(void);\n\n#endif\n`,
     'Src/gpio.c': `#include "gpio.h"\n\nvoid MX_GPIO_Init(void)\n{\n  GPIO_InitTypeDef GPIO_InitStruct = {0};\n\n  __HAL_RCC_GPIOA_CLK_ENABLE();\n  __HAL_RCC_GPIOC_CLK_ENABLE();\n\n  /* PC13 = onboard LED (Blue Pill) */\n  GPIO_InitStruct.Pin = GPIO_PIN_13;\n  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;\n  GPIO_InitStruct.Pull = GPIO_NOPULL;\n  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;\n  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);\n}\n`,

@@ -5,6 +5,7 @@ import SettingsModal from './components/SettingsModal'
 import CompilePanel from './components/CompilePanel'
 import ProjectEditor from './components/ProjectEditor'
 import { BOARDS, DEFAULT_BOARD_ID, getBoardList, getBoard } from './context/boards'
+import { buildGeneratedConfig, filterInsertableFiles } from './utils/projectAssembly'
 import bspHeader from '../backend/compiler-service/template/components/esp32_s3_szp/esp32_s3_szp.h?raw'
 import bspSource from '../backend/compiler-service/template/components/esp32_s3_szp/esp32_s3_szp.c?raw'
 import bspCmake from '../backend/compiler-service/template/components/esp32_s3_szp/CMakeLists.txt?raw'
@@ -13,10 +14,6 @@ import './App.css'
 const STORAGE_KEY = 'esp32-vibe-coder-settings'
 const BOARD_STORAGE_KEY = 'esp32-vibe-coder-board'
 
-/**
- * Return board-appropriate default project files.
- * The user will replace these via AI conversation.
- */
 function getDefaultFiles(boardId) {
   const board = getBoard(boardId)
   if (!board) return { 'main/main.c': '// place your code here\n' }
@@ -25,9 +22,8 @@ function getDefaultFiles(boardId) {
     return { 'sketch.ino': '// Place your Arduino code here\nvoid setup() {\n  Serial.begin(115200);\n}\n\nvoid loop() {\n}\n' }
   }
   if (board.framework === 'stm32cube') {
-    return {} // buildProjectFiles() generates the full structure
+    return {}
   }
-  // Default: ESP-IDF
   return { 'main/main.c': '// Place your ESP-IDF code here\n#include <stdio.h>\n\nvoid app_main(void)\n{\n    printf("Hello from ESP32-Vibe-Coder!\\n");\n}\n' }
 }
 
@@ -51,16 +47,16 @@ function loadSettings() {
 function saveSettings(s) { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)) }
 
 export default function App() {
-  const [settings, setSettings]       = useState(loadSettings)
+  const [settings, setSettings] = useState(loadSettings)
   const [showSettings, setShowSettings] = useState(false)
-  const [showCompile, setShowCompile]  = useState(false)
-  const [rightTab, setRightTab]        = useState('chat')
+  const [showCompile, setShowCompile] = useState(false)
+  const [rightTab, setRightTab] = useState('chat')
   const [pendingLogAnalysis, setPendingLogAnalysis] = useState(null)
-  const [boardId, setBoardId]          = useState(loadInitialBoardId)
+  const [boardId, setBoardId] = useState(loadInitialBoardId)
   const [selectedSkills, setSelectedSkills] = useState([])
   const board = BOARDS[boardId]
+  const generatedFiles = buildGeneratedConfig(boardId, selectedSkills)
 
-  // projectFiles — reset when board changes
   const [projectFiles, setProjectFiles] = useState(() => getDefaultFiles(loadInitialBoardId()))
   const [activeFile, setActiveFile] = useState(() => {
     const files = getDefaultFiles(loadInitialBoardId())
@@ -70,29 +66,22 @@ export default function App() {
   function handleSaveSettings(s) { setSettings(s); saveSettings(s) }
   function handleBoardChange(id) { setBoardId(id); localStorage.setItem(BOARD_STORAGE_KEY, id) }
 
-  // Reset project + skills when switching boards
   useEffect(() => {
-    setProjectFiles(getDefaultFiles(boardId))
-    setSelectedSkills([])
     const files = getDefaultFiles(boardId)
+    setProjectFiles(files)
+    setSelectedSkills([])
     setActiveFile(Object.keys(files)[0] || '')
   }, [boardId])
 
-  // Called by AI with a map of { filename: code } or a single code string
   const handleInsertCode = useCallback((codeOrFiles) => {
     if (typeof codeOrFiles === 'string') {
-      const target = activeFile.endsWith('.c') || activeFile.endsWith('.cpp') || activeFile.endsWith('.h')
-        ? activeFile
-        : 'main/main.c'
+      const target = /\.(c|cc|cpp|cxx|h|hpp|ino)$/.test(activeFile) ? activeFile : 'main/main.c'
       setProjectFiles(prev => ({ ...prev, [target]: codeOrFiles }))
       setActiveFile(target)
     } else {
-      // Multi-file: write everything AI gave us (sources + config files)
-      setProjectFiles(prev => ({ ...prev, ...codeOrFiles }))
-      // Focus the first source file, not a config file
-      const firstSrc = Object.keys(codeOrFiles).find(k =>
-        k.endsWith('.c') || k.endsWith('.cpp') || k.endsWith('.h')
-      )
+      const { accepted } = filterInsertableFiles(codeOrFiles)
+      setProjectFiles(prev => ({ ...prev, ...accepted }))
+      const firstSrc = Object.keys(accepted).find(k => /\.(c|cc|cpp|cxx|h|hpp|ino)$/.test(k))
       if (firstSrc) setActiveFile(firstSrc)
     }
   }, [activeFile])
@@ -109,11 +98,7 @@ export default function App() {
           </div>
           <div className="divider" />
           <div className="board-selector">
-            <select
-              className="board-select-input"
-              value={boardId}
-              onChange={e => handleBoardChange(e.target.value)}
-            >
+            <select className="board-select-input" value={boardId} onChange={e => handleBoardChange(e.target.value)}>
               {getBoardList().map(b => (
                 <option key={b.id} value={b.id}>
                   [{b.framework === 'arduino' ? 'Arduino' : b.framework === 'stm32cube' ? 'STM32Cube' : 'ESP-IDF'}] {b.name} ({b.chip})
@@ -137,10 +122,10 @@ export default function App() {
       </header>
 
       <div className="app-body">
-        {/* Left: Project editor */}
         <div className="editor-pane">
           <ProjectEditor
             files={projectFiles}
+            generatedFiles={generatedFiles}
             referenceFiles={BSP_REFERENCE_FILES}
             activeFile={activeFile}
             onFileChange={(newFiles, newActive) => {
@@ -152,7 +137,6 @@ export default function App() {
           />
         </div>
 
-        {/* Right: Chat + Log */}
         <div className="right-pane">
           <div className="right-tabs">
             <button className={`right-tab ${rightTab === 'chat' ? 'active' : ''}`} onClick={() => setRightTab('chat')}>
@@ -177,9 +161,7 @@ export default function App() {
             ) : (
               <LogPanel
                 onAnalyze={(logs) => {
-                  setPendingLogAnalysis(
-                    `请帮我分析以下 ESP32 设备日志，找出问题原因并给出修复建议：\n\n\`\`\`\n${logs}\n\`\`\``
-                  )
+                  setPendingLogAnalysis(`请帮我分析以下 ESP32 设备日志，找出问题原因并给出修复建议：\n\n\`\`\`\n${logs}\n\`\`\``)
                   setRightTab('chat')
                 }}
               />

@@ -69,6 +69,7 @@
   background: var(--orange);
   flex-shrink: 0;
 }
+.pe-tab-dot.generated { background: var(--text-muted); }
 
 .pe-tabs-actions {
   display: flex;
