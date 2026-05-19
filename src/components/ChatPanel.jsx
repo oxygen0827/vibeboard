@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
@@ -16,9 +16,27 @@ const QUICK_PROMPTS = [
   '生成适合这块板子的sdkconfig.defaults',
 ]
 
+/**
+ * Generate board-appropriate quick prompts from available skills.
+ * Boards with specific hardware get curated prompts; others get
+ * one generic prompt per available skill.
+ */
+function getQuickPrompts(board) {
+  // SZPI: return the curated set
+  if (board.id === 'szpi_esp32s3') return QUICK_PROMPTS
+
+  // Other boards: generate from skill labels
+  const skillLabels = board.skills.map(s => s.label).filter(Boolean)
+  if (skillLabels.length === 0) return ['帮我写一个完整的示例程序']
+
+  return skillLabels.map(label => `帮我实现${label}的功能`)
+}
+
 // Ask AI to extract new knowledge from a completed conversation turn
 async function extractKnowledge({ settings, board, userMsg, aiReply, selectedSkillIds }) {
-  const extractPrompt = `You just helped a user with ESP32-S3 embedded development.
+  // Build valid skill ID pattern from the board's actual skills
+  const validIds = board.skills.map(s => s.id).join('|')
+  const extractPrompt = `You just helped a user with embedded development.
 
 User asked: ${userMsg}
 
@@ -28,7 +46,7 @@ Current skill IDs loaded: ${selectedSkillIds.join(', ') || 'none'}
 
 Task: Does your reply contain a pitfall, a correct usage pattern, or an init sequence that is NOT already documented in the loaded skills?
 If YES, respond with ONLY valid JSON (no markdown):
-{"found": true, "skillId": "<one of: lvgl|audio|camera|imu|wifi|ble|sdcard|gpio|speech|vision|handheld>", "type": "pitfall|usage", "content": "<one concise sentence>"}
+{"found": true, "skillId": "<one of: ${validIds}>", "type": "pitfall|usage", "content": "<one concise sentence>"}
 If NO new knowledge, respond with ONLY: {"found": false}`
 
   let result = ''
@@ -59,7 +77,7 @@ function savePatches(patches) {
   localStorage.setItem('skillPatches', JSON.stringify(patches))
 }
 
-export default function ChatPanel({ settings, board, onInsertCode, initialPrompt, onConsumePrompt, selectedSkills = [], onSkillsChange }) {
+export default function ChatPanel({ settings, board, boardId, onInsertCode, initialPrompt, onConsumePrompt, selectedSkills = [], onSkillsChange }) {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
@@ -70,8 +88,8 @@ export default function ChatPanel({ settings, board, onInsertCode, initialPrompt
 
   // Apply persisted patches on mount
   useEffect(() => {
-    loadPatches().forEach(p => patchSkill(p.skillId, p.type, p.content))
-  }, [])
+    loadPatches().forEach(p => patchSkill(boardId, p.skillId, p.type, p.content))
+  }, [boardId])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -85,6 +103,9 @@ export default function ChatPanel({ settings, board, onInsertCode, initialPrompt
   }, [initialPrompt]) // eslint-disable-line
 
   const hasConfig = settings.apiKey && settings.baseUrl && settings.model
+
+  // Board-appropriate quick prompts
+  const quickPrompts = useMemo(() => getQuickPrompts(board), [board])
 
   function toggleSkill(id) {
     onSkillsChange?.(prev =>
@@ -270,7 +291,7 @@ export default function ChatPanel({ settings, board, onInsertCode, initialPrompt
 
   function acceptKnowledge() {
     if (!knowledgeCard) return
-    patchSkill(knowledgeCard.skillId, knowledgeCard.type, knowledgeCard.content)
+    patchSkill(boardId, knowledgeCard.skillId, knowledgeCard.type, knowledgeCard.content)
     const patches = loadPatches()
     patches.push(knowledgeCard)
     savePatches(patches)
@@ -331,11 +352,13 @@ export default function ChatPanel({ settings, board, onInsertCode, initialPrompt
         </div>
       </div>
 
-      {/* Board badge */}
+      {/* Board badge — framework-aware */}
       <div className="board-badge">
         <span className="board-chip">{board.chip}</span>
         <span className="board-name">{board.name}</span>
-        <span className="board-idf">IDF {board.idfVersion}</span>
+        {board.framework === 'esp-idf' && <span className="board-idf">IDF {board.idfVersion}</span>}
+        {board.framework === 'arduino' && <span className="board-idf">Arduino</span>}
+        {board.framework === 'stm32cube' && <span className="board-idf">{board.mcuType}</span>}
       </div>
 
       {/* Skill selector */}
@@ -360,7 +383,7 @@ export default function ChatPanel({ settings, board, onInsertCode, initialPrompt
             <p>已注入硬件上下文包</p>
             <p className="chat-empty-sub">选择外设模块后，AI 会注入对应详细文档</p>
             <div className="quick-prompts">
-              {QUICK_PROMPTS.map(q => (
+              {quickPrompts.map(q => (
                 <button key={q} className="quick-btn" onClick={() => sendMessage(q)}>{q}</button>
               ))}
             </div>

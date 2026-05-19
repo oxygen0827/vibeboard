@@ -1,33 +1,39 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import ChatPanel from './components/ChatPanel'
 import LogPanel from './components/LogPanel'
 import SettingsModal from './components/SettingsModal'
 import CompilePanel from './components/CompilePanel'
 import ProjectEditor from './components/ProjectEditor'
-import { BOARDS, DEFAULT_BOARD_ID } from './context/boards'
-import bspHeader from '../compiler-service/template/components/esp32_s3_szp/esp32_s3_szp.h?raw'
-import bspSource from '../compiler-service/template/components/esp32_s3_szp/esp32_s3_szp.c?raw'
-import bspCmake from '../compiler-service/template/components/esp32_s3_szp/CMakeLists.txt?raw'
+import { BOARDS, DEFAULT_BOARD_ID, getBoardList, getBoard } from './context/boards'
+import bspHeader from '../backend/compiler-service/template/components/esp32_s3_szp/esp32_s3_szp.h?raw'
+import bspSource from '../backend/compiler-service/template/components/esp32_s3_szp/esp32_s3_szp.c?raw'
+import bspCmake from '../backend/compiler-service/template/components/esp32_s3_szp/CMakeLists.txt?raw'
 import './App.css'
 
 const STORAGE_KEY = 'esp32-vibe-coder-settings'
+const BOARD_STORAGE_KEY = 'esp32-vibe-coder-board'
 
-const DEFAULT_MAIN = `// ESP32 Vibe Coder — 立创实战派ESP32-S3
-// 在右侧与 AI 对话，AI 会直接组织整个项目的文件
-// ESP-IDF v5.4
+/**
+ * Return board-appropriate default project files.
+ * The user will replace these via AI conversation.
+ */
+function getDefaultFiles(boardId) {
+  const board = getBoard(boardId)
+  if (!board) return { 'main/main.c': '// place your code here\n' }
 
-#include <stdio.h>
-#include "esp32_s3_szp.h"
-
-void app_main(void)
-{
-    bsp_i2c_init();
-    pca9557_init();
-    bsp_lvgl_start();
-
-    // 在这里开始你的应用...
+  if (board.framework === 'arduino') {
+    return { 'sketch.ino': '// Place your Arduino code here\nvoid setup() {\n  Serial.begin(115200);\n}\n\nvoid loop() {\n}\n' }
+  }
+  if (board.framework === 'stm32cube') {
+    return {} // buildProjectFiles() generates the full structure
+  }
+  // Default: ESP-IDF
+  return { 'main/main.c': '// Place your ESP-IDF code here\n#include <stdio.h>\n\nvoid app_main(void)\n{\n    printf("Hello from ESP32-Vibe-Coder!\\n");\n}\n' }
 }
-`
+
+function loadInitialBoardId() {
+  return localStorage.getItem(BOARD_STORAGE_KEY) || DEFAULT_BOARD_ID
+}
 
 const BSP_REFERENCE_FILES = {
   'components/esp32_s3_szp/esp32_s3_szp.h': bspHeader,
@@ -50,15 +56,27 @@ export default function App() {
   const [showCompile, setShowCompile]  = useState(false)
   const [rightTab, setRightTab]        = useState('chat')
   const [pendingLogAnalysis, setPendingLogAnalysis] = useState(null)
-  const [boardId]                      = useState(DEFAULT_BOARD_ID)
+  const [boardId, setBoardId]          = useState(loadInitialBoardId)
   const [selectedSkills, setSelectedSkills] = useState([])
   const board = BOARDS[boardId]
 
-  // projectFiles contains only source files (.c/.h etc) — config files generated at compile time
-  const [projectFiles, setProjectFiles] = useState({ 'main/main.c': DEFAULT_MAIN })
-  const [activeFile, setActiveFile] = useState('main/main.c')
+  // projectFiles — reset when board changes
+  const [projectFiles, setProjectFiles] = useState(() => getDefaultFiles(loadInitialBoardId()))
+  const [activeFile, setActiveFile] = useState(() => {
+    const files = getDefaultFiles(loadInitialBoardId())
+    return Object.keys(files)[0] || ''
+  })
 
   function handleSaveSettings(s) { setSettings(s); saveSettings(s) }
+  function handleBoardChange(id) { setBoardId(id); localStorage.setItem(BOARD_STORAGE_KEY, id) }
+
+  // Reset project + skills when switching boards
+  useEffect(() => {
+    setProjectFiles(getDefaultFiles(boardId))
+    setSelectedSkills([])
+    const files = getDefaultFiles(boardId)
+    setActiveFile(Object.keys(files)[0] || '')
+  }, [boardId])
 
   // Called by AI with a map of { filename: code } or a single code string
   const handleInsertCode = useCallback((codeOrFiles) => {
@@ -91,8 +109,17 @@ export default function App() {
           </div>
           <div className="divider" />
           <div className="board-selector">
-            <span className="board-selector-chip">{board.chip}</span>
-            <span className="board-selector-name">{board.name}</span>
+            <select
+              className="board-select-input"
+              value={boardId}
+              onChange={e => handleBoardChange(e.target.value)}
+            >
+              {getBoardList().map(b => (
+                <option key={b.id} value={b.id}>
+                  [{b.framework === 'arduino' ? 'Arduino' : b.framework === 'stm32cube' ? 'STM32Cube' : 'ESP-IDF'}] {b.name} ({b.chip})
+                </option>
+              ))}
+            </select>
           </div>
         </div>
         <div className="header-right">
@@ -140,6 +167,7 @@ export default function App() {
               <ChatPanel
                 settings={settings}
                 board={board}
+                boardId={boardId}
                 onInsertCode={handleInsertCode}
                 initialPrompt={pendingLogAnalysis}
                 onConsumePrompt={() => setPendingLogAnalysis(null)}
@@ -168,6 +196,7 @@ export default function App() {
         <CompilePanel
           projectFiles={projectFiles}
           selectedSkills={selectedSkills}
+          boardId={boardId}
           onClose={() => setShowCompile(false)}
         />
       )}

@@ -1,6 +1,15 @@
-// Base context — always injected for 立创实战派ESP32-S3
-// Contains: board identity, pin map, PCA9557, critical pitfalls, sdkconfig
-export const basePrompt = `You are an expert embedded software engineer for the 立创实战派ESP32-S3 development board.
+/**
+ * 立创实战派ESP32-S3 — Board Definition
+ *
+ * Hardware context (base prompt) + skill registry for the SZPI board.
+ * This is the "硬件 DNA" that makes AI understand this specific board.
+ */
+
+import { szpi_esp32s3Skills } from './skills/index'
+
+// ── Hardware Context (injected into every AI conversation) ────
+
+const basePrompt = `You are an expert embedded software engineer for the 立创实战派ESP32-S3 development board.
 Use ESP-IDF v5.4. Always generate complete, compilable C code unless the user asks otherwise.
 
 ## Board: 立创实战派ESP32-S3
@@ -144,5 +153,24 @@ Path rules:
 - NEVER set \`EXTRA_COMPONENT_DIRS\` for ESP-IDF bundled examples or managed components.
 - NEVER prefix with project folder (NOT \`myproject/main/main.c\`)
 
-Shell/bash blocks: shown as docs only, never auto-inserted.
-`
+Shell/bash blocks: shown as docs only, never auto-inserted.`
+
+// ── Board Object ──────────────────────────────────────────────
+
+export const szpi_esp32s3Board = {
+  id: 'szpi_esp32s3',
+  name: '立创实战派 ESP32-S3',
+  chip: 'ESP32-S3',
+  idfTarget: 'esp32s3',
+  idfVersion: '5.4',
+  module: 'ESP32-S3-WROOM-1-N16R8',
+  flashSize: '16MB',
+  psramSize: '8MB Octal',
+  description: '16MB Flash + 8MB Octal PSRAM, 320x240 ST7789 LCD, ES8311+ES7210 audio, GC0308 camera, QMI8658 IMU',
+
+  /** Hardware context injected into AI system prompt */
+  basePrompt,
+
+  /** Available peripheral skills for this board */
+  skills: szpi_esp32s3Skills,
+}
