@@ -2,3 +2,10 @@ node_modules/
 dist/
 .env
 *.log
+.DS_Store
+
+# Local presentation/source-material workspaces
+outputs/
+图片/
+小光/
+VibeBoard商业计划书_演示文稿.pptx

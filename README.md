@@ -32,7 +32,6 @@ to the build and device-log workflow.
 - Wi-Fi OTA, BLE OTA, and firmware download workflows
 - Device logs through WebSocket or Web Serial
 - AI-assisted log analysis
-- Reference project collection for studying hardware-agent architecture
 
 ## Supported Boards
 
@@ -84,7 +83,7 @@ Backend/compiler assets:
 Install frontend dependencies and start the Vite dev server:
 
 ```bash
-git clone --recurse-submodules https://github.com/wangqioo/VibeBoard.git
+git clone https://github.com/wangqioo/VibeBoard.git
 cd VibeBoard
 npm install
 npm run dev
@@ -94,12 +93,6 @@ Open:
 
 ```text
 http://localhost:5173
-```
-
-If you already cloned without submodules, initialize the reference projects with:
-
-```bash
-git submodule update --init --recursive
 ```
 
 ## Compiler Service
@@ -135,17 +128,14 @@ MiniMax, and local Ollama-compatible endpoints.
 Any OpenAI-compatible endpoint can be used by setting the base URL, model, and
 API key in the app settings.
 
-## Reference Project Collection
+## Business Documents
 
-This repository includes a `参考项目合集/` folder with Git submodules for studying
-related hardware-agent projects:
+Investor-facing materials are kept under `docs/business/`:
 
-- `RP2350-Monitor`: firmware, CLI, protocol monitor, logic analyzer, and host UI
-- `development-board-toolchain-gui`: macOS GUI and board-plugin packaging model
-- `DBT-Agent-Plugins`: Codex/OpenCode/MCP plugin distribution model
-- `esp-agents-firmware`: Espressif agent firmware reference for ESP-based AI devices
-
-These are references, not runtime dependencies of VibeBoard.
+- `business-plan.md`
+- `professional-business-plan.md`
+- `strategy-summary.md`
+- `pitch-deck.pptx`
 
 ## Development Notes
 
