@@ -7,3 +7,6 @@
 [submodule "参考项目合集/development-board-toolchain-gui"]
 	path = 参考项目合集/development-board-toolchain-gui
 	url = https://github.com/wangqioo/development-board-toolchain-gui.git
+[submodule "参考项目合集/esp-agents-firmware"]
+	path = 参考项目合集/esp-agents-firmware
+	url = https://github.com/wangqioo/esp-agents-firmware.git

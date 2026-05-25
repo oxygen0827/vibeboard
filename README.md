@@ -143,6 +143,7 @@ related hardware-agent projects:
 - `RP2350-Monitor`: firmware, CLI, protocol monitor, logic analyzer, and host UI
 - `development-board-toolchain-gui`: macOS GUI and board-plugin packaging model
 - `DBT-Agent-Plugins`: Codex/OpenCode/MCP plugin distribution model
+- `esp-agents-firmware`: Espressif agent firmware reference for ESP-based AI devices
 
 These are references, not runtime dependencies of VibeBoard.
 
