@@ -137,6 +137,8 @@ Investor-facing materials are kept under `docs/business/`:
 - `strategy-summary.md`
 - `pitch-deck.pptx`
 
+The static business presentation site lives under `business-site/`.
+
 ## Development Notes
 
 - Keep board knowledge in `src/context/boards/<board-id>/`.
