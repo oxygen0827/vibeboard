@@ -1,0 +1,9 @@
+[submodule "参考项目合集/RP2350-Monitor"]
+	path = 参考项目合集/RP2350-Monitor
+	url = https://github.com/wangqioo/RP2350-Monitor.git
+[submodule "参考项目合集/DBT-Agent-Plugins"]
+	path = 参考项目合集/DBT-Agent-Plugins
+	url = https://github.com/wangqioo/DBT-Agent-Plugins.git
+[submodule "参考项目合集/development-board-toolchain-gui"]
+	path = 参考项目合集/development-board-toolchain-gui
+	url = https://github.com/wangqioo/development-board-toolchain-gui.git
