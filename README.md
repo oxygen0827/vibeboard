@@ -1,26 +1,193 @@
 # VibeBoard
 
-VibeBoard 是一个面向 ESP-IDF 开发板的 AI 辅助硬件开发工作台。
+VibeBoard 是一个面向 ESP-IDF 开发板的 AI 硬件开发工作台。它把板卡上下文、自然语言代码生成、官方例程编译、云端 ESP-IDF 构建、HTTPS 网页 USB 直刷、WiFi OTA、BLE OTA 和设备反馈串成一条完整链路。
 
-它不是简单的聊天窗口，而是把开发板硬件资料、外设能力、ESP-IDF 工程规则、代码生成、编译日志、固件产物和设备反馈串成一个浏览器 IDE。目标是让嵌入式开发过程更接近一次可验证的对话：描述需求，AI 基于板卡上下文生成代码，系统组装工程，本地 ESP-IDF 编译，失败后把日志反馈给 AI，再继续修正。
+当前目标不是做一个泛泛的聊天工具，而是让嵌入式开发可以这样推进：
 
-## 项目定位
+```text
+描述需求 / 选择官方例程
+  -> 生成或选择 ESP-IDF 工程
+  -> 云端编译
+  -> USB 全量烧录或 OTA 推送
+  -> 读取设备日志和运行结果
+  -> 继续让 AI 修正
+```
 
-通用 AI 编程工具经常缺少嵌入式开发里最关键的硬件约束：
+## 当前支持的硬件
 
-- 哪些 GPIO 已经接了 LCD、摄像头、I2S、SDMMC、I2C 设备
-- 哪些 GPIO 被 Flash、PSRAM、启动模式或板级电路占用，不能随便使用
-- BSP 头文件、初始化顺序、外设地址和板级陷阱
-- ESP-IDF 工程结构、CMake、sdkconfig、component manifest、分区表
-- 编译错误、烧录结果、设备日志和运行时症状
-
-VibeBoard 的核心做法是：把一块开发板抽象成一个硬件上下文包，再把上下文注入 AI。AI 负责生成应用代码，系统负责工程配置和编译验证。
-
-## 当前支持的开发板
-
-| 开发板 | 芯片 | 框架 | 说明 |
+| 开发板 | 芯片 | 框架 | 状态 |
 | --- | --- | --- | --- |
-| 立创实战派 ESP32-S3 | ESP32-S3 | ESP-IDF v5.4 | 已内置较完整的板卡上下文、BSP 约束和外设 skill |
+| 立创实战派 ESP32-S3 / SZPI ESP32-S3 | ESP32-S3 | ESP-IDF v5.4 | 当前主力支持 |
+
+VibeBoard 现在是 ESP-IDF-first。Arduino 和泛用多板卡模板不是当前重点。
+
+## 当前已跑通的能力
+
+- 自然语言生成 ESP-IDF 应用代码。
+- 左侧树状项目文件视图，接近 VS Code 的工程排布方式。
+- 系统自动生成 ESP-IDF 工程配置：
+  - 根目录 `CMakeLists.txt`
+  - `main/CMakeLists.txt`
+  - `sdkconfig.defaults`
+  - `main/idf_component.yml`
+  - `partitions.csv`
+- 官方 SZPI 例程原封不动编译，不经过 AI 改写。
+- OTA 基础固件编译，支持填写 WiFi SSID / 密码。
+- 云端 ESP-IDF 编译服务。
+- HTTPS 网页 USB 直刷，基于 Web Serial 和 `esptool-js`。
+- 编译结果带 flash manifest 时，USB 会全量烧录：
+  - bootloader -> `0x0`
+  - partition table -> `0x8000`
+  - OTA data -> `0xD000`
+  - app -> `0x10000`
+- 编译结果只有 app 时，USB 退回到 app-only 烧录 `0x10000`。
+- 对运行 OTA 基础固件的设备执行 WiFi OTA 推送。
+- BLE OTA 基础能力。
+- 编译证据、错误摘要和 AI 修复入口。
+
+## 当前在线地址
+
+用于 USB 直刷的 HTTPS 地址：
+
+```text
+https://fireplace-verification-holder-properties.trycloudflare.com
+```
+
+原有 FRP HTTP 地址：
+
+```text
+http://150.158.146.192:6054/
+```
+
+USB 直刷必须使用 HTTPS 地址。Chrome / Edge 只有在可信安全上下文中才会开放 `navigator.serial`，所以普通 HTTP FRP 页面不能直接连接 USB 串口。
+
+当前 HTTPS 链路是 Cloudflare Quick Tunnel：
+
+```text
+浏览器
+  -> Cloudflare HTTPS
+  -> 家里 4060Ti 服务器上的 cloudflared
+  -> http://127.0.0.1:4100
+  -> VibeBoard nginx 容器
+```
+
+Quick Tunnel 的域名可能在服务重启后变化。家里服务器上查看最新地址：
+
+```bash
+tail -80 /home/wq/vibeboard-deploy/cloudflared-vibeboard.log
+```
+
+管理隧道服务：
+
+```bash
+systemctl --user status vibeboard-cloudflared.service
+systemctl --user restart vibeboard-cloudflared.service
+```
+
+部署细节见 [deploy/HTTPS_USB_FLASH.md](./deploy/HTTPS_USB_FLASH.md)。
+
+## 完整使用流程
+
+### 1. 打开网页
+
+使用 Chrome 或 Edge 打开：
+
+```text
+https://fireplace-verification-holder-properties.trycloudflare.com
+```
+
+### 2. 首次刷 OTA 基础固件
+
+如果后续要通过 WiFi OTA 推送官方例程或新工程，板子必须先运行带 OTA 分区表的 OTA 基础固件。
+
+操作步骤：
+
+1. 打开 **编译 & 烧录**。
+2. 选择 **OTA 基础固件**。
+3. 填 WiFi SSID 和密码。
+4. 点击编译。
+5. 编译成功后点击 **USB 直刷（Web Serial）**。
+
+OTA 基础固件编译结果会返回完整 flash manifest，USB 直刷会写入：
+
+```text
+bootloader        0x0
+partition-table   0x8000
+ota-data          0xD000
+app               0x10000
+```
+
+这个全量烧录很重要。如果只把 app 写到 `0x10000`，设备虽然能启动并连接 WiFi，但 OTA 时会失败：
+
+```text
+no ota partition
+```
+
+### 3. 获取设备 IP
+
+OTA 基础固件启动后会在串口日志里打印 IP：
+
+```text
+Got IP: 192.168.1.53
+HTTP OTA server listening on port 3232
+```
+
+设备会提供这些接口：
+
+```text
+http://<设备IP>:3232/ping
+http://<设备IP>:3232/info
+http://<设备IP>:3232/ota
+```
+
+当前版本还没有把 IP 显示到开发板屏幕上。先通过串口日志或路由器 DHCP 列表查看。
+
+### 4. 编译并 OTA 推送官方例程
+
+1. 打开 **编译 & 烧录**。
+2. 选择 **官方例程**。
+3. 选择例程，例如 `01-boot_key`。
+4. 点击编译。
+5. 在 **设备 IP（WiFi OTA）** 中输入设备 IP，例如：
+
+```text
+192.168.1.53
+```
+
+6. 点击 **WiFi OTA 推送**。
+
+官方例程会从服务器上的原始工程目录直接编译，AI 不会改写源码。
+
+注意：大多数官方例程本身不带 OTA 服务。OTA 推送官方例程成功后，板子会运行官方例程，后续可能不能继续 OTA。想再换固件时，通常需要再次 USB 直刷 **OTA 基础固件**，再 OTA 推送下一个工程。
+
+### 5. 生成新应用代码
+
+1. 在聊天面板选择外设 skill。
+2. 点击 **生成代码** 让 AI 修改项目文件。
+3. 点击 **解释** 只聊天，不修改项目。
+4. 生成结果会写入左侧项目树。
+5. 编译 **当前工程**。
+6. 通过 USB、WiFi OTA、BLE OTA 或下载 `.bin` 交付固件。
+
+AI 只能生成应用源码。`CMakeLists.txt`、`sdkconfig.defaults`、`idf_component.yml`、`partitions.csv` 和 BSP/component 文件由系统生成，不允许 AI 直接覆盖。
+
+## 官方例程
+
+编译服务从容器内读取官方例程：
+
+```text
+/compiler/examples
+```
+
+当前部署使用的原始例程包是：
+
+```text
+/Users/wq/Desktop/szpi-s3-esp/szpi-s3-esp-01-12.zip
+```
+
+前端注册的官方例程元数据在 [src/data/officialExamples.js](./src/data/officialExamples.js)，当前是 `01` 到 `12`。
+
+## 板卡上下文和 Skill
 
 板卡定义入口：
 
@@ -30,18 +197,16 @@ src/context/boards/szpi_esp32s3/definition.js
 
 当前板卡上下文包含：
 
-- ESP32-S3-WROOM-1-N16R8，16MB Flash，8MB Octal PSRAM
-- I2C 总线：PCA9557、QMI8658、ES7210、ES8311、FT6336
-- SPI LCD：ST7789，320x240，RGB565
-- I2S 音频：ES8311 播放、ES7210 录音
-- SDMMC、DVP 摄像头、BOOT 按键、LCD 背光
-- 保留 GPIO：例如 GPIO35/36/37 被 Octal PSRAM 占用，不能使用
-- 板级 BSP 头文件和函数：必须使用 `#include "esp32_s3_szp.h"`
-- 常见陷阱：PCA9557 初始化顺序、音频 PA_EN、摄像头 PWDN、I2C 地址、PSRAM 配置等
+- ESP32-S3-WROOM-1-N16R8，16MB Flash，8MB Octal PSRAM。
+- I2C 总线：PCA9557、QMI8658、ES7210、ES8311、FT6336。
+- SPI LCD：ST7789，320x240，RGB565。
+- I2S 音频：ES8311 播放、ES7210 录音。
+- SDMMC、DVP 摄像头、BOOT 按键、LCD 背光。
+- 保留 GPIO，例如 GPIO35/36/37 被 Octal PSRAM 占用。
+- 板级 BSP 头文件和函数：`#include "esp32_s3_szp.h"`。
+- 常见陷阱：PCA9557 初始化顺序、音频 PA_EN、摄像头 PWDN、I2C 地址、PSRAM 配置等。
 
-## Skill 机制
-
-板卡能力拆成多个 skill，位于：
+板卡能力拆成 skill：
 
 ```text
 src/context/boards/szpi_esp32s3/skills/
@@ -61,387 +226,108 @@ src/context/boards/szpi_esp32s3/skills/
 - `vision`
 - `handheld`
 
-每个 skill 可以提供两类信息：
+每个 skill 可以提供：
 
-1. `systemPrompt`
+- 注入 AI 的外设使用说明和限制。
+- ESP-IDF 工程配置需求。
+- 分区表、组件依赖、sdkconfig 片段和测试约束。
 
-   注入给 AI 的外设使用说明、初始化顺序、推荐 API、注意事项和禁用做法。
+## 本地开发
 
-2. `projectConfig`
-
-   用来生成 ESP-IDF 工程配置，例如：
-
-   - `sdkconfig.defaults`
-   - `main/idf_component.yml`
-   - `main/CMakeLists.txt`
-   - `partitions.csv`
-   - 额外源文件
-   - 编译选项
-   - SPIFFS 分区
-
-这意味着用户勾选不同 skill，AI 会获得不同上下文，工程配置也会随之变化。
-
-## AI 如何结合硬件信息生成代码
-
-项目里有两条 AI 路径：普通解释对话和结构化代码生成。
-
-### 1. 普通对话
-
-普通聊天入口在：
-
-```text
-src/components/ChatPanel.jsx
-```
-
-发送消息时，系统会调用当前板卡的：
-
-```js
-board.buildSystemPrompt(selectedSkills)
-```
-
-最终 prompt 由两部分组成：
-
-```text
-板卡 basePrompt
-+ 用户选中的 skill systemPrompt
-```
-
-因此 AI 不只是看到用户一句话，还会看到开发板硬件约束、BSP 函数、GPIO 占用、外设地址、ESP-IDF 版本和代码输出规则。
-
-普通对话适合解释、分析、询问实现方案。它不会直接修改工程文件。
-
-### 2. 结构化代码生成
-
-结构化生成逻辑在：
-
-```text
-src/utils/codeGeneration.js
-```
-
-用户点击生成代码时，系统要求 AI 只返回 JSON，不能返回 Markdown、解释文字或散乱代码块。格式如下：
-
-```json
-{
-  "files": [
-    { "path": "main/main.c", "content": "..." },
-    { "path": "main/helper.h", "content": "..." },
-    { "path": "main/helper.c", "content": "..." }
-  ]
-}
-```
-
-生成规则很明确：
-
-- 只能生成应用源码
-- 必须包含 `main/main.c` 或 `main/main.cpp`
-- `main/main.c` 或 `main/main.cpp` 里必须有 `app_main`
-- 可以拆分 helper 文件
-- 如果 include 了本地头文件，必须同时生成该头文件
-- 板级 API 只能 include `esp32_s3_szp.h`
-- 不允许 AI 生成或修改 ESP-IDF 配置文件
-
-## 文件校验和放置规则
-
-AI 返回结果会经过：
-
-```text
-src/utils/filePlacement.js
-src/utils/codeGeneration.js
-```
-
-系统只接受这些应用文件：
-
-```text
-main/main.c
-main/main.cpp
-main/*.c
-main/*.cpp
-main/*.h
-main/*.hpp
-main/*.s
-```
-
-这些文件默认会被拒绝：
-
-```text
-CMakeLists.txt
-main/CMakeLists.txt
-sdkconfig.defaults
-main/idf_component.yml
-partitions.csv
-components/*
-```
-
-这样做的原因是：ESP-IDF 配置由 VibeBoard 根据板卡和 skill 自动生成，不能交给 AI 自由发挥。AI 主要负责应用层逻辑，系统负责工程结构和依赖边界。
-
-## ESP-IDF 工程如何生成
-
-工程组装逻辑在：
-
-```text
-src/utils/projectAssembly.js
-src/context/index.js
-```
-
-核心函数：
-
-```js
-buildProjectFiles(boardId, projectName, selectedSkillIds)
-assembleCompileFiles({ boardId, projectFiles, selectedSkills })
-```
-
-流程是：
-
-1. 根据当前 board 和 selected skills 生成系统配置文件
-2. 从用户/AI 的 projectFiles 中过滤掉系统配置文件
-3. 合并应用源码和系统生成配置
-4. 传给 compiler-service 编译
-
-系统会自动生成：
-
-```text
-CMakeLists.txt
-main/CMakeLists.txt
-sdkconfig.defaults
-main/idf_component.yml
-partitions.csv
-```
-
-其中：
-
-- `sdkconfig.defaults` 由板卡基础配置和 skill 配置合并
-- `main/idf_component.yml` 由 skill 声明的 managed components 生成
-- `main/CMakeLists.txt` 会包含 BSP 组件和 skill 所需组件
-- 如果 skill 需要 SPIFFS，会自动追加 `spiffs_create_partition_image`
-- 多个 skill 的分区表会按名称合并，优先保留更大的分区
-
-## 编译服务
-
-前端编译客户端：
-
-```text
-src/utils/compiler.js
-```
-
-后端服务：
-
-```text
-backend/compiler-service/server.py
-```
-
-本地开发时，Vite 代理：
-
-```text
-/compile -> http://127.0.0.1:8760
-/health  -> http://127.0.0.1:8760
-```
-
-编译服务提供：
-
-```text
-GET  /health
-POST /compile
-```
-
-`POST /compile` 会：
-
-1. 复制 `backend/compiler-service/template`
-2. 写入 AI 生成的应用源码和系统配置文件
-3. 调用 `idf.py build`
-4. 通过 SSE 流式返回编译日志
-5. 编译成功后返回 base64 固件 bin
-6. 编译失败时返回错误摘要
-
-前端会把日志实时显示出来。成功时可以下载固件，失败时可以把错误日志作为下一轮 AI 修复输入。
-
-## 本地部署
-
-### 前端
+安装前端依赖并启动 Vite：
 
 ```bash
+git clone https://github.com/wangqioo/VibeBoard.git
+cd VibeBoard
 npm install
 npm run dev
 ```
 
-默认访问：
+打开：
 
 ```text
 http://localhost:5173
 ```
 
-如果端口被占用，Vite 会自动切换到下一个端口，例如：
+`localhost` 也是浏览器安全上下文，所以本地开发时 Web Serial 可以在 HTTP localhost 下使用。
 
-```text
-http://localhost:5174
-```
+## 编译服务
 
-### 编译服务：Docker 方式
+编译服务位于 [backend/compiler-service](./backend/compiler-service)。
 
-README 原始设计推荐 Docker：
+构建并运行：
 
 ```bash
 cd backend/compiler-service
 docker build -t vibeboard-esp32-compiler .
-docker run -d -p 8760:8760 vibeboard-esp32-compiler
+docker run -d --name esp32-compiler -p 8760:8760 vibeboard-esp32-compiler
 ```
 
-这种方式不会依赖本机 ESP-IDF。
+服务接口：
 
-### 编译服务：使用本机 ESP-IDF
+| 接口 | 作用 |
+| --- | --- |
+| `GET /health` | 编译服务健康检查 |
+| `GET /examples` | 列出已上传官方例程 |
+| `POST /compile` | 编译当前组装工程 |
+| `POST /compile-example` | 原封不动编译官方例程 |
+| `POST /compile-ota-receiver` | 编译 WiFi OTA 基础固件 |
 
-如果本机已经安装 ESP-IDF，可以直接启动 Python 服务，并指定模板目录和 `IDF_PATH`。
+构建结果通过 Server-Sent Events 流式返回。成功时返回 app `.bin`，并在可用时返回 `flashFiles`，供网页 USB 全量烧录。
 
-Windows 示例：
+## 关键源码结构
 
-```powershell
-$env:TEMPLATE_DIR="C:\Users\100448405\VibeBoard\backend\compiler-service\template"
-$env:IDF_PATH="C:\Espressif\v5.4\esp-idf"
-python server.py
+- [src/components/ChatPanel.jsx](./src/components/ChatPanel.jsx)：AI 对话和生成代码。
+- [src/components/ProjectEditor.jsx](./src/components/ProjectEditor.jsx)：项目树和源码编辑。
+- [src/components/CompilePanel.jsx](./src/components/CompilePanel.jsx)：编译、USB 烧录、WiFi OTA、BLE OTA、下载。
+- [src/context/boards](./src/context/boards)：板卡定义和 skill。
+- [src/utils/codeGeneration.js](./src/utils/codeGeneration.js)：结构化 AI 生成。
+- [src/utils/projectAssembly.js](./src/utils/projectAssembly.js)：系统拥有的 ESP-IDF 工程文件生成。
+- [src/utils/projectValidation.js](./src/utils/projectValidation.js)：编译前项目校验。
+- [src/utils/compiler.js](./src/utils/compiler.js)：编译服务客户端。
+- [src/utils/usbFlash.js](./src/utils/usbFlash.js)：Web Serial USB 烧录。
+- [src/utils/ota.js](./src/utils/ota.js)：HTTP OTA 推送。
+- [src/utils/bleOta.js](./src/utils/bleOta.js)：BLE OTA 推送。
+- [src/domain/workflow](./src/domain/workflow)：工作流状态和失败分类。
+- [src/domain/program](./src/domain/program)：程序 manifest schema 和校验。
+- [src/domain/evidence](./src/domain/evidence)：构建证据。
+
+架构说明：
+
+- [CONTEXT.md](./CONTEXT.md)
+- [docs/architecture-natural-language-hardware-automation.md](./docs/architecture-natural-language-hardware-automation.md)
+
+## 测试
+
+运行当前聚焦测试：
+
+```bash
+npm run test:official-examples-backend
+npm run test:project-validation
+npm run test:code-generation
+npm run test:file-placement
+npm run test:project-config
+npm run test:program-manifest
+npm run test:build-evidence
+npm run build
 ```
 
-服务启动后检查：
+## 生产化 HTTPS 方案
+
+当前 `trycloudflare.com` 链接适合立即使用和演示。长期稳定生产地址建议改成：
+
+1. Cloudflare Named Tunnel 绑定真实域名。
+2. FRP `type = "https"`，并在 frps 开启 `vhostHTTPSPort = 443`。
+3. FRP TCP 透传公网 `443` 到家里服务器上的 Caddy/nginx HTTPS 入口。
+
+当前 frps 是 TCP 端口转发为主：
 
 ```text
-http://127.0.0.1:8760/health
+vhostHTTPPort = 0
+vhostHTTPSPort = 0
 ```
 
-当前本机部署使用的是：
-
-```text
-C:\Espressif\v5.4\esp-idf
-```
-
-不会重装或覆盖 ESP-IDF 工具链。
-
-## 主要目录
-
-```text
-src/components/ChatPanel.jsx
-```
-
-AI 对话、流式输出、结构化生成入口、skill 知识提取。
-
-```text
-src/components/ProjectEditor.jsx
-```
-
-工程文件编辑器。
-
-```text
-src/components/CompilePanel.jsx
-```
-
-编译、固件输出和下载流程。
-
-```text
-src/components/LogPanel.jsx
-```
-
-设备日志和 AI 辅助诊断。
-
-```text
-src/context/boards/
-```
-
-板卡定义、硬件上下文和 skill 注册。
-
-```text
-src/context/index.js
-```
-
-板卡 prompt 组装、skill 配置合并、ESP-IDF 工程配置生成。
-
-```text
-src/utils/codeGeneration.js
-```
-
-结构化代码生成 prompt、JSON 解析、生成结果校验。
-
-```text
-src/utils/filePlacement.js
-```
-
-路径归一化、源码/配置文件判定、安全路径检查。
-
-```text
-src/utils/projectAssembly.js
-```
-
-编译前工程文件组装。
-
-```text
-src/utils/compiler.js
-```
-
-SSE 编译客户端。
-
-```text
-backend/compiler-service/
-```
-
-ESP-IDF 编译服务和工程模板。
-
-## 当前设计边界
-
-VibeBoard 的关键边界是：
-
-```text
-AI 生成应用代码
-系统生成 ESP-IDF 配置
-本地 compiler-service 验证结果
-```
-
-AI 可以生成：
-
-```text
-main/main.c
-main/main.cpp
-main/*.c
-main/*.cpp
-main/*.h
-main/*.hpp
-```
-
-AI 不应该生成：
-
-```text
-CMakeLists.txt
-main/CMakeLists.txt
-sdkconfig.defaults
-main/idf_component.yml
-partitions.csv
-components/*
-```
-
-这个边界能显著降低 AI 破坏 ESP-IDF 工程结构的概率。
-
-## 后续改进方向
-
-从代码结构看，项目下一步最值得加强的是：
-
-1. 板卡上下文进一步结构化
-
-   现在大量硬件信息在 `basePrompt` 中，后续可以拆成机器可读字段，例如 pin map、reserved pins、bus devices、BSP APIs、known pitfalls。
-
-2. 增加硬件冲突检查
-
-   在 AI 代码进入工程前，扫描 GPIO 使用、I2C 地址、外设初始化顺序，提前拒绝明显错误。
-
-3. 编译错误分类
-
-   当前 compiler-service 会提取错误摘要。后续可以进一步分类为 include 错误、undefined reference、CMake 错误、component 错误、sdkconfig 错误。
-
-4. AI 修复闭环
-
-   编译失败后，把结构化错误和当前源码交给 AI，只允许它 patch `main/` 下的应用文件。
-
-5. 多开发板支持
-
-   新增开发板时，只需要增加 board definition、skills 和模板/BSP 支持，前端流程可以复用。
-
-6. 日志和硬件反馈闭环
-
-   将 Web Serial、WebSocket 日志和 AI 诊断结合，让 AI 不只看编译错误，也能看运行时异常。
+所以今天使用 Cloudflare Quick Tunnel 来提供浏览器可信 HTTPS。
 
 ## License
 

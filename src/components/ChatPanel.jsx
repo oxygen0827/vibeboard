@@ -4,7 +4,13 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { completeChat, streamChat } from '../utils/aiApi'
 import { patchSkill } from '../context/index'
-import { buildCodeGenerationMessages, parseGeneratedFilesResponse } from '../utils/codeGeneration'
+import {
+  buildBuildRepairMessages,
+  buildManifestCodeGenerationMessages,
+  buildProgramManifestMessages,
+  parseGeneratedFilesResponse,
+  parseProgramManifestResponse,
+} from '../utils/codeGeneration'
 import './ChatPanel.css'
 
 const QUICK_PROMPTS = [
@@ -66,7 +72,7 @@ function savePatches(patches) {
   localStorage.setItem('skillPatches', JSON.stringify(patches))
 }
 
-export default function ChatPanel({ settings, board, boardId, onInsertCode, initialPrompt, onConsumePrompt, selectedSkills = [], onSkillsChange }) {
+export default function ChatPanel({ settings, board, boardId, onInsertCode, initialPrompt, onConsumePrompt, repairRequest, onConsumeRepairRequest, selectedSkills = [], onSkillsChange }) {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
@@ -90,6 +96,13 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
       onConsumePrompt?.()
     }
   }, [initialPrompt]) // eslint-disable-line
+
+  useEffect(() => {
+    if (repairRequest) {
+      repairBuildFailure(repairRequest)
+      onConsumeRepairRequest?.()
+    }
+  }, [repairRequest]) // eslint-disable-line
 
   const hasConfig = settings.apiKey && settings.baseUrl && settings.model
   const quickPrompts = useMemo(() => getQuickPrompts(board), [board])
@@ -162,8 +175,8 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
     })
   }, [messages, streaming, hasConfig, settings, board, selectedSkills, onInsertCode])
 
-  async function generateCodeFromInput() {
-    const text = input.trim()
+  async function generateCodeFromInput(textOverride = null) {
+    const text = typeof textOverride === 'string' ? textOverride.trim() : input.trim()
     if (!text || generating || streaming || !hasConfig) return
     setGenerating(true)
     setKnowledgeCard(null)
@@ -173,18 +186,60 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
         baseUrl: settings.baseUrl,
         apiKey: settings.apiKey,
         model: settings.model,
-        messages: buildCodeGenerationMessages({
+        messages: buildProgramManifestMessages({
           board,
           selectedSkills,
           userRequest: text,
         }),
       })
-      const parsed = parseGeneratedFilesResponse(content, board)
+      const manifestResult = parseProgramManifestResponse(content, board)
+      if (!manifestResult.ok) {
+        const message = `程序清单未通过校验：${manifestResult.errors.join(', ')}`
+        setMessages(prev => {
+          const next = [...prev]
+          next[next.length - 1] = { role: 'assistant', content: message, error: true }
+          return next
+        })
+        return
+      }
+
+      if (manifestResult.manifest.skillIds?.length) {
+        onSkillsChange?.(manifestResult.manifest.skillIds)
+      }
+
+      setMessages(prev => {
+        const next = [...prev]
+        next[next.length - 1] = {
+          role: 'assistant',
+          content: `已生成程序清单，正在生成 ${manifestResult.manifest.files.length} 个应用文件...`,
+        }
+        return next
+      })
+
+      const fileContent = await completeChat({
+        baseUrl: settings.baseUrl,
+        apiKey: settings.apiKey,
+        model: settings.model,
+        messages: buildManifestCodeGenerationMessages({
+          board,
+          manifest: manifestResult.manifest,
+          userRequest: text,
+        }),
+      })
+      const parsed = parseGeneratedFilesResponse(fileContent, board)
       if (!parsed.ok) {
         const message = `生成结果未通过校验：${parsed.errors.join(', ')}`
         setMessages(prev => {
           const next = [...prev]
           next[next.length - 1] = { role: 'assistant', content: message, error: true }
+          return next
+        })
+        return
+      }
+      if (Object.keys(parsed.files).length === 0) {
+        setMessages(prev => {
+          const next = [...prev]
+          next[next.length - 1] = { role: 'assistant', content: '生成结果没有可写入的应用源码文件。', error: true }
           return next
         })
         return
@@ -195,7 +250,7 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
         const next = [...prev]
         next[next.length - 1] = {
           role: 'assistant',
-          content: `已生成 ${Object.keys(parsed.files).length} 个应用文件：\n\n${Object.keys(parsed.files).map(path => `- ${path}`).join('\n')}`,
+          content: `已写入左侧编辑器，共 ${Object.keys(parsed.files).length} 个应用文件：\n\n${Object.keys(parsed.files).map(path => `- ${path}`).join('\n')}\n\n使用技能：${manifestResult.manifest.skillIds.join(', ') || 'none'}`,
         }
         return next
       })
@@ -210,10 +265,63 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
     }
   }
 
+  async function repairBuildFailure(request) {
+    if (generating || streaming || !hasConfig) return
+    setGenerating(true)
+    setKnowledgeCard(null)
+    setMessages(prev => [
+      ...prev,
+      { role: 'user', content: '请根据编译错误自动修复当前应用源码。' },
+      { role: 'assistant', content: '正在分析 Build Evidence 并生成源码补丁...' },
+    ])
+    try {
+      const content = await completeChat({
+        baseUrl: settings.baseUrl,
+        apiKey: settings.apiKey,
+        model: settings.model,
+        messages: buildBuildRepairMessages({
+          board,
+          selectedSkills: request.selectedSkills || selectedSkills,
+          buildEvidence: request.buildEvidence,
+          buildLog: request.buildLog,
+          errorLog: request.errorLog,
+          projectFiles: request.projectFiles,
+        }),
+      })
+      const parsed = parseGeneratedFilesResponse(content, board)
+      if (!parsed.ok) {
+        const message = `修复补丁未通过校验：${parsed.errors.join(', ')}`
+        setMessages(prev => {
+          const next = [...prev]
+          next[next.length - 1] = { role: 'assistant', content: message, error: true }
+          return next
+        })
+        return
+      }
+      onInsertCode?.(parsed.files)
+      setMessages(prev => {
+        const next = [...prev]
+        next[next.length - 1] = {
+          role: 'assistant',
+          content: `已应用 ${Object.keys(parsed.files).length} 个修复文件：\n\n${Object.keys(parsed.files).map(path => `- ${path}`).join('\n')}\n\n请重新编译验证。`,
+        }
+        return next
+      })
+    } catch (err) {
+      setMessages(prev => {
+        const next = [...prev]
+        next[next.length - 1] = { role: 'assistant', content: `修复失败：${err.message}`, error: true }
+        return next
+      })
+    } finally {
+      setGenerating(false)
+    }
+  }
+
   function handleKeyDown(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      sendMessage(input)
+      generateCodeFromInput()
     }
   }
 
@@ -300,7 +408,7 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
             <p className="chat-empty-sub">选择外设模块后，AI 会注入对应详细文档</p>
             <div className="quick-prompts">
               {quickPrompts.map(q => (
-                <button key={q} className="quick-btn" onClick={() => sendMessage(q)}>{q}</button>
+                <button key={q} className="quick-btn" onClick={() => generateCodeFromInput(q)}>{q}</button>
               ))}
             </div>
           </div>
@@ -367,7 +475,7 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
           />
           <button
             className="send-btn generate"
-            onClick={generateCodeFromInput}
+            onClick={() => generateCodeFromInput()}
             disabled={!hasConfig || streaming || generating || !input.trim()}
           >
             {generating ? '生成中' : '生成代码'}

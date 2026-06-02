@@ -34,10 +34,13 @@ const modules = [
   'src/context/boards/szpi_esp32s3/definition.js',
   'src/context/boards/index.js',
   'src/context/index.js',
+  'src/utils/filePlacement.js',
+  'src/utils/projectAssembly.js',
 ]
 for (const rel of modules) await copyModule(rel)
 
 const { buildProjectFiles } = await import(join(tmp, 'src/context/index.js'))
+const { assembleCompileFiles } = await import(join(tmp, 'src/utils/projectAssembly.js'))
 
 function files(skills = []) {
   return buildProjectFiles('szpi_esp32s3', 'vibe_app', skills)
@@ -68,5 +71,52 @@ assert.match(audio['main/CMakeLists.txt'], /spiffs_create_partition_image\(stora
 const combined = files(['wifi', 'audio'])
 assert.match(combined['partitions.csv'], /factory,\s+app,\s+factory,\s+,\s+7M/)
 assert.match(combined['partitions.csv'], /storage,\s+data,\s+spiffs/)
+
+const assembled = assembleCompileFiles({
+  boardId: 'szpi_esp32s3',
+  selectedSkills: [],
+  projectFiles: {
+    'main/main.c': '#include "helper.h"\nvoid app_main(void) { helper(); }',
+    'main/helper.c': '#include "helper.h"\nvoid helper(void) {}',
+    'main/helper.h': '#pragma once\nvoid helper(void);',
+  },
+})
+assert.match(assembled.files['main/CMakeLists.txt'], /"main\.c"/)
+assert.match(assembled.files['main/CMakeLists.txt'], /"helper\.c"/)
+assert.doesNotMatch(assembled.files['main/CMakeLists.txt'], /"helper\.h"/)
+
+const cppMain = assembleCompileFiles({
+  boardId: 'szpi_esp32s3',
+  selectedSkills: [],
+  projectFiles: {
+    'main/main.c': 'void old_code(void) {}',
+    'main/main.cpp': 'extern "C" void app_main(void) {}',
+    'main/app.cpp': 'void app_helper() {}',
+  },
+})
+assert.equal(cppMain.mainFile, 'main.cpp')
+assert.equal(cppMain.files.__mainFile, 'main.cpp')
+assert.match(cppMain.files['main/CMakeLists.txt'], /"main\.cpp"/)
+assert.match(cppMain.files['main/CMakeLists.txt'], /"app\.cpp"/)
+assert.doesNotMatch(cppMain.files['main/CMakeLists.txt'], /"main\.c"/)
+
+const officialStyle = assembleCompileFiles({
+  boardId: 'szpi_esp32s3',
+  selectedSkills: [],
+  projectFiles: {
+    'main/main.c': '#include "app_ui.h"\n#include "bt/hid_dev.h"\nvoid app_main(void) { app_ui_start(); }',
+    'main/app_ui.c': '#include "app_ui.h"\nvoid app_ui_start(void) {}',
+    'main/app_ui.h': '#pragma once\nvoid app_ui_start(void);',
+    'main/assets/font_alipuhui20.c': 'const int font_alipuhui20 = 1;',
+    'main/assets/font_alipuhui20.h': '#pragma once\nextern const int font_alipuhui20;',
+    'main/bt/hid_dev.c': '#include "hid_dev.h"\nvoid hid_start(void) {}',
+    'main/bt/hid_dev.h': '#pragma once\nvoid hid_start(void);',
+  },
+})
+assert.match(officialStyle.files['main/CMakeLists.txt'], /"app_ui\.c"/)
+assert.match(officialStyle.files['main/CMakeLists.txt'], /"assets\/font_alipuhui20\.c"/)
+assert.match(officialStyle.files['main/CMakeLists.txt'], /"bt\/hid_dev\.c"/)
+assert.match(officialStyle.files['main/CMakeLists.txt'], /INCLUDE_DIRS[\s\S]*"assets"/)
+assert.match(officialStyle.files['main/CMakeLists.txt'], /INCLUDE_DIRS[\s\S]*"bt"/)
 
 console.log('project config tests passed')

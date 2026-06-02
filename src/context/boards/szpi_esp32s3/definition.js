@@ -104,6 +104,8 @@ esp_get_feed_data(raw, buf, len)
 9. CONFIG_SPIRAM_MODE_OCT=y required in menuconfig
 10. ES8311 MCLK_MULTIPLE=384 (NOT 256)
 11. NVS required for WiFi/BLE — always init nvs_flash_init() first
+12. Use ESP_ERROR_CHECK(...), not BSP_ERROR_CHECK(...)
+13. If using ESP_LOGI/ESP_LOGE/ESP_LOGW, include "esp_log.h" in that file
 
 ## Required sdkconfig.defaults
 \`\`\`
@@ -149,6 +151,8 @@ Path rules:
 - If you include a custom quoted header like \`#include "helper.h"\`, you MUST also output \`FILE: main/helper.h\`.
 - Board APIs: include ONLY \`#include "esp32_s3_szp.h"\`.
 - LVGL APIs: include ONLY \`lvgl.h\` / \`esp_lvgl_port.h\` when the LVGL-related skill is selected.
+- Error checking: use \`ESP_ERROR_CHECK(...)\`, never \`BSP_ERROR_CHECK(...)\`.
+- Logging: if using \`ESP_LOGI\`, \`ESP_LOGW\`, or \`ESP_LOGE\`, include \`#include "esp_log.h"\` and define a local \`static const char *TAG = "...";\`.
 - Do NOT generate root \`CMakeLists.txt\`, \`main/CMakeLists.txt\`, \`sdkconfig.defaults\`, \`main/idf_component.yml\`, or \`partitions.csv\`.
 - Dependencies are generated from selected skills via \`main/idf_component.yml\`; do not invent component paths.
 - NEVER set \`EXTRA_COMPONENT_DIRS\` for ESP-IDF bundled examples or managed components.

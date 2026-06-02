@@ -50,8 +50,13 @@ LV_FONT_DECLARE(font_alipuhui20);
 lv_obj_set_style_text_font(obj, &font_alipuhui20, LV_STATE_DEFAULT);
 \`\`\`
 
+### Built-in font
+Only \`lv_font_montserrat_20\` is enabled by the generated sdkconfig.defaults.
+Do not use \`lv_font_montserrat_24\`, \`lv_font_montserrat_28\`, or other Montserrat sizes unless you also change system-owned sdkconfig, which VibeBoard does not allow AI to generate.
+
 ### Pitfalls
 - pca9557_init() MUST before bsp_lvgl_start()
+- Use &lv_font_montserrat_20 for built-in labels
 - Touch axes swapped: x_max=240, y_max=320
 - Never call LVGL outside lvgl_port_lock/unlock from tasks
 - Do not include esp_lvgl_util.h; use esp_lvgl_port.h and esp32_s3_szp.h instead`,

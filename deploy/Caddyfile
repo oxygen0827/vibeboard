@@ -1,0 +1,4 @@
+vibeboard.150-158-146-192.sslip.io:7443 {
+    encode gzip
+    reverse_proxy 127.0.0.1:4100
+}

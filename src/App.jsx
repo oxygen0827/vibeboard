@@ -7,6 +7,7 @@ import ProjectEditor from './components/ProjectEditor'
 import { BOARDS, DEFAULT_BOARD_ID, getBoardList, getBoard } from './context/boards'
 import { buildGeneratedConfig, filterInsertableFiles } from './utils/projectAssembly'
 import { isSourcePath } from './utils/filePlacement'
+import { normalizeGeneratedSourceFiles } from './utils/projectValidation'
 import bspHeader from '../backend/compiler-service/template/components/esp32_s3_szp/esp32_s3_szp.h?raw'
 import bspSource from '../backend/compiler-service/template/components/esp32_s3_szp/esp32_s3_szp.c?raw'
 import bspCmake from '../backend/compiler-service/template/components/esp32_s3_szp/CMakeLists.txt?raw'
@@ -53,6 +54,14 @@ const BSP_REFERENCE_FILES = {
   'components/esp32_s3_szp/CMakeLists.txt': bspCmake,
 }
 
+function chooseActiveGeneratedFile(files) {
+  if (files['main/main.c']) return 'main/main.c'
+  if (files['main/main.cpp']) return 'main/main.cpp'
+  return Object.keys(files).find(k => /(^|\/)app_.*\.(c|cpp)$/.test(k)) ||
+    Object.keys(files).find(k => /\.(c|cpp|cc|cxx)$/.test(k)) ||
+    Object.keys(files).find(k => isSourcePath(k))
+}
+
 function loadSettings() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -68,6 +77,7 @@ export default function App() {
   const [showCompile, setShowCompile] = useState(false)
   const [rightTab, setRightTab] = useState('chat')
   const [pendingLogAnalysis, setPendingLogAnalysis] = useState(null)
+  const [pendingBuildRepair, setPendingBuildRepair] = useState(null)
   const [boardId, setBoardId] = useState(loadInitialBoardId)
   const [selectedSkills, setSelectedSkills] = useState([])
   const board = BOARDS[boardId]
@@ -96,13 +106,20 @@ export default function App() {
   const handleInsertCode = useCallback((codeOrFiles) => {
     if (typeof codeOrFiles === 'string') {
       const target = isSourcePath(activeFile) ? activeFile : getMainSourcePath()
-      setProjectFiles(prev => ({ ...prev, [target]: codeOrFiles }))
+      const normalized = normalizeGeneratedSourceFiles({ [target]: codeOrFiles }).files
+      setProjectFiles(prev => ({ ...prev, ...normalized }))
       setActiveFile(target)
     } else {
       const { accepted } = filterInsertableFiles(codeOrFiles, board)
-      setProjectFiles(prev => ({ ...prev, ...accepted }))
-      const firstSrc = Object.keys(accepted).find(k => isSourcePath(k))
-      if (firstSrc) setActiveFile(firstSrc)
+      const normalized = normalizeGeneratedSourceFiles(accepted).files
+      const nextActive = chooseActiveGeneratedFile(normalized)
+      setProjectFiles(prev => {
+        const next = { ...prev, ...normalized }
+        if (normalized['main/main.cpp']) delete next['main/main.c']
+        if (normalized['main/main.c']) delete next['main/main.cpp']
+        return next
+      })
+      if (nextActive) setActiveFile(nextActive)
     }
   }, [activeFile, board])
 
@@ -176,6 +193,8 @@ export default function App() {
                 onInsertCode={handleInsertCode}
                 initialPrompt={pendingLogAnalysis}
                 onConsumePrompt={() => setPendingLogAnalysis(null)}
+                repairRequest={pendingBuildRepair}
+                onConsumeRepairRequest={() => setPendingBuildRepair(null)}
                 selectedSkills={selectedSkills}
                 onSkillsChange={setSelectedSkills}
               />
@@ -205,6 +224,10 @@ export default function App() {
           projectFiles={projectFiles}
           selectedSkills={selectedSkills}
           boardId={boardId}
+          onRepairBuildFailure={(request) => {
+            setPendingBuildRepair(request)
+            setRightTab('chat')
+          }}
           onClose={() => setShowCompile(false)}
         />
       )}

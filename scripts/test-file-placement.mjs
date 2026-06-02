@@ -27,6 +27,8 @@ function reject(raw, context, reason, options) {
 path('main.c', null, 'main/main.c')
 path('helper.h', null, 'main/helper.h')
 path('demo/main/app.c', null, 'main/app.c')
+path('main/assets/font_alipuhui20.c', null, 'main/assets/font_alipuhui20.c')
+path('main/bt/hid_dev.h', null, 'main/bt/hid_dev.h')
 path('main/idf_component.yml', null, 'main/idf_component.yml', { allowConfig: true })
 path('project/components/foo/foo.c', null, 'components/foo/foo.c')
 reject('sdkconfig.defaults', null, 'config-not-allowed')

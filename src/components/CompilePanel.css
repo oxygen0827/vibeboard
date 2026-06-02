@@ -39,6 +39,62 @@
   gap: 6px;
 }
 
+.compile-mode-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  padding: 4px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+
+.compile-mode-tab {
+  height: 32px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.compile-mode-tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.compile-mode-tab.active {
+  background: var(--bg-tertiary);
+  border-color: var(--border);
+  color: var(--text-primary);
+}
+
+.official-example-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 8px;
+}
+
+.official-example-select {
+  width: 100%;
+}
+
+.official-example-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
 .compile-hint {
   font-size: 11px;
   color: var(--text-muted);
@@ -258,6 +314,32 @@
   color: var(--accent);
 }
 
+.usb-btn {
+  background: var(--bg-tertiary);
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+.usb-btn:hover:not(:disabled) {
+  background: rgba(31, 111, 235, 0.18);
+  color: #79c0ff;
+}
+
+.usb-btn.building {
+  border-color: #79c0ff;
+  color: #79c0ff;
+}
+
+.usb-btn.ok {
+  background: #1a3a2a;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.usb-bar {
+  background: var(--blue);
+}
+
 .ble-btn.error {
   background: #3a1a1a;
   border-color: var(--red);
@@ -287,4 +369,3 @@
   white-space: pre-wrap;
   word-break: break-all;
 }
-

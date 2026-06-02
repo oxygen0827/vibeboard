@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
-import { compileFirmware, downloadBin } from '../utils/compiler'
+import { compileFirmware, compileOfficialExample, compileOtaReceiver, downloadBin, loadOfficialExamples } from '../utils/compiler'
 import { getDeviceInfo, pushOta, loadOtaIp, saveOtaIp } from '../utils/ota'
 import { connectBle } from '../utils/bleOta'
+import { flashAppOnlyOverUsb, isWebSerialSupported, webSerialUnavailableReason } from '../utils/usbFlash'
 import { assembleCompileFiles } from '../utils/projectAssembly'
 import { validateProjectIncludes } from '../utils/projectValidation'
+import { OFFICIAL_EXAMPLES, getOfficialExample } from '../data/officialExamples'
 import './CompilePanel.css'
 
 const BUILD = {
@@ -24,6 +26,12 @@ const BLE = {
   flashing: { label: '⬆ 烧录中...', cls: 'building' },
   ok: { label: '✓ BLE 成功', cls: 'ok' },
   error: { label: '✕ BLE 失败', cls: 'error' },
+}
+const USB = {
+  idle: { label: 'USB 直刷', cls: '' },
+  flashing: { label: 'USB 烧录中...', cls: 'building' },
+  ok: { label: 'USB 成功', cls: 'ok' },
+  error: { label: 'USB 失败', cls: 'error' },
 }
 
 function summarizeCompileError(errorLog, buildLog) {
@@ -52,7 +60,12 @@ function copyTextFallback(text) {
   if (!ok) throw new Error('copy failed')
 }
 
-export default function CompilePanel({ projectFiles: sourceProp, selectedSkills, boardId, onClose }) {
+export default function CompilePanel({ projectFiles: sourceProp, selectedSkills, boardId, onClose, onRepairBuildFailure }) {
+  const [compileMode, setCompileMode] = useState('project')
+  const [officialExampleId, setOfficialExampleId] = useState(OFFICIAL_EXAMPLES[0]?.id || '')
+  const [serverExamples, setServerExamples] = useState([])
+  const [otaWifiSsid, setOtaWifiSsid] = useState('')
+  const [otaWifiPassword, setOtaWifiPassword] = useState('')
   const [buildState, setBuildState] = useState('idle')
   const [otaState, setOtaState] = useState('idle')
   const [status, setStatus] = useState('')
@@ -64,17 +77,50 @@ export default function CompilePanel({ projectFiles: sourceProp, selectedSkills,
   const [bleState, setBleState] = useState('idle')
   const [bleProgress, setBleProgress] = useState(0)
   const [bleName, setBleName] = useState('')
+  const [usbState, setUsbState] = useState('idle')
+  const [usbProgress, setUsbProgress] = useState(0)
   const [showFiles, setShowFiles] = useState(false)
   const [buildLog, setBuildLog] = useState([])
   const [copyState, setCopyState] = useState('idle')
+  const [buildEvidence, setBuildEvidence] = useState(null)
   const logEndRef = useRef(null)
   const bleSessionRef = useRef(null)
+  const officialExample = getOfficialExample(officialExampleId)
+  const availableExampleIds = new Set(serverExamples.map(example => example.id))
+  const selectedServerExample = serverExamples.find(example => example.id === officialExampleId)
+  const officialExampleAvailable = compileMode !== 'official' || availableExampleIds.has(officialExampleId)
 
   const { files: compileProjectFiles, mainFile } = assembleCompileFiles({
     boardId,
     projectFiles: sourceProp || {},
     selectedSkills: selectedSkills || [],
   })
+
+  useEffect(() => {
+    setBuildState('idle')
+    setOtaState('idle')
+    setBleState('idle')
+    setUsbState('idle')
+    setFirmware(null)
+    setBuildEvidence(null)
+    setErrorLog('')
+    setStatus('')
+  }, [sourceProp, selectedSkills, boardId, compileMode, officialExampleId])
+  useEffect(() => {
+    let cancelled = false
+    loadOfficialExamples()
+      .then(examples => {
+        if (cancelled) return
+        setServerExamples(examples)
+        if (examples.length > 0 && !examples.some(example => example.id === officialExampleId)) {
+          setOfficialExampleId(examples[0].id)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setServerExamples([])
+      })
+    return () => { cancelled = true }
+  }, []) // eslint-disable-line
   useEffect(() => {
     if (!otaIp) return
     let cancelled = false
@@ -90,31 +136,51 @@ export default function CompilePanel({ projectFiles: sourceProp, selectedSkills,
     setErrorLog('')
     setCopyState('idle')
     setBuildLog([])
+    setBuildEvidence(null)
     setFirmware(null)
     setStatus('正在连接编译服务器...')
 
-    const validation = validateProjectIncludes(sourceProp || {}, selectedSkills || [])
-    if (!validation.ok) {
-      setErrorLog(validation.message)
-      setStatus('编译前检查失败')
-      setBuildState('error')
-      return
-    }
-
-    const mainPath = Object.keys(compileProjectFiles).find(k => k === mainFile || k === `main/${mainFile}` || k.endsWith(`/${mainFile}`)) || mainFile
-    const code = compileProjectFiles[mainPath] || ''
-    const configFiles = Object.fromEntries(Object.entries(compileProjectFiles).filter(([k]) => !k.startsWith('__') && k !== mainPath))
-    const compileMetadata = Object.fromEntries(Object.entries(compileProjectFiles).filter(([k]) => k.startsWith('__')))
-
     try {
-      const blob = await compileFirmware(code, { ...configFiles, ...compileMetadata }, setStatus, line => {
-        setBuildLog(prev => [...prev, line])
-        setTimeout(() => logEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 0)
-      })
+      let blob
+      if (compileMode === 'official') {
+        if (!officialExampleAvailable) throw new Error(`官方例程未上传到编译服务器: ${officialExampleId}`)
+        blob = await compileOfficialExample(officialExampleId, setStatus, line => {
+          setBuildLog(prev => [...prev, line])
+          setTimeout(() => logEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 0)
+        })
+      } else if (compileMode === 'ota-receiver') {
+        if (!otaWifiSsid.trim()) throw new Error('请先填写 WiFi SSID')
+        blob = await compileOtaReceiver({
+          wifiSsid: otaWifiSsid.trim(),
+          wifiPassword: otaWifiPassword,
+        }, setStatus, line => {
+          setBuildLog(prev => [...prev, line])
+          setTimeout(() => logEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 0)
+        })
+      } else {
+        const validation = validateProjectIncludes(compileProjectFiles || {}, selectedSkills || [])
+        if (!validation.ok) {
+          setErrorLog(validation.message)
+          setStatus('编译前检查失败')
+          setBuildState('error')
+          return
+        }
+
+        const mainPath = Object.keys(compileProjectFiles).find(k => k === mainFile || k === `main/${mainFile}` || k.endsWith(`/${mainFile}`)) || mainFile
+        const code = compileProjectFiles[mainPath] || ''
+        const configFiles = Object.fromEntries(Object.entries(compileProjectFiles).filter(([k]) => !k.startsWith('__') && k !== mainPath))
+        const compileMetadata = Object.fromEntries(Object.entries(compileProjectFiles).filter(([k]) => k.startsWith('__')))
+        blob = await compileFirmware(code, { ...configFiles, ...compileMetadata }, setStatus, line => {
+          setBuildLog(prev => [...prev, line])
+          setTimeout(() => logEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 0)
+        })
+      }
       setFirmware(blob)
+      setBuildEvidence(blob.buildEvidence || null)
       setStatus(`编译成功 · ${(blob.size / 1024).toFixed(1)} KB`)
       setBuildState('ok')
     } catch (e) {
+      setBuildEvidence(e.buildEvidence || null)
       setErrorLog(e.message)
       setStatus('编译失败，查看错误日志')
       setBuildState('error')
@@ -198,9 +264,37 @@ export default function CompilePanel({ projectFiles: sourceProp, selectedSkills,
     }
   }
 
+  async function handleUsbFlash() {
+    if (!firmware) return
+    setUsbState('flashing')
+    setUsbProgress(0)
+    setErrorLog('')
+    setStatus('请选择 ESP32-S3 USB 串口设备...')
+    try {
+      await flashAppOnlyOverUsb({
+        firmware,
+        onProgress: pct => {
+          setUsbProgress(pct)
+          setStatus(`USB 烧录中... ${pct}%`)
+        },
+        onLog: line => {
+          setBuildLog(prev => [...prev, `[usb] ${line}`])
+          setTimeout(() => logEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 0)
+        },
+      })
+      setStatus('USB 烧录完成，设备已复位')
+      setUsbState('ok')
+    } catch (e) {
+      setErrorLog(e.message)
+      setStatus('USB 烧录失败')
+      setUsbState('error')
+    }
+  }
+
   const b = BUILD[buildState]
   const o = OTA[otaState]
   const bl = BLE[bleState]
+  const us = USB[usbState]
   const failureSummary = buildState === 'error' ? summarizeCompileError(errorLog, buildLog) : ''
   const fullFailureLog = buildState === 'error' ? [...buildLog, errorLog].filter(Boolean).join('\n') : ''
 
@@ -213,13 +307,91 @@ export default function CompilePanel({ projectFiles: sourceProp, selectedSkills,
         </div>
 
         <div className="compile-body">
-          <div className="project-files-row">
-            <span className="field-label" style={{ margin: 0 }}>系统生成文件</span>
-            <button className="files-toggle" onClick={() => setShowFiles(v => !v)}>
-              {showFiles ? '收起' : `查看 ${Object.keys(compileProjectFiles).filter(k => !k.startsWith('__')).length} 个文件`}
+          <div className="compile-mode-tabs">
+            <button
+              className={`compile-mode-tab ${compileMode === 'project' ? 'active' : ''}`}
+              onClick={() => setCompileMode('project')}
+            >
+              当前工程
+            </button>
+            <button
+              className={`compile-mode-tab ${compileMode === 'official' ? 'active' : ''}`}
+              onClick={() => setCompileMode('official')}
+            >
+              官方例程
+            </button>
+            <button
+              className={`compile-mode-tab ${compileMode === 'ota-receiver' ? 'active' : ''}`}
+              onClick={() => setCompileMode('ota-receiver')}
+            >
+              OTA 基础固件
             </button>
           </div>
-          {showFiles && (
+
+          {compileMode === 'project' && (
+            <div className="project-files-row">
+              <span className="field-label" style={{ margin: 0 }}>系统生成文件</span>
+              <button className="files-toggle" onClick={() => setShowFiles(v => !v)}>
+                {showFiles ? '收起' : `查看 ${Object.keys(compileProjectFiles).filter(k => !k.startsWith('__')).length} 个文件`}
+              </button>
+            </div>
+          )}
+
+          {compileMode === 'ota-receiver' && (
+            <div className="official-example-box">
+              <label className="field-label">WiFi SSID</label>
+              <input
+                className="field-input"
+                value={otaWifiSsid}
+                onChange={e => setOtaWifiSsid(e.target.value)}
+                placeholder="你的 WiFi 名称"
+              />
+              <label className="field-label">WiFi 密码</label>
+              <input
+                className="field-input"
+                type="password"
+                value={otaWifiPassword}
+                onChange={e => setOtaWifiPassword(e.target.value)}
+                placeholder="WiFi 密码，可为空"
+              />
+              <div className="compile-hint">
+                这个固件会启动 HTTP OTA 服务：/ping、/info、/ota。首次需要用 USB/串口烧录；设备连上 WiFi 后，再用下面的 WiFi OTA 推送后续固件。
+              </div>
+            </div>
+          )}
+
+          {compileMode === 'official' && (
+            <div className="official-example-box">
+              <label className="field-label">官方例程</label>
+              <select
+                className="field-input official-example-select"
+                value={officialExampleId}
+                onChange={e => setOfficialExampleId(e.target.value)}
+              >
+                {OFFICIAL_EXAMPLES.map(example => (
+                  <option key={example.id} value={example.id}>
+                    {example.id} · {example.name}
+                  </option>
+                ))}
+              </select>
+              <div className="official-example-meta">
+                <span>{officialExample?.description || 'Official ESP-IDF example'}</span>
+                {selectedServerExample && (
+                  <span>{selectedServerExample.fileCount} files{selectedServerExample.hasSpiffs ? ' · SPIFFS' : ''}</span>
+                )}
+              </div>
+              <div className="compile-hint">
+                官方例程从服务器原始工程目录直接编译，不读取左侧代码，不经过 AI，也不做源码修正。
+              </div>
+              {!officialExampleAvailable && (
+                <div className="compile-status error">
+                  这个官方例程还没有上传到编译服务器。
+                </div>
+              )}
+            </div>
+          )}
+
+          {compileMode === 'project' && showFiles && (
             <div className="project-files-preview">
               {Object.entries(compileProjectFiles).filter(([name]) => !name.startsWith('__')).map(([name, content]) => (
                 <details key={name}>
@@ -233,6 +405,24 @@ export default function CompilePanel({ projectFiles: sourceProp, selectedSkills,
           <button className={`compile-btn ${b.cls}`} onClick={handleCompile} disabled={buildState === 'building'}>
             {b.label}
           </button>
+
+          {buildState === 'error' && compileMode === 'project' && onRepairBuildFailure && (
+            <button
+              className="compile-btn"
+              onClick={() => {
+                onRepairBuildFailure({
+                  buildEvidence,
+                  buildLog,
+                  errorLog,
+                  projectFiles: sourceProp || {},
+                  selectedSkills: selectedSkills || [],
+                })
+                onClose?.()
+              }}
+            >
+              AI 修复编译错误
+            </button>
+          )}
 
           <div className="ota-section">
             <label className="field-label">设备 IP（WiFi OTA）</label>
@@ -269,6 +459,25 @@ export default function CompilePanel({ projectFiles: sourceProp, selectedSkills,
                 </button>
               )}
             </div>
+          </div>
+
+          <div className="ota-section ble-section">
+            <label className="field-label">USB 直刷（Web Serial）</label>
+            <p className="compile-hint">
+              使用 Chrome / Edge 选择 ESP32-S3 串口。编译结果带 flash 清单时会写入 bootloader、partition table、ota data 和 app；否则只更新 0x10000 的 app。
+            </p>
+            {!isWebSerialSupported() && (
+              <div className="compile-status error">{webSerialUnavailableReason()}</div>
+            )}
+            {usbState === 'flashing' && (
+              <div className="ota-progress-wrap">
+                <div className="ota-progress-bar usb-bar" style={{ width: `${usbProgress}%` }} />
+                <span>{usbProgress}%</span>
+              </div>
+            )}
+            <button className={`compile-btn usb-btn ${us.cls}`} onClick={handleUsbFlash} disabled={!firmware || usbState === 'flashing' || !isWebSerialSupported()}>
+              {us.label}
+            </button>
           </div>
 
           <div className="ota-section ble-section">

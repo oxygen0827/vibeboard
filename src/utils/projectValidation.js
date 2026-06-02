@@ -34,6 +34,9 @@ const SKILL_HEADERS = {
   handheld: ['lvgl.h', 'esp_lvgl_port.h', 'esp_lcd_touch_ft5x06.h', 'esp_camera.h', 'audio_player.h', 'esp_codec_dev.h'],
 }
 
+const DEFAULT_LVGL_FONT = 'lv_font_montserrat_20'
+const ENABLED_LVGL_FONTS = new Set([DEFAULT_LVGL_FONT])
+
 function basename(path) {
   return path.split('/').pop()
 }
@@ -76,4 +79,65 @@ export function validateProjectIncludes(projectFiles, selectedSkills = []) {
     ok: false,
     message: `AI generated missing quoted headers, so compile was stopped before upload.\n${lines.join('\n')}\n\nIf this is a custom header, ask AI to also generate FILE: main/${missing[0].header}. If this is a board API, use #include "esp32_s3_szp.h".`,
   }
+}
+
+export function normalizeGeneratedSourceFiles(projectFiles) {
+  const updates = {}
+  let changed = false
+
+  for (const [path, content] of Object.entries(projectFiles || {})) {
+    if (!/\.(c|cc|cpp|cxx|h|hpp)$/.test(path)) {
+      updates[path] = content
+      continue
+    }
+    const next = normalizeGeneratedSource(String(content || ''))
+    updates[path] = next
+    if (next !== content) changed = true
+  }
+
+  return { files: updates, changed }
+}
+
+export function normalizeGeneratedSource(content) {
+  let next = String(content || '')
+
+  next = next.replace(/\bBSP_ERROR_CHECK\s*\(/g, 'ESP_ERROR_CHECK(')
+
+  for (const match of next.matchAll(/\blv_font_montserrat_(\d+)\b/g)) {
+    const font = match[0]
+    if (!ENABLED_LVGL_FONTS.has(font)) {
+      next = next.replaceAll(font, DEFAULT_LVGL_FONT)
+    }
+  }
+
+  if (/\bESP_ERROR_CHECK\s*\(/.test(next)) {
+    next = ensureSystemInclude(next, 'esp_err.h')
+  }
+  if (/\bESP_LOG[A-Z]\s*\(/.test(next)) {
+    next = ensureSystemInclude(next, 'esp_log.h')
+  }
+
+  return next
+}
+
+function ensureSystemInclude(content, header) {
+  const includeLine = `#include "${header}"`
+  if (new RegExp(`^\\s*#\\s*include\\s+[<"]${escapeRegex(header)}[>"]`, 'm').test(content)) {
+    return content
+  }
+
+  const lines = content.split('\n')
+  const lastIncludeIndex = lines.reduce((last, line, index) =>
+    /^\s*#\s*include\b/.test(line) ? index : last, -1)
+
+  if (lastIncludeIndex >= 0) {
+    lines.splice(lastIncludeIndex + 1, 0, includeLine)
+    return lines.join('\n')
+  }
+
+  return `${includeLine}\n${content}`
+}
+
+function escapeRegex(text) {
+  return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }

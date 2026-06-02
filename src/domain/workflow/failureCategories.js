@@ -1,0 +1,43 @@
+export const FAILURE_CATEGORIES = {
+  AMBIGUOUS_CONTEXT: 'ambiguous-context',
+  ARTIFACT_MISSING: 'artifact-missing',
+  CONNECTION_FAILURE: 'connection-failure',
+  DEVICE_RESPONSE_ABNORMAL: 'device-response-abnormal',
+  DUPLICATE_FILE: 'duplicate-file',
+  ENVIRONMENT_MISSING: 'environment-missing',
+  INVALID_SKILL: 'invalid-skill',
+  MANIFEST_INVALID: 'manifest-invalid',
+  MISSING_ENTRYPOINT: 'missing-entrypoint',
+  MISSING_LOCAL_INCLUDE: 'missing-local-include',
+  PERMISSION_PROBLEM: 'permission-problem',
+  PROJECT_CONFIG_ERROR: 'project-config-error',
+  RUNTIME_FAILED: 'runtime-failed',
+  SKILL_NOT_SELECTED: 'skill-not-selected',
+  SYSTEM_FILE_WRITE_DENIED: 'system-file-write-denied',
+  UNSAFE_PATH: 'unsafe-path',
+  UNSUPPORTED_FILE: 'unsupported-file',
+}
+
+export const FAILURE_CATEGORY_DESCRIPTIONS = {
+  [FAILURE_CATEGORIES.ENVIRONMENT_MISSING]: 'A required host tool, runtime, or service is unavailable.',
+  [FAILURE_CATEGORIES.PROJECT_CONFIG_ERROR]: 'The generated or assembled project configuration blocks the workflow.',
+  [FAILURE_CATEGORIES.CONNECTION_FAILURE]: 'The host cannot connect to the target device, port, or delivery endpoint.',
+  [FAILURE_CATEGORIES.ARTIFACT_MISSING]: 'The expected firmware artifact is missing or cannot be selected safely.',
+  [FAILURE_CATEGORIES.DEVICE_RESPONSE_ABNORMAL]: 'The target device is reachable but behaves incorrectly.',
+  [FAILURE_CATEGORIES.PERMISSION_PROBLEM]: 'The host lacks permission to access a required device or file.',
+  [FAILURE_CATEGORIES.AMBIGUOUS_CONTEXT]: 'Multiple reasonable targets remain and choosing one would be risky.',
+  [FAILURE_CATEGORIES.MANIFEST_INVALID]: 'The program manifest does not satisfy the VibeBoard schema.',
+  [FAILURE_CATEGORIES.UNSAFE_PATH]: 'A generated file path escapes or endangers the project write surface.',
+  [FAILURE_CATEGORIES.SYSTEM_FILE_WRITE_DENIED]: 'AI attempted to write a system-owned project file.',
+  [FAILURE_CATEGORIES.UNSUPPORTED_FILE]: 'A generated file has a type VibeBoard does not accept.',
+  [FAILURE_CATEGORIES.MISSING_ENTRYPOINT]: 'The program entrypoint is missing or not present in the manifest.',
+  [FAILURE_CATEGORIES.INVALID_SKILL]: 'The manifest references a skill unavailable on the selected board.',
+  [FAILURE_CATEGORIES.DUPLICATE_FILE]: 'Two planned files normalize to the same project path.',
+  [FAILURE_CATEGORIES.MISSING_LOCAL_INCLUDE]: 'Application source includes a local header that is not generated.',
+  [FAILURE_CATEGORIES.SKILL_NOT_SELECTED]: 'Application source uses a capability whose skill is not selected.',
+  [FAILURE_CATEGORIES.RUNTIME_FAILED]: 'Device evidence shows the flashed firmware failed at runtime.',
+}
+
+export function isKnownFailureCategory(category) {
+  return Object.values(FAILURE_CATEGORIES).includes(category)
+}

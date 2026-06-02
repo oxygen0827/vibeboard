@@ -5,13 +5,18 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5173",
     "build": "vite build",
+    "test:build-evidence": "node scripts/test-build-evidence.mjs",
     "test:code-generation": "node scripts/test-code-generation.mjs",
     "test:file-placement": "node scripts/test-file-placement.mjs",
+    "test:official-examples-backend": "node scripts/test-official-examples-backend.mjs",
+    "test:program-manifest": "node scripts/test-program-manifest.mjs",
+    "test:project-validation": "node scripts/test-project-validation.mjs",
     "test:project-config": "node scripts/test-project-config.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.6.0",
+    "esptool-js": "^0.6.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^9.0.1",
