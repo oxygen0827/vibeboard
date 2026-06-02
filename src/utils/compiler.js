@@ -29,10 +29,10 @@ export async function compileOfficialExample(exampleId, onStatus, onLog) {
   })
 }
 
-export async function compileOtaReceiver({ wifiSsid, wifiPassword }, onStatus, onLog) {
+export async function compileOtaReceiver({ wifiSsid, wifiPassword, serverUrl, deviceId, deviceToken }, onStatus, onLog) {
   return compileSse({
     endpoint: '/compile-ota-receiver',
-    payload: { wifiSsid, wifiPassword },
+    payload: { wifiSsid, wifiPassword, serverUrl, deviceId, deviceToken },
     onStatus,
     onLog,
   })
@@ -110,6 +110,7 @@ async function compileSse({ endpoint, payload, onStatus, onLog }) {
             const bytes = Uint8Array.from(atob(msg.bin), c => c.charCodeAt(0))
             const blob  = new Blob([bytes], { type: 'application/octet-stream' })
             blob.firmwareFilename = msg.filename || null
+            blob.agent = msg.agent || null
             blob.flashFiles = Array.isArray(msg.flashFiles)
               ? msg.flashFiles.map(file => ({
                   name: file.name,

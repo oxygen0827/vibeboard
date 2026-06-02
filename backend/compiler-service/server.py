@@ -4,9 +4,9 @@ POST /compile - compile ESP-IDF project, streams build log via SSE
 GET  /health  - health check
 """
 
-import os, uuid, shutil, subprocess, logging, json, base64, re
+import os, uuid, shutil, subprocess, logging, json, base64, re, time
 from pathlib import Path, PurePosixPath
-from flask import Flask, request, Response, jsonify
+from flask import Flask, request, Response, jsonify, send_file
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -16,14 +16,105 @@ TEMPLATE_DIR = Path(os.environ.get("TEMPLATE_DIR", "/compiler/template"))
 EXAMPLES_DIR = Path(os.environ.get("EXAMPLES_DIR", "/compiler/examples"))
 OTA_RECEIVER_DIR = Path(os.environ.get("OTA_RECEIVER_DIR", "/compiler/ota_receiver"))
 BUILD_BASE   = Path("/tmp/builds")
+REMOTE_OTA_DIR = Path(os.environ.get("REMOTE_OTA_DIR", "/tmp/vibeboard-remote-ota"))
 IDF_PATH     = Path(os.environ.get("IDF_PATH", "/opt/esp/idf"))
 BUILD_TIMEOUT_SECONDS = int(os.environ.get("BUILD_TIMEOUT_SECONDS", "300"))
 
 BUILD_BASE.mkdir(parents=True, exist_ok=True)
+REMOTE_OTA_DIR.mkdir(parents=True, exist_ok=True)
+(REMOTE_OTA_DIR / "firmware").mkdir(exist_ok=True)
+(REMOTE_OTA_DIR / "state").mkdir(exist_ok=True)
 
 ALLOWED_SUFFIXES = {".c", ".cc", ".cpp", ".cxx", ".h", ".hpp", ".s", ".S"}
 ALLOWED_FILENAMES = {"CMakeLists.txt", "sdkconfig.defaults", "idf_component.yml", "partitions.csv"}
 EXAMPLE_ID_RE = re.compile(r"^[0-9]{2}-[A-Za-z0-9_-]+$")
+DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
+TOKEN_RE = re.compile(r"^[A-Za-z0-9_.:-]{0,96}$")
+
+
+def now_ms():
+    return int(time.time() * 1000)
+
+
+def state_path(name: str) -> Path:
+    return REMOTE_OTA_DIR / "state" / name
+
+
+def read_json_file(path: Path, default):
+    if not path.exists():
+        return default
+    try:
+        return json.loads(path.read_text())
+    except Exception:
+        return default
+
+
+def write_json_file(path: Path, data):
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+    tmp.replace(path)
+
+
+def load_devices():
+    return read_json_file(state_path("devices.json"), {})
+
+
+def save_devices(devices):
+    write_json_file(state_path("devices.json"), devices)
+
+
+def load_jobs():
+    return read_json_file(state_path("ota_jobs.json"), {})
+
+
+def save_jobs(jobs):
+    write_json_file(state_path("ota_jobs.json"), jobs)
+
+
+def load_firmware_index():
+    return read_json_file(state_path("firmware.json"), {})
+
+
+def save_firmware_index(index):
+    write_json_file(state_path("firmware.json"), index)
+
+
+def public_base_url():
+    configured = os.environ.get("PUBLIC_BASE_URL", "").strip().rstrip("/")
+    if configured:
+        return configured
+    forwarded_proto = request.headers.get("X-Forwarded-Proto")
+    forwarded_host = request.headers.get("X-Forwarded-Host")
+    if forwarded_host:
+        if forwarded_host.endswith(".trycloudflare.com"):
+            forwarded_proto = "https"
+        return f"{forwarded_proto or request.scheme}://{forwarded_host}".rstrip("/")
+    return request.host_url.rstrip("/")
+
+
+def valid_device_id(device_id: str):
+    return isinstance(device_id, str) and DEVICE_ID_RE.match(device_id)
+
+
+def valid_token(token: str):
+    return isinstance(token, str) and TOKEN_RE.match(token)
+
+
+def authorize_device(devices, device_id: str, token: str):
+    if not valid_device_id(device_id) or not valid_token(token):
+        return False
+    existing = devices.get(device_id)
+    return not existing or not existing.get("token") or existing.get("token") == token
+
+
+def public_device(device):
+    return {k: v for k, v in device.items() if k != "token"}
+
+
+def secure_firmware_filename(filename: str):
+    name = Path(str(filename or "firmware.bin")).name
+    name = re.sub(r"[^A-Za-z0-9_.-]+", "_", name)
+    return name if name.endswith(".bin") else f"{name}.bin"
 
 
 def validate_project_path(build_dir: Path, rel_path: str) -> Path:
@@ -108,7 +199,7 @@ def c_string(value: str) -> str:
     return json.dumps(str(value or ""))[1:-1]
 
 
-def create_ota_receiver_project(build_dir: Path, wifi_ssid: str, wifi_password: str):
+def create_ota_receiver_project(build_dir: Path, wifi_ssid: str, wifi_password: str, device_id: str, device_token: str, server_url: str):
     if not OTA_RECEIVER_DIR.exists():
         raise ValueError("OTA receiver template not installed")
     if not isinstance(wifi_ssid, str) or not wifi_ssid.strip():
@@ -117,17 +208,35 @@ def create_ota_receiver_project(build_dir: Path, wifi_ssid: str, wifi_password: 
         raise ValueError("WiFi SSID is too long")
     if len(str(wifi_password).encode("utf-8")) > 64:
         raise ValueError("WiFi password is too long")
+    if device_id and not valid_device_id(device_id):
+        raise ValueError("invalid device id")
+    if device_token and not valid_token(device_token):
+        raise ValueError("invalid device token")
+    server_url = str(server_url or "").strip().rstrip("/")
+    if server_url and not (server_url.startswith("http://") or server_url.startswith("https://")):
+        raise ValueError("server URL must start with http:// or https://")
 
     shutil.copytree(OTA_RECEIVER_DIR, build_dir)
     config = build_dir / "main" / "vibeboard_wifi_config.h"
     version = f"vibeboard-ota-receiver-{uuid.uuid4().hex[:8]}"
+    resolved_device_id = device_id or f"szpi-s3-{uuid.uuid4().hex[:8]}"
+    resolved_device_token = device_token or uuid.uuid4().hex
     config.write_text(
         "#pragma once\n\n"
         f"#define VIBEBOARD_WIFI_SSID \"{c_string(wifi_ssid.strip())}\"\n"
         f"#define VIBEBOARD_WIFI_PASSWORD \"{c_string(wifi_password)}\"\n"
         f"#define VIBEBOARD_FIRMWARE_VERSION \"{version}\"\n"
+        f"#define VIBEBOARD_DEVICE_ID \"{c_string(resolved_device_id)}\"\n"
+        f"#define VIBEBOARD_DEVICE_TOKEN \"{c_string(resolved_device_token)}\"\n"
+        f"#define VIBEBOARD_SERVER_URL \"{c_string(server_url)}\"\n"
     )
     log.info("  OTA receiver project created")
+    return {
+        "deviceId": resolved_device_id,
+        "deviceToken": resolved_device_token,
+        "serverUrl": server_url,
+        "version": version,
+    }
 
 
 def project_name(build_dir: Path) -> str:
@@ -244,6 +353,20 @@ def run_idf_build(job_id: str, build_dir: Path):
     shutil.rmtree(build_dir, ignore_errors=True)
 
 
+def with_extra_done_metadata(events, metadata: dict):
+    for event in events:
+        if event.startswith("data: "):
+            try:
+                payload = json.loads(event[6:].strip())
+                if payload.get("done") and not payload.get("error"):
+                    payload.update(metadata)
+                    yield sse(payload)
+                    continue
+            except Exception:
+                pass
+        yield event
+
+
 def sse(obj):
     return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
 
@@ -256,6 +379,204 @@ def health():
 @app.route("/examples")
 def examples():
     return jsonify({"examples": list_official_examples()})
+
+
+@app.route("/api/devices/heartbeat", methods=["POST"])
+def device_heartbeat():
+    data = request.get_json(force=True)
+    device_id = str(data.get("deviceId", "")).strip()
+    token = str(data.get("token", "")).strip()
+    if not valid_device_id(device_id) or not valid_token(token):
+        return jsonify({"error": "invalid device identity"}), 400
+
+    devices = load_devices()
+    if not authorize_device(devices, device_id, token):
+        return jsonify({"error": "invalid device token"}), 403
+
+    previous = devices.get(device_id, {})
+    device = {
+        **previous,
+        "deviceId": device_id,
+        "token": token,
+        "boardId": data.get("boardId") or previous.get("boardId") or "szpi_esp32s3",
+        "version": data.get("version") or previous.get("version") or "",
+        "ip": data.get("ip") or previous.get("ip") or "",
+        "rssi": data.get("rssi", previous.get("rssi", 0)),
+        "lastSeenAt": now_ms(),
+    }
+    devices[device_id] = device
+    save_devices(devices)
+
+    jobs = load_jobs()
+    pending = next(
+        (job for job in jobs.values()
+         if job.get("deviceId") == device_id and job.get("status") in {"queued", "claimed", "downloading"}),
+        None,
+    )
+    return jsonify({
+        "ok": True,
+        "device": public_device(device),
+        "pendingJobId": pending.get("jobId") if pending else None,
+    })
+
+
+@app.route("/api/devices")
+def list_devices():
+    devices = load_devices()
+    return jsonify({"devices": [public_device(device) for device in devices.values()]})
+
+
+@app.route("/api/firmware", methods=["POST"])
+def upload_firmware():
+    if "file" not in request.files:
+        return jsonify({"error": "missing firmware file"}), 400
+    file = request.files["file"]
+    data = file.read()
+    if not data:
+        return jsonify({"error": "empty firmware"}), 400
+    if len(data) > 8 * 1024 * 1024:
+        return jsonify({"error": "firmware too large"}), 400
+
+    firmware_id = uuid.uuid4().hex
+    filename = secure_firmware_filename(file.filename or "firmware.bin")
+    stored_name = f"{firmware_id}.bin"
+    path = REMOTE_OTA_DIR / "firmware" / stored_name
+    path.write_bytes(data)
+
+    index = load_firmware_index()
+    meta = {
+        "firmwareId": firmware_id,
+        "filename": filename,
+        "size": len(data),
+        "createdAt": now_ms(),
+        "url": f"{public_base_url()}/api/firmware/{firmware_id}/download",
+    }
+    index[firmware_id] = meta
+    save_firmware_index(index)
+    return jsonify({"firmware": meta})
+
+
+@app.route("/api/firmware")
+def list_firmware():
+    index = load_firmware_index()
+    return jsonify({"firmware": sorted(index.values(), key=lambda item: item.get("createdAt", 0), reverse=True)})
+
+
+@app.route("/api/firmware/<firmware_id>/download")
+def download_firmware(firmware_id):
+    index = load_firmware_index()
+    meta = index.get(firmware_id)
+    path = REMOTE_OTA_DIR / "firmware" / f"{firmware_id}.bin"
+    if not meta or not path.exists():
+        return jsonify({"error": "firmware not found"}), 404
+    return send_file(path, mimetype="application/octet-stream", as_attachment=False, download_name=meta.get("filename", "firmware.bin"))
+
+
+@app.route("/api/ota-jobs", methods=["POST"])
+def create_ota_job():
+    data = request.get_json(force=True)
+    device_id = str(data.get("deviceId", "")).strip()
+    firmware_id = str(data.get("firmwareId", "")).strip()
+    if not valid_device_id(device_id):
+        return jsonify({"error": "invalid device id"}), 400
+
+    devices = load_devices()
+    if device_id not in devices:
+        return jsonify({"error": "device not found"}), 404
+
+    firmware_index = load_firmware_index()
+    firmware = firmware_index.get(firmware_id)
+    if not firmware:
+        return jsonify({"error": "firmware not found"}), 404
+
+    jobs = load_jobs()
+    job_id = uuid.uuid4().hex
+    job = {
+        "jobId": job_id,
+        "deviceId": device_id,
+        "firmwareId": firmware_id,
+        "firmwareUrl": firmware.get("url") or f"{public_base_url()}/api/firmware/{firmware_id}/download",
+        "firmwareSize": firmware.get("size", 0),
+        "filename": firmware.get("filename", "firmware.bin"),
+        "status": "queued",
+        "createdAt": now_ms(),
+        "updatedAt": now_ms(),
+        "claimedAt": None,
+        "finishedAt": None,
+        "error": "",
+    }
+    jobs[job_id] = job
+    save_jobs(jobs)
+    return jsonify({"job": job})
+
+
+@app.route("/api/ota-jobs")
+def list_ota_jobs():
+    jobs = load_jobs()
+    return jsonify({"jobs": sorted(jobs.values(), key=lambda item: item.get("createdAt", 0), reverse=True)})
+
+
+@app.route("/api/ota-jobs/<job_id>")
+def get_ota_job(job_id):
+    jobs = load_jobs()
+    job = jobs.get(job_id)
+    if not job:
+        return jsonify({"error": "job not found"}), 404
+    return jsonify({"job": job})
+
+
+@app.route("/api/devices/<device_id>/ota-job")
+def claim_device_ota_job(device_id):
+    token = request.headers.get("X-Device-Token", request.args.get("token", ""))
+    devices = load_devices()
+    if not authorize_device(devices, device_id, token):
+        return jsonify({"error": "invalid device token"}), 403
+
+    jobs = load_jobs()
+    job = next(
+        (candidate for candidate in sorted(jobs.values(), key=lambda item: item.get("createdAt", 0))
+         if candidate.get("deviceId") == device_id and candidate.get("status") in {"queued", "claimed", "downloading"}),
+        None,
+    )
+    if not job:
+        return jsonify({"job": None})
+
+    if job.get("status") == "queued":
+        job["status"] = "claimed"
+        job["claimedAt"] = now_ms()
+        job["updatedAt"] = now_ms()
+        jobs[job["jobId"]] = job
+        save_jobs(jobs)
+    return jsonify({"job": job})
+
+
+@app.route("/api/ota-jobs/<job_id>/status", methods=["POST"])
+def update_ota_job_status(job_id):
+    data = request.get_json(force=True)
+    device_id = str(data.get("deviceId", "")).strip()
+    token = str(data.get("token", "")).strip()
+    status = str(data.get("status", "")).strip()
+    if status not in {"queued", "claimed", "downloading", "flashed", "rebooting", "done", "failed"}:
+        return jsonify({"error": "invalid job status"}), 400
+
+    devices = load_devices()
+    if not authorize_device(devices, device_id, token):
+        return jsonify({"error": "invalid device token"}), 403
+
+    jobs = load_jobs()
+    job = jobs.get(job_id)
+    if not job or job.get("deviceId") != device_id:
+        return jsonify({"error": "job not found"}), 404
+
+    job["status"] = status
+    job["updatedAt"] = now_ms()
+    if status in {"done", "failed"}:
+        job["finishedAt"] = now_ms()
+    if data.get("error"):
+        job["error"] = str(data.get("error"))[:500]
+    jobs[job_id] = job
+    save_jobs(jobs)
+    return jsonify({"job": job})
 
 
 @app.route("/compile", methods=["POST"])
@@ -307,17 +628,20 @@ def compile_ota_receiver():
     data = request.get_json(force=True)
     wifi_ssid = data.get("wifiSsid", "")
     wifi_password = data.get("wifiPassword", "")
+    device_id = data.get("deviceId", "")
+    device_token = data.get("deviceToken", "")
+    server_url = data.get("serverUrl", "")
 
     job_id = uuid.uuid4().hex[:8]
     build_dir = BUILD_BASE / job_id
 
     def generate():
         try:
-            create_ota_receiver_project(build_dir, wifi_ssid, wifi_password)
+            agent = create_ota_receiver_project(build_dir, wifi_ssid, wifi_password, device_id, device_token, server_url)
         except Exception as e:
             yield sse({"done": True, "error": str(e)})
             return
-        yield from run_idf_build(job_id, build_dir)
+        yield from with_extra_done_metadata(run_idf_build(job_id, build_dir), {"agent": agent})
 
     return Response(generate(), content_type="text/event-stream",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

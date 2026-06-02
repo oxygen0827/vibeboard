@@ -27,6 +27,7 @@ flask.Flask = Flask
 flask.request = types.SimpleNamespace(get_json=lambda force=False: {})
 flask.Response = lambda *args, **kwargs: None
 flask.jsonify = lambda obj=None, **kwargs: obj if obj is not None else kwargs
+flask.send_file = lambda *args, **kwargs: None
 sys.modules["flask"] = flask
 
 os.environ["EXAMPLES_DIR"] = r"${tmp}/examples"
@@ -59,12 +60,15 @@ ota_root = pathlib.Path(os.environ["OTA_RECEIVER_DIR"])
 (ota_root / "main" / "vibeboard_wifi_config.h").write_text("#pragma once")
 (ota_root / "main" / "main.c").write_text("void app_main(void){}")
 build_dir = pathlib.Path(tempfile.mkdtemp()) / "build"
-server.create_ota_receiver_project(build_dir, "MyWiFi", "pa\\\"ss")
+server.create_ota_receiver_project(build_dir, "MyWiFi", "pa\\\"ss", "dev-01", "token-01", "https://example.com")
 cfg = (build_dir / "main" / "vibeboard_wifi_config.h").read_text()
 assert 'VIBEBOARD_WIFI_SSID "MyWiFi"' in cfg, cfg
 assert 'VIBEBOARD_WIFI_PASSWORD "pa\\\\\\"ss"' in cfg, cfg
+assert 'VIBEBOARD_DEVICE_ID "dev-01"' in cfg, cfg
+assert 'VIBEBOARD_DEVICE_TOKEN "token-01"' in cfg, cfg
+assert 'VIBEBOARD_SERVER_URL "https://example.com"' in cfg, cfg
 try:
-    server.create_ota_receiver_project(pathlib.Path(tempfile.mkdtemp()) / "build", "", "")
+    server.create_ota_receiver_project(pathlib.Path(tempfile.mkdtemp()) / "build", "", "", "", "", "")
 except ValueError:
     pass
 else:

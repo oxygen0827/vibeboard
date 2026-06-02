@@ -3,6 +3,7 @@ import { compileFirmware, compileOfficialExample, compileOtaReceiver, downloadBi
 import { getDeviceInfo, pushOta, loadOtaIp, saveOtaIp } from '../utils/ota'
 import { connectBle } from '../utils/bleOta'
 import { flashAppOnlyOverUsb, isWebSerialSupported, webSerialUnavailableReason } from '../utils/usbFlash'
+import { createRemoteOtaJob, getRemoteOtaJob, isDeviceOnline, listRemoteDevices, uploadFirmwareForRemoteOta } from '../utils/remoteOta'
 import { assembleCompileFiles } from '../utils/projectAssembly'
 import { validateProjectIncludes } from '../utils/projectValidation'
 import { OFFICIAL_EXAMPLES, getOfficialExample } from '../data/officialExamples'
@@ -32,6 +33,13 @@ const USB = {
   flashing: { label: 'USB 烧录中...', cls: 'building' },
   ok: { label: 'USB 成功', cls: 'ok' },
   error: { label: 'USB 失败', cls: 'error' },
+}
+const REMOTE = {
+  idle: { label: '远程 OTA', cls: '' },
+  uploading: { label: '上传固件...', cls: 'building' },
+  queued: { label: '等待设备领取', cls: 'building' },
+  done: { label: '远程完成', cls: 'ok' },
+  error: { label: '远程失败', cls: 'error' },
 }
 
 function summarizeCompileError(errorLog, buildLog) {
@@ -66,6 +74,9 @@ export default function CompilePanel({ projectFiles: sourceProp, selectedSkills,
   const [serverExamples, setServerExamples] = useState([])
   const [otaWifiSsid, setOtaWifiSsid] = useState('')
   const [otaWifiPassword, setOtaWifiPassword] = useState('')
+  const [agentServerUrl, setAgentServerUrl] = useState(() => window.location.origin)
+  const [agentDeviceId, setAgentDeviceId] = useState(() => `szpi-s3-${Math.random().toString(16).slice(2, 8)}`)
+  const [agentDeviceToken, setAgentDeviceToken] = useState(() => Math.random().toString(16).slice(2) + Math.random().toString(16).slice(2))
   const [buildState, setBuildState] = useState('idle')
   const [otaState, setOtaState] = useState('idle')
   const [status, setStatus] = useState('')
@@ -79,6 +90,10 @@ export default function CompilePanel({ projectFiles: sourceProp, selectedSkills,
   const [bleName, setBleName] = useState('')
   const [usbState, setUsbState] = useState('idle')
   const [usbProgress, setUsbProgress] = useState(0)
+  const [remoteState, setRemoteState] = useState('idle')
+  const [remoteDevices, setRemoteDevices] = useState([])
+  const [remoteDeviceId, setRemoteDeviceId] = useState('')
+  const [remoteJob, setRemoteJob] = useState(null)
   const [showFiles, setShowFiles] = useState(false)
   const [buildLog, setBuildLog] = useState([])
   const [copyState, setCopyState] = useState('idle')
@@ -101,11 +116,34 @@ export default function CompilePanel({ projectFiles: sourceProp, selectedSkills,
     setOtaState('idle')
     setBleState('idle')
     setUsbState('idle')
+    setRemoteState('idle')
     setFirmware(null)
     setBuildEvidence(null)
     setErrorLog('')
     setStatus('')
   }, [sourceProp, selectedSkills, boardId, compileMode, officialExampleId])
+  useEffect(() => {
+    let cancelled = false
+    function refresh() {
+      listRemoteDevices()
+        .then(devices => {
+          if (cancelled) return
+          setRemoteDevices(devices)
+          if (!remoteDeviceId && devices.length > 0) {
+            setRemoteDeviceId(devices[0].deviceId)
+          }
+        })
+        .catch(() => {
+          if (!cancelled) setRemoteDevices([])
+        })
+    }
+    refresh()
+    const timer = setInterval(refresh, 10000)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [remoteDeviceId])
   useEffect(() => {
     let cancelled = false
     loadOfficialExamples()
@@ -153,6 +191,9 @@ export default function CompilePanel({ projectFiles: sourceProp, selectedSkills,
         blob = await compileOtaReceiver({
           wifiSsid: otaWifiSsid.trim(),
           wifiPassword: otaWifiPassword,
+          serverUrl: agentServerUrl.trim(),
+          deviceId: agentDeviceId.trim(),
+          deviceToken: agentDeviceToken.trim(),
         }, setStatus, line => {
           setBuildLog(prev => [...prev, line])
           setTimeout(() => logEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 0)
@@ -291,10 +332,62 @@ export default function CompilePanel({ projectFiles: sourceProp, selectedSkills,
     }
   }
 
+  async function handleRemoteOta() {
+    if (!firmware || !remoteDeviceId) return
+    setRemoteState('uploading')
+    setRemoteJob(null)
+    setErrorLog('')
+    setStatus('正在上传固件到服务器...')
+    try {
+      const remoteFirmware = await uploadFirmwareForRemoteOta(firmware)
+      setStatus('正在创建远程 OTA 任务...')
+      const job = await createRemoteOtaJob({
+        deviceId: remoteDeviceId,
+        firmwareId: remoteFirmware.firmwareId,
+      })
+      setRemoteJob(job)
+      setRemoteState('queued')
+      setStatus(`远程 OTA 已下发，等待设备领取：${job.jobId.slice(0, 8)}`)
+    } catch (e) {
+      setErrorLog(e.message)
+      setStatus('远程 OTA 失败')
+      setRemoteState('error')
+    }
+  }
+
+  useEffect(() => {
+    if (!remoteJob?.jobId || remoteState === 'done' || remoteState === 'error') return
+    let cancelled = false
+    const timer = setInterval(async () => {
+      try {
+        const job = await getRemoteOtaJob(remoteJob.jobId)
+        if (cancelled) return
+        setRemoteJob(job)
+        if (job.status === 'done' || job.status === 'flashed' || job.status === 'rebooting') {
+          setRemoteState('done')
+          setStatus(`远程 OTA 状态：${job.status}`)
+        } else if (job.status === 'failed') {
+          setRemoteState('error')
+          setErrorLog(job.error || '远程 OTA 失败')
+          setStatus('远程 OTA 失败')
+        } else {
+          setStatus(`远程 OTA 状态：${job.status}`)
+        }
+      } catch {
+        // Keep the existing state; the next poll may recover.
+      }
+    }, 3000)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [remoteJob?.jobId, remoteState])
+
   const b = BUILD[buildState]
   const o = OTA[otaState]
   const bl = BLE[bleState]
   const us = USB[usbState]
+  const rm = REMOTE[remoteState]
   const failureSummary = buildState === 'error' ? summarizeCompileError(errorLog, buildLog) : ''
   const fullFailureLog = buildState === 'error' ? [...buildLog, errorLog].filter(Boolean).join('\n') : ''
 
@@ -357,6 +450,27 @@ export default function CompilePanel({ projectFiles: sourceProp, selectedSkills,
               <div className="compile-hint">
                 这个固件会启动 HTTP OTA 服务：/ping、/info、/ota。首次需要用 USB/串口烧录；设备连上 WiFi 后，再用下面的 WiFi OTA 推送后续固件。
               </div>
+              <label className="field-label">远程 OTA 服务器</label>
+              <input
+                className="field-input"
+                value={agentServerUrl}
+                onChange={e => setAgentServerUrl(e.target.value)}
+                placeholder="https://your-vibeboard.example.com"
+              />
+              <label className="field-label">设备 ID</label>
+              <input
+                className="field-input"
+                value={agentDeviceId}
+                onChange={e => setAgentDeviceId(e.target.value)}
+                placeholder="szpi-s3-lab-01"
+              />
+              <label className="field-label">设备 Token</label>
+              <input
+                className="field-input"
+                value={agentDeviceToken}
+                onChange={e => setAgentDeviceToken(e.target.value)}
+                placeholder="用于设备鉴权"
+              />
             </div>
           )}
 
@@ -459,6 +573,43 @@ export default function CompilePanel({ projectFiles: sourceProp, selectedSkills,
                 </button>
               )}
             </div>
+          </div>
+
+          <div className="ota-section remote-section">
+            <label className="field-label">远程 OTA（设备主动拉取）</label>
+            <p className="compile-hint">
+              设备运行 OTA 基础固件并配置服务器地址后，会主动上报在线状态并领取远程 OTA 任务；不需要和服务器在同一个局域网。
+            </p>
+            <select
+              className="field-input"
+              value={remoteDeviceId}
+              onChange={e => setRemoteDeviceId(e.target.value)}
+            >
+              <option value="">选择远程设备</option>
+              {remoteDevices.map(device => (
+                <option key={device.deviceId} value={device.deviceId}>
+                  {isDeviceOnline(device) ? '在线' : '离线'} · {device.deviceId} · {device.version || 'unknown'}
+                </option>
+              ))}
+            </select>
+            {remoteDevices.length === 0 && (
+              <div className="compile-status">
+                暂无远程设备。先编译并 USB 直刷带服务器地址的 OTA 基础固件。
+              </div>
+            )}
+            {remoteJob && (
+              <div className="device-info">
+                任务 <b>{remoteJob.jobId.slice(0, 8)}</b> · 状态 <b>{remoteJob.status}</b>
+                {remoteJob.error ? ` · ${remoteJob.error}` : ''}
+              </div>
+            )}
+            <button
+              className={`compile-btn remote-btn ${rm.cls}`}
+              onClick={handleRemoteOta}
+              disabled={!firmware || !remoteDeviceId || remoteState === 'uploading' || remoteState === 'queued'}
+            >
+              {rm.label}
+            </button>
           </div>
 
           <div className="ota-section ble-section">

@@ -160,7 +160,42 @@ http://<设备IP>:3232/ota
 
 注意：大多数官方例程本身不带 OTA 服务。OTA 推送官方例程成功后，板子会运行官方例程，后续可能不能继续 OTA。想再换固件时，通常需要再次 USB 直刷 **OTA 基础固件**，再 OTA 推送下一个工程。
 
-### 5. 生成新应用代码
+### 5. 远程 OTA：板子和服务器不在同一局域网
+
+局域网 OTA 是浏览器直接访问：
+
+```text
+浏览器 -> http://<设备IP>:3232/ota
+```
+
+所以它要求浏览器和板子网络互通。远程 OTA 不走这条路，而是让板子主动访问 VibeBoard 服务器：
+
+```text
+板子 VibeBoard Agent
+  -> POST /api/devices/heartbeat
+  -> GET /api/devices/<deviceId>/ota-job
+  -> 下载 firmware.bin
+  -> 写 OTA 分区并重启
+```
+
+使用方式：
+
+1. 编译 **OTA 基础固件** 时填写：
+   - WiFi SSID / 密码
+   - 远程 OTA 服务器，例如当前 HTTPS 页面地址
+   - 设备 ID
+   - 设备 Token
+2. 通过 **USB 直刷** 全量刷入这个 OTA 基础固件。
+3. 板子联网后会主动心跳注册到服务器。
+4. 编译任意新固件或官方例程。
+5. 在 **远程 OTA（设备主动拉取）** 里选择在线设备。
+6. 点击 **远程 OTA**。
+
+远程 OTA 的核心优势是：板子只要能访问公网 HTTPS 服务器，就不需要和浏览器、编译服务器在同一个局域网。
+
+当前远程 OTA 状态存储在编译服务容器内的 `/tmp/vibeboard-remote-ota`。正式生产建议把这个目录挂载为持久化 volume，或者迁移到数据库和对象存储。
+
+### 6. 生成新应用代码
 
 1. 在聊天面板选择外设 skill。
 2. 点击 **生成代码** 让 AI 修改项目文件。
@@ -272,6 +307,13 @@ docker run -d --name esp32-compiler -p 8760:8760 vibeboard-esp32-compiler
 | `POST /compile` | 编译当前组装工程 |
 | `POST /compile-example` | 原封不动编译官方例程 |
 | `POST /compile-ota-receiver` | 编译 WiFi OTA 基础固件 |
+| `POST /api/devices/heartbeat` | 设备心跳和注册 |
+| `GET /api/devices` | 远程设备列表 |
+| `POST /api/firmware` | 上传远程 OTA 固件 |
+| `GET /api/firmware/<firmwareId>/download` | 设备下载固件 |
+| `POST /api/ota-jobs` | 创建远程 OTA 任务 |
+| `GET /api/devices/<deviceId>/ota-job` | 设备领取远程 OTA 任务 |
+| `POST /api/ota-jobs/<jobId>/status` | 设备上报 OTA 任务状态 |
 
 构建结果通过 Server-Sent Events 流式返回。成功时返回 app `.bin`，并在可用时返回 `flashFiles`，供网页 USB 全量烧录。
 
@@ -285,6 +327,7 @@ docker run -d --name esp32-compiler -p 8760:8760 vibeboard-esp32-compiler
 - [src/utils/projectAssembly.js](./src/utils/projectAssembly.js)：系统拥有的 ESP-IDF 工程文件生成。
 - [src/utils/projectValidation.js](./src/utils/projectValidation.js)：编译前项目校验。
 - [src/utils/compiler.js](./src/utils/compiler.js)：编译服务客户端。
+- [src/utils/remoteOta.js](./src/utils/remoteOta.js)：远程 OTA 设备、固件和任务 API。
 - [src/utils/usbFlash.js](./src/utils/usbFlash.js)：Web Serial USB 烧录。
 - [src/utils/ota.js](./src/utils/ota.js)：HTTP OTA 推送。
 - [src/utils/bleOta.js](./src/utils/bleOta.js)：BLE OTA 推送。
@@ -303,6 +346,7 @@ docker run -d --name esp32-compiler -p 8760:8760 vibeboard-esp32-compiler
 
 ```bash
 npm run test:official-examples-backend
+npm run test:remote-ota-backend
 npm run test:project-validation
 npm run test:code-generation
 npm run test:file-placement
