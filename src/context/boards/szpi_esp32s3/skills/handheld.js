@@ -3,7 +3,7 @@ export const handheldSkill = {
   id: 'handheld',
   label: '综合手持设备',
   projectConfig: {
-    srcs: ['app_ui.c'],
+    srcs: [],
     sdkconfig: [
       'CONFIG_SPIRAM=y',
       'CONFIG_SPIRAM_MODE_OCT=y',

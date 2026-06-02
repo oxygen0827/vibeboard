@@ -3,7 +3,7 @@ export const speechSkill = {
   id: 'speech',
   label: '语音识别 (esp-sr)',
   projectConfig: {
-    srcs: ['app_sr.c'],
+    srcs: [],
     sdkconfig: [
       'CONFIG_SPIRAM=y',
       'CONFIG_SPIRAM_MODE_OCT=y',

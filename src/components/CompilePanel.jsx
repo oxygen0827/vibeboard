@@ -3,9 +3,8 @@ import { compileFirmware, compileOfficialExample, compileOtaReceiver, downloadBi
 import { getDeviceInfo, pushOta, loadOtaIp, saveOtaIp } from '../utils/ota'
 import { connectBle } from '../utils/bleOta'
 import { flashAppOnlyOverUsb, isWebSerialSupported, webSerialUnavailableReason } from '../utils/usbFlash'
-import { createRemoteOtaJob, getRemoteOtaJob, isDeviceOnline, listRemoteDevices, uploadFirmwareForRemoteOta } from '../utils/remoteOta'
+import { createRemoteOtaJob, formatLastSeen, getRemoteOtaJob, isDeviceOnline, listRemoteDevices, uploadFirmwareForRemoteOta } from '../utils/remoteOta'
 import { assembleCompileFiles } from '../utils/projectAssembly'
-import { validateProjectIncludes } from '../utils/projectValidation'
 import { OFFICIAL_EXAMPLES, getOfficialExample } from '../data/officialExamples'
 import './CompilePanel.css'
 
@@ -105,7 +104,7 @@ export default function CompilePanel({ projectFiles: sourceProp, selectedSkills,
   const selectedServerExample = serverExamples.find(example => example.id === officialExampleId)
   const officialExampleAvailable = compileMode !== 'official' || availableExampleIds.has(officialExampleId)
 
-  const { files: compileProjectFiles, mainFile } = assembleCompileFiles({
+  const { files: compileProjectFiles, mainFile, compilePackage } = assembleCompileFiles({
     boardId,
     projectFiles: sourceProp || {},
     selectedSkills: selectedSkills || [],
@@ -129,8 +128,9 @@ export default function CompilePanel({ projectFiles: sourceProp, selectedSkills,
         .then(devices => {
           if (cancelled) return
           setRemoteDevices(devices)
-          if (!remoteDeviceId && devices.length > 0) {
-            setRemoteDeviceId(devices[0].deviceId)
+          if (!remoteDeviceId) {
+            const onlineDevice = devices.find(device => isDeviceOnline(device))
+            if (onlineDevice) setRemoteDeviceId(onlineDevice.deviceId)
           }
         })
         .catch(() => {
@@ -199,9 +199,8 @@ export default function CompilePanel({ projectFiles: sourceProp, selectedSkills,
           setTimeout(() => logEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 0)
         })
       } else {
-        const validation = validateProjectIncludes(compileProjectFiles || {}, selectedSkills || [])
-        if (!validation.ok) {
-          setErrorLog(validation.message)
+        if (!compilePackage.ok) {
+          setErrorLog(compilePackage.message)
           setStatus('编译前检查失败')
           setBuildState('error')
           return
@@ -209,8 +208,9 @@ export default function CompilePanel({ projectFiles: sourceProp, selectedSkills,
 
         const mainPath = Object.keys(compileProjectFiles).find(k => k === mainFile || k === `main/${mainFile}` || k.endsWith(`/${mainFile}`)) || mainFile
         const code = compileProjectFiles[mainPath] || ''
-        const configFiles = Object.fromEntries(Object.entries(compileProjectFiles).filter(([k]) => !k.startsWith('__') && k !== mainPath))
-        const compileMetadata = Object.fromEntries(Object.entries(compileProjectFiles).filter(([k]) => k.startsWith('__')))
+        const compilerFiles = compilePackage.backendProjectFiles || compileProjectFiles
+        const configFiles = Object.fromEntries(Object.entries(compilerFiles).filter(([k]) => !k.startsWith('__') && k !== mainPath))
+        const compileMetadata = Object.fromEntries(Object.entries(compilerFiles).filter(([k]) => k === '__mainFile'))
         blob = await compileFirmware(code, { ...configFiles, ...compileMetadata }, setStatus, line => {
           setBuildLog(prev => [...prev, line])
           setTimeout(() => logEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 0)
@@ -334,6 +334,13 @@ export default function CompilePanel({ projectFiles: sourceProp, selectedSkills,
 
   async function handleRemoteOta() {
     if (!firmware || !remoteDeviceId) return
+    const selectedDevice = remoteDevices.find(device => device.deviceId === remoteDeviceId)
+    if (!isDeviceOnline(selectedDevice)) {
+      setRemoteState('error')
+      setErrorLog('远程设备当前不在线。设备心跳每 10 秒一次，30 秒内没有心跳就不会下发 OTA。')
+      setStatus('远程 OTA 失败')
+      return
+    }
     setRemoteState('uploading')
     setRemoteJob(null)
     setErrorLog('')
@@ -589,6 +596,8 @@ export default function CompilePanel({ projectFiles: sourceProp, selectedSkills,
               {remoteDevices.map(device => (
                 <option key={device.deviceId} value={device.deviceId}>
                   {isDeviceOnline(device) ? '在线' : '离线'} · {device.deviceId} · {device.version || 'unknown'}
+                  {' · '}
+                  {formatLastSeen(device)}
                 </option>
               ))}
             </select>

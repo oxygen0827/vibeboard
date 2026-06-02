@@ -30,8 +30,10 @@ const {
   buildBuildRepairMessages,
   extractFileBlocks,
   extractJsonObject,
+  inferSkillsFromRequest,
   parseProgramManifestResponse,
   parseGeneratedFilesResponse,
+  parseGeneratedFilesResponseWithOptions,
 } = await import(join(tmp, 'src/utils/codeGeneration.js'))
 
 assert.equal(extractJsonObject('```json\n{"files":[]}\n```'), '{"files":[]}')
@@ -90,11 +92,33 @@ assert.match(missingMain.errors.join(','), /missing-main-app-main/)
 const board = {
   id: 'szpi_esp32s3',
   skills: [
+    { id: 'gpio', label: 'GPIO' },
     { id: 'lvgl', label: 'LVGL' },
     { id: 'wifi', label: 'WiFi' },
+    { id: 'audio', label: 'Audio' },
+    { id: 'ble', label: 'BLE' },
+    { id: 'camera', label: 'Camera' },
+    { id: 'speech', label: 'Speech' },
   ],
   buildSystemPrompt: (skills = []) => `board prompt ${skills.join(',')}`,
 }
+
+assert.deepEqual(
+  new Set(inferSkillsFromRequest(board, '做一个触屏 MP3 音乐播放器')),
+  new Set(['lvgl', 'audio']),
+)
+assert.deepEqual(
+  new Set(inferSkillsFromRequest(board, 'WiFi 扫描并显示连接界面')),
+  new Set(['lvgl', 'wifi']),
+)
+assert.deepEqual(
+  new Set(inferSkillsFromRequest(board, '做一个语音识别控制屏幕')),
+  new Set(['lvgl', 'audio', 'speech']),
+)
+assert.deepEqual(
+  new Set(inferSkillsFromRequest(board, 'BOOT 按键中断计数')),
+  new Set(['gpio']),
+)
 
 const manifest = parseProgramManifestResponse(JSON.stringify({
   schemaVersion: 1,
@@ -130,12 +154,35 @@ assert.match(badManifest.errors.join(','), /system-file-write-denied/)
 
 assert.match(
   buildProgramManifestMessages({ board, selectedSkills: ['lvgl'], userRequest: 'show hello' })[0].content,
-  /Program Manifest/,
+  /Official SZPI ESP32-S3 Example Rules[\s\S]*12-speech_recognition/,
 )
 assert.match(
   buildManifestCodeGenerationMessages({ board, manifest: manifest.manifest, userRequest: 'show hello' })[1].content,
   /Validated Program Manifest/,
 )
+assert.match(
+  buildManifestCodeGenerationMessages({ board, manifest: manifest.manifest, userRequest: 'show hello' })[0].content,
+  /Do not use APIs from a skill family/,
+)
+
+const generatedAgainstManifest = parseGeneratedFilesResponseWithOptions(JSON.stringify({
+  files: [
+    { path: 'main/main.c', content: '#include "app_ui.h"\nvoid app_main(void) { app_ui_start(); }' },
+    { path: 'main/app_ui.h', content: '#pragma once\nvoid app_ui_start(void);' },
+    { path: 'main/extra.c', content: 'void extra(void) {}' },
+  ],
+}), board, {
+  manifest: {
+    files: [
+      { path: 'main/main.c' },
+      { path: 'main/app_ui.h' },
+      { path: 'main/app_ui.c' },
+    ],
+  },
+})
+assert.equal(generatedAgainstManifest.ok, false)
+assert.match(generatedAgainstManifest.errors.join(','), /main\/app_ui\.c:manifest-file-missing/)
+assert.match(generatedAgainstManifest.errors.join(','), /main\/extra\.c:not-in-manifest/)
 
 const repairMessages = buildBuildRepairMessages({
   board,

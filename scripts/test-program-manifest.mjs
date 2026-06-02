@@ -34,6 +34,8 @@ const board = {
   skills: [
     { id: 'lvgl' },
     { id: 'wifi' },
+    { id: 'audio' },
+    { id: 'sdcard' },
   ],
 }
 
@@ -92,6 +94,29 @@ const badSkill = validateProgramManifest({
 }, { board })
 assert.equal(badSkill.ok, false)
 assert.match(badSkill.errors.map(e => e.category).join(','), /invalid-skill/)
+
+const missingDisplaySkill = validateProgramManifest({
+  schemaVersion: 1,
+  boardId: 'szpi_esp32s3',
+  skillIds: ['wifi'],
+  entry: 'main/main.c',
+  files: [{ path: 'main/main.c', role: 'entry' }],
+  requires: { display: true, network: true },
+  allowedWriteSurface: WRITE_SURFACES.APPLICATION_SOURCE_ONLY,
+}, { board })
+assert.equal(missingDisplaySkill.ok, false)
+assert.match(missingDisplaySkill.errors.map(e => e.message).join(','), /requires\.display needs one of skills: lvgl, audio/)
+
+const audioSpiffsStorage = validateProgramManifest({
+  schemaVersion: 1,
+  boardId: 'szpi_esp32s3',
+  skillIds: ['audio'],
+  entry: 'main/main.c',
+  files: [{ path: 'main/main.c', role: 'entry' }],
+  requires: { audio: true, storage: true },
+  allowedWriteSurface: WRITE_SURFACES.APPLICATION_SOURCE_ONLY,
+}, { board })
+assert.equal(audioSpiffsStorage.ok, true)
 
 const duplicateEntry = validateProgramManifest({
   schemaVersion: 1,

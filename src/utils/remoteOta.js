@@ -46,3 +46,12 @@ export async function getRemoteOtaJob(jobId) {
 export function isDeviceOnline(device, now = Date.now()) {
   return !!device?.lastSeenAt && now - device.lastSeenAt < 30000
 }
+
+export function formatLastSeen(device, now = Date.now()) {
+  if (!device?.lastSeenAt) return '从未上线'
+  const age = Math.max(0, now - device.lastSeenAt)
+  if (age < 1000) return '刚刚'
+  if (age < 60000) return `${Math.round(age / 1000)} 秒前`
+  if (age < 3600000) return `${Math.round(age / 60000)} 分钟前`
+  return `${Math.round(age / 3600000)} 小时前`
+}

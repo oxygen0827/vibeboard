@@ -5,9 +5,10 @@ import SettingsModal from './components/SettingsModal'
 import CompilePanel from './components/CompilePanel'
 import ProjectEditor from './components/ProjectEditor'
 import { BOARDS, DEFAULT_BOARD_ID, getBoardList, getBoard } from './context/boards'
-import { buildGeneratedConfig, filterInsertableFiles } from './utils/projectAssembly'
+import { buildGeneratedConfig } from './utils/projectAssembly'
 import { isSourcePath } from './utils/filePlacement'
 import { normalizeGeneratedSourceFiles } from './utils/projectValidation'
+import { normalizeApplicationFiles } from './domain/compilePackage/compilePackage'
 import bspHeader from '../backend/compiler-service/template/components/esp32_s3_szp/esp32_s3_szp.h?raw'
 import bspSource from '../backend/compiler-service/template/components/esp32_s3_szp/esp32_s3_szp.c?raw'
 import bspCmake from '../backend/compiler-service/template/components/esp32_s3_szp/CMakeLists.txt?raw'
@@ -17,6 +18,12 @@ const STORAGE_KEY = 'esp32-vibe-coder-settings'
 const BOARD_STORAGE_KEY = 'esp32-vibe-coder-board'
 // Intentional hosted default so fresh deployments work without user setup.
 const DEFAULT_SETTINGS = {
+  baseUrl: 'https://rehdasu.cn/v1',
+  apiKey: 'sk-d55e0d8500404f752a39a2c5baced590b6475c3fcc8b6d84b9c1f000e6f00cd5',
+  model: 'gpt-5.5',
+}
+
+const LEGACY_DEFAULT_SETTINGS = {
   baseUrl: 'https://api.minimax.chat/v1',
   apiKey: 'sk-cp-gqDamnnNW1zvbls0aXsUkXzZoY8Tcv4scKA47FsN5Wb2al2fnV723JHNTMNak9mCJZZoijo6QAfrqXqYzrkMy7Gz72g5HBG3-lQlgTkvZ7dtVNhZll8Qft4',
   model: 'MiniMax-M2.7',
@@ -65,7 +72,14 @@ function chooseActiveGeneratedFile(files) {
 function loadSettings() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) return withDefaultSettings(JSON.parse(raw))
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      const isLegacyDefault =
+        parsed.baseUrl === LEGACY_DEFAULT_SETTINGS.baseUrl &&
+        parsed.apiKey === LEGACY_DEFAULT_SETTINGS.apiKey &&
+        parsed.model === LEGACY_DEFAULT_SETTINGS.model
+      return isLegacyDefault ? DEFAULT_SETTINGS : withDefaultSettings(parsed)
+    }
   } catch {}
   return DEFAULT_SETTINGS
 }
@@ -110,8 +124,8 @@ export default function App() {
       setProjectFiles(prev => ({ ...prev, ...normalized }))
       setActiveFile(target)
     } else {
-      const { accepted } = filterInsertableFiles(codeOrFiles, board)
-      const normalized = normalizeGeneratedSourceFiles(accepted).files
+      const { files: applicationFiles } = normalizeApplicationFiles(codeOrFiles, board)
+      const normalized = normalizeGeneratedSourceFiles(applicationFiles).files
       const nextActive = chooseActiveGeneratedFile(normalized)
       setProjectFiles(prev => {
         const next = { ...prev, ...normalized }

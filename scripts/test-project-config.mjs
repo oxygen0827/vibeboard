@@ -35,6 +35,8 @@ const modules = [
   'src/context/boards/index.js',
   'src/context/index.js',
   'src/utils/filePlacement.js',
+  'src/utils/projectValidation.js',
+  'src/domain/compilePackage/compilePackage.js',
   'src/utils/projectAssembly.js',
 ]
 for (const rel of modules) await copyModule(rel)
@@ -60,7 +62,7 @@ assert.match(lvgl['main/idf_component.yml'], /lvgl\/lvgl/)
 const vision = files(['vision'])
 assert.equal(vision.__mainFile, 'main.cpp')
 assert.match(vision['main/CMakeLists.txt'], /"main\.cpp"/)
-assert.match(vision['main/CMakeLists.txt'], /"who_human_face_detection\.cpp"/)
+assert.doesNotMatch(vision['main/CMakeLists.txt'], /"who_human_face_detection\.cpp"/)
 assert.match(vision['main/CMakeLists.txt'], /REQUIRES[\s\S]*esp32_s3_szp/)
 assert.match(vision['main/CMakeLists.txt'], /REQUIRES[\s\S]*esp32-camera/)
 
@@ -71,6 +73,16 @@ assert.match(audio['main/CMakeLists.txt'], /spiffs_create_partition_image\(stora
 const combined = files(['wifi', 'audio'])
 assert.match(combined['partitions.csv'], /factory,\s+app,\s+factory,\s+,\s+7M/)
 assert.match(combined['partitions.csv'], /storage,\s+data,\s+spiffs/)
+
+const wifiOnly = files(['wifi'])
+assert.match(wifiOnly['main/idf_component.yml'], /lvgl\/lvgl/)
+assert.match(wifiOnly['main/CMakeLists.txt'], /REQUIRES[\s\S]*lvgl/)
+
+const speechOnly = files(['speech'])
+assert.match(speechOnly['main/idf_component.yml'], /esp-sr/)
+assert.match(speechOnly['main/idf_component.yml'], /esp-audio-player/)
+assert.match(speechOnly['main/idf_component.yml'], /lvgl\/lvgl/)
+assert.doesNotMatch(speechOnly['main/CMakeLists.txt'], /"app_sr\.c"/)
 
 const assembled = assembleCompileFiles({
   boardId: 'szpi_esp32s3',
@@ -99,6 +111,17 @@ assert.equal(cppMain.files.__mainFile, 'main.cpp')
 assert.match(cppMain.files['main/CMakeLists.txt'], /"main\.cpp"/)
 assert.match(cppMain.files['main/CMakeLists.txt'], /"app\.cpp"/)
 assert.doesNotMatch(cppMain.files['main/CMakeLists.txt'], /"main\.c"/)
+
+const visionGeneratedHelpers = assembleCompileFiles({
+  boardId: 'szpi_esp32s3',
+  selectedSkills: ['vision'],
+  projectFiles: {
+    'main/main.cpp': 'extern "C" void app_main(void) {}',
+    'main/who_human_face_detection.cpp': 'void detect_face(void) {}',
+    'main/who_human_face_detection.hpp': '#pragma once\nvoid detect_face(void);',
+  },
+})
+assert.match(visionGeneratedHelpers.files['main/CMakeLists.txt'], /"who_human_face_detection\.cpp"/)
 
 const officialStyle = assembleCompileFiles({
   boardId: 'szpi_esp32s3',

@@ -7,6 +7,7 @@
 #include "freertos/task.h"
 
 #include "esp_app_desc.h"
+#include "esp_crt_bundle.h"
 #include "esp_event.h"
 #include "esp_http_client.h"
 #include "esp_http_server.h"
@@ -78,6 +79,7 @@ static esp_http_client_handle_t make_http_client(const char *url)
         .event_handler = http_event_handler,
         .timeout_ms = 15000,
         .buffer_size = REMOTE_BUF_SIZE,
+        .crt_bundle_attach = esp_crt_bundle_attach,
     };
     return esp_http_client_init(&config);
 }

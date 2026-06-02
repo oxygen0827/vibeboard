@@ -64,4 +64,26 @@ const includes = validateProjectIncludes({
 }, ['lvgl'])
 assert.equal(includes.ok, true)
 
+const audioWithoutSkill = validateProjectIncludes({
+  'main/main.c': '#include "esp32_s3_szp.h"\n#include "audio_player.h"\nvoid app_main(void) { bsp_codec_init(); mp3_player_init(); }\n',
+}, ['lvgl'])
+assert.equal(audioWithoutSkill.ok, false)
+assert.match(audioWithoutSkill.message, /audio codec\/player needs skill "audio"/)
+
+const audioWithSkill = validateProjectIncludes({
+  'main/main.c': '#include "esp32_s3_szp.h"\n#include "audio_player.h"\nvoid app_main(void) { bsp_codec_init(); mp3_player_init(); }\n',
+}, ['audio'])
+assert.equal(audioWithSkill.ok, true)
+
+const wifiWithoutSkill = validateProjectIncludes({
+  'main/main.c': '#include "esp_wifi.h"\nvoid app_main(void) { esp_wifi_start(); }\n',
+}, ['lvgl'])
+assert.equal(wifiWithoutSkill.ok, false)
+assert.match(wifiWithoutSkill.message, /WiFi\/network needs skill "wifi"/)
+
+const speechCoversAudioAndLvgl = validateProjectIncludes({
+  'main/main.c': '#include "lvgl.h"\n#include "audio_player.h"\nvoid app_main(void) { bsp_lvgl_start(); bsp_codec_init(); app_sr_init(); }\n',
+}, ['speech'])
+assert.equal(speechCoversAudioAndLvgl.ok, true)
+
 console.log('project validation tests passed')

@@ -3,7 +3,7 @@ export const bleSkill = {
   id: 'ble',
   label: 'BLE (HID)',
   projectConfig: {
-    srcs: ['ble_hidd_demo.c', 'esp_hidd_prf_api.c', 'hid_dev.c', 'hid_device_le_prf.c'],
+    srcs: [],
     sdkconfig: [
       'CONFIG_SPIRAM=y',
       'CONFIG_SPIRAM_MODE_OCT=y',

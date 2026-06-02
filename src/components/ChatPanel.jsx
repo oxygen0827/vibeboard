@@ -8,7 +8,9 @@ import {
   buildBuildRepairMessages,
   buildManifestCodeGenerationMessages,
   buildProgramManifestMessages,
+  inferSkillsFromRequest,
   parseGeneratedFilesResponse,
+  parseGeneratedFilesResponseWithOptions,
   parseProgramManifestResponse,
 } from '../utils/codeGeneration'
 import './ChatPanel.css'
@@ -19,8 +21,8 @@ const QUICK_PROMPTS = [
   '帮我写一个播放MP3音乐的主函数',
   '帮我实现WiFi扫描并连接功能',
   '帮我写一个摄像头实时显示到LCD的例程',
-  '生成完整的idf_component.yml（LCD+LVGL+音频）',
-  '生成适合这块板子的sdkconfig.defaults',
+  '帮我做一个带按钮的触屏MP3播放器',
+  '帮我做一个显示WiFi连接状态的触摸界面',
 ]
 
 function getQuickPrompts(board) {
@@ -182,13 +184,18 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
     setKnowledgeCard(null)
     setMessages(prev => [...prev, { role: 'user', content: text }, { role: 'assistant', content: '正在生成工程文件...' }])
     try {
+      const inferredSkills = inferSkillsFromRequest(board, text, selectedSkills)
+      if (inferredSkills.join(',') !== selectedSkills.join(',')) {
+        onSkillsChange?.(inferredSkills)
+      }
+
       const content = await completeChat({
         baseUrl: settings.baseUrl,
         apiKey: settings.apiKey,
         model: settings.model,
         messages: buildProgramManifestMessages({
           board,
-          selectedSkills,
+          selectedSkills: inferredSkills,
           userRequest: text,
         }),
       })
@@ -226,7 +233,9 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
           userRequest: text,
         }),
       })
-      const parsed = parseGeneratedFilesResponse(fileContent, board)
+      const parsed = parseGeneratedFilesResponseWithOptions(fileContent, board, {
+        manifest: manifestResult.manifest,
+      })
       if (!parsed.ok) {
         const message = `生成结果未通过校验：${parsed.errors.join(', ')}`
         setMessages(prev => {

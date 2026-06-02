@@ -23,6 +23,15 @@ function boardSkillIds(board) {
   return new Set((board?.skills || []).map(skill => skill.id).filter(Boolean))
 }
 
+const REQUIRE_SKILL_OPTIONS = {
+  display: ['lvgl', 'audio', 'speech', 'handheld'],
+  audio: ['audio', 'speech', 'handheld'],
+  network: ['wifi', 'handheld'],
+  camera: ['camera', 'vision', 'handheld'],
+  storage: ['sdcard', 'audio', 'speech', 'handheld'],
+  ble: ['ble', 'handheld'],
+}
+
 export function normalizeManifest(rawManifest) {
   const manifest = isPlainObject(rawManifest) ? rawManifest : {}
   const skillIds = normalizeSkillIds(manifest.skillIds)
@@ -76,6 +85,22 @@ export function validateProgramManifest(rawManifest, { board } = {}) {
       if (!validSkillIds.has(skillId)) {
         addError(errors, FAILURE_CATEGORIES.INVALID_SKILL, `unknown skill: ${skillId}`, { skillId })
       }
+    }
+  }
+
+  for (const [requirement, skillIds] of Object.entries(REQUIRE_SKILL_OPTIONS)) {
+    if (!manifest.requires?.[requirement]) continue
+    const availableSkillIds = validSkillIds.size > 0
+      ? skillIds.filter(skillId => validSkillIds.has(skillId))
+      : skillIds
+    if (availableSkillIds.length === 0) continue
+    if (!availableSkillIds.some(skillId => manifest.skillIds.includes(skillId))) {
+      addError(
+        errors,
+        FAILURE_CATEGORIES.INVALID_SKILL,
+        `requires.${requirement} needs one of skills: ${availableSkillIds.join(', ')}`,
+        { requirement, skillIds: availableSkillIds },
+      )
     }
   }
 
