@@ -7,9 +7,6 @@ export default defineConfig({
     proxy: {
       '/compile':     'http://127.0.0.1:8760',
       '/health':      'http://127.0.0.1:8760',
-      '/pio-compile': { target: 'http://127.0.0.1:8761', rewrite: path => '/compile' },
-      '/pio-health':  { target: 'http://127.0.0.1:8761', rewrite: path => '/health'  },
     },
   },
 })
-

@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import Editor from '@monaco-editor/react'
+import { isConfigPath, normalizeProjectPath } from '../utils/filePlacement'
 import './ProjectEditor.css'
 
 const LANG_MAP = {
   c: 'c', cc: 'cpp', cpp: 'cpp', cxx: 'cpp',
   h: 'c', hpp: 'cpp',
-  ino: 'cpp',
   js: 'javascript', json: 'json',
   cmake: 'cmake', txt: 'plaintext',
   yml: 'yaml', yaml: 'yaml',
@@ -18,23 +18,8 @@ function langFor(filename) {
   return LANG_MAP[ext] || 'plaintext'
 }
 
-function isConfigFile(path) {
-  const name = path.split('/').pop()
-  return path === 'CMakeLists.txt' ||
-    path === 'main/CMakeLists.txt' ||
-    path === 'sdkconfig.defaults' ||
-    path === 'main/idf_component.yml' ||
-    path === 'partitions.csv' ||
-    name === 'CMakeLists.txt' ||
-    name.endsWith('.yml') ||
-    name === 'sdkconfig.defaults' ||
-    name === 'partitions.csv' ||
-    path.startsWith('__')
-}
-
-export default function ProjectEditor({ files, generatedFiles = {}, referenceFiles = {}, activeFile, onFileChange, onFileSelect, onCompile }) {
-  const [showConfig, setShowConfig] = useState(false)
-  const [showReference, setShowReference] = useState(false)
+export default function ProjectEditor({ files, generatedFiles = {}, referenceFiles = {}, activeFile, board, onFileChange, onFileSelect, onCompile }) {
+  const [showSystemFiles, setShowSystemFiles] = useState(false)
 
   const displayFiles = { ...generatedFiles, ...files }
   const allFiles = Object.keys(files).filter(f => !f.startsWith('__'))
@@ -43,9 +28,9 @@ export default function ProjectEditor({ files, generatedFiles = {}, referenceFil
   const activeIsReference = activeFile ? referenceFiles[activeFile] !== undefined : false
   const activeIsGenerated = activeFile ? generatedFiles[activeFile] !== undefined && files[activeFile] === undefined : false
   const activeContent = activeIsReference ? referenceFiles[activeFile] : displayFiles[activeFile]
-  const srcFiles = allFiles.filter(f => !isConfigFile(f))
-  const cfgFiles = displayFilePaths.filter(f => isConfigFile(f))
-  const mainFile = srcFiles.find(f => /(^|\/)(main\.(c|cpp)|sketch\.ino)$/.test(f)) || srcFiles[0]
+  const srcFiles = allFiles.filter(f => !isConfigPath(f))
+  const cfgFiles = displayFilePaths.filter(f => isConfigPath(f) || f.startsWith('__'))
+  const mainFile = srcFiles.find(f => /(^|\/)main\.(c|cpp)$/.test(f)) || srcFiles[0]
 
   function handleClose(e, path) {
     e.stopPropagation()
@@ -58,11 +43,15 @@ export default function ProjectEditor({ files, generatedFiles = {}, referenceFil
   function handleAddFile() {
     const name = prompt('新文件名，例如 helper.c 或 main/helper.c')
     if (!name) return
-    const path = name.includes('/') ? name : `main/${name}`
-    onFileChange({ ...files, [path]: `// ${path}\n` }, path)
+    const normalized = normalizeProjectPath(name, board)
+    if (!normalized.accepted) {
+      alert(`不支持的文件路径或类型: ${name}`)
+      return
+    }
+    onFileChange({ ...files, [normalized.path]: `// ${normalized.path}\n` }, normalized.path)
   }
 
-  const activeIsConfig = activeFile ? isConfigFile(activeFile) : false
+  const activeIsConfig = activeFile ? isConfigPath(activeFile) : false
 
   return (
     <div className="project-editor">
@@ -87,58 +76,59 @@ export default function ProjectEditor({ files, generatedFiles = {}, referenceFil
         </div>
         <div className="pe-tabs-actions">
           <button className="pe-add-btn" onClick={handleAddFile} title="新建文件">+</button>
+          <div className="pe-system-menu">
+            <button
+              className={`pe-system-btn ${showSystemFiles ? 'active' : ''}`}
+              onClick={() => setShowSystemFiles(v => !v)}
+              title="查看自动生成配置和板级库"
+            >
+              系统文件
+            </button>
+            {showSystemFiles && (
+              <div className="pe-system-popover">
+                <div className="pe-system-section">
+                  <div className="pe-system-heading">自动生成配置</div>
+                  {cfgFiles.map(path => {
+                    const name = path.split('/').pop()
+                    return (
+                      <button
+                        key={path}
+                        className={`pe-system-item ${activeFile === path ? 'active' : ''}`}
+                        onClick={() => {
+                          onFileSelect(path)
+                          setShowSystemFiles(false)
+                        }}
+                        title={path}
+                      >
+                        {name}
+                      </button>
+                    )
+                  })}
+                </div>
+                <div className="pe-system-section">
+                  <div className="pe-system-heading">板级库 / BSP 只读</div>
+                  {referencePaths.map(path => {
+                    const name = path.split('/').pop()
+                    return (
+                      <button
+                        key={path}
+                        className={`pe-system-item reference ${activeFile === path ? 'active' : ''}`}
+                        onClick={() => {
+                          onFileSelect(path)
+                          setShowSystemFiles(false)
+                        }}
+                        title={path}
+                      >
+                        {name}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
           <button className="pe-compile-btn" onClick={onCompile}>▶ 编译</button>
         </div>
-      </div>
-
-      <div className="pe-config-bar">
-        <button
-          className={`pe-config-toggle ${showConfig ? 'open' : ''}`}
-          onClick={() => setShowConfig(v => !v)}
-        >
-          <span className="pe-config-toggle-arrow">{showConfig ? '▾' : '▸'}</span>
-          配置文件
-          <span className="pe-config-count">{cfgFiles.length}</span>
-        </button>
-        {showConfig && cfgFiles.map(path => {
-          const name = path.split('/').pop()
-          const modified = files[path] !== undefined
-          return (
-            <div
-              key={path}
-              className={`pe-tab config ${activeFile === path ? 'active' : ''}`}
-              onClick={() => onFileSelect(path)}
-              title={`${path} · ${modified ? '已编辑覆盖' : '自动生成'}`}
-            >
-              <span className="pe-tab-name">{name}</span>
-              <span className={`pe-tab-dot ${modified ? '' : 'generated'}`} title={modified ? '已编辑覆盖' : '自动生成'} />
-            </div>
-          )
-        })}
-      </div>
-
-      <div className="pe-config-bar reference">
-        <button
-          className={`pe-config-toggle reference ${showReference ? 'open' : ''}`}
-          onClick={() => setShowReference(v => !v)}
-        >
-          <span className="pe-config-toggle-arrow">{showReference ? '▾' : '▸'}</span>
-          板级库 / BSP
-          <span className="pe-config-count">{referencePaths.length}</span>
-        </button>
-        {showReference && referencePaths.map(path => {
-          const name = path.split('/').pop()
-          return (
-            <div
-              key={path}
-              className={`pe-tab reference ${activeFile === path ? 'active' : ''}`}
-              onClick={() => onFileSelect(path)}
-              title={path}
-            >
-              <span className="pe-tab-name">{name}</span>
-            </div>
-          )
-        })}
       </div>
 
       {activeIsReference ? (

@@ -46,6 +46,7 @@ def validate_project_path(build_dir: Path, rel_path: str) -> Path:
 
 def create_project(build_dir: Path, code: str, project_files: dict):
     shutil.copytree(TEMPLATE_DIR, build_dir)
+    (build_dir / "spiffs").mkdir(exist_ok=True)
     main_file = project_files.get("__mainFile", "main.c")
     main_target = validate_project_path(build_dir / "main", main_file)
     main_target.write_text(code)

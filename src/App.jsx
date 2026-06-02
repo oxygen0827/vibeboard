@@ -6,6 +6,7 @@ import CompilePanel from './components/CompilePanel'
 import ProjectEditor from './components/ProjectEditor'
 import { BOARDS, DEFAULT_BOARD_ID, getBoardList, getBoard } from './context/boards'
 import { buildGeneratedConfig, filterInsertableFiles } from './utils/projectAssembly'
+import { isSourcePath } from './utils/filePlacement'
 import bspHeader from '../backend/compiler-service/template/components/esp32_s3_szp/esp32_s3_szp.h?raw'
 import bspSource from '../backend/compiler-service/template/components/esp32_s3_szp/esp32_s3_szp.c?raw'
 import bspCmake from '../backend/compiler-service/template/components/esp32_s3_szp/CMakeLists.txt?raw'
@@ -13,19 +14,34 @@ import './App.css'
 
 const STORAGE_KEY = 'esp32-vibe-coder-settings'
 const BOARD_STORAGE_KEY = 'esp32-vibe-coder-board'
+// Intentional hosted default so fresh deployments work without user setup.
+const DEFAULT_SETTINGS = {
+  baseUrl: 'https://api.minimax.chat/v1',
+  apiKey: 'sk-cp-gqDamnnNW1zvbls0aXsUkXzZoY8Tcv4scKA47FsN5Wb2al2fnV723JHNTMNak9mCJZZoijo6QAfrqXqYzrkMy7Gz72g5HBG3-lQlgTkvZ7dtVNhZll8Qft4',
+  model: 'MiniMax-M2.7',
+}
+
+function withDefaultSettings(settings = {}) {
+  const baseUrl = settings.baseUrl?.trim()
+  const apiKey = settings.apiKey?.trim()
+  const model = settings.model?.trim()
+  return {
+    ...DEFAULT_SETTINGS,
+    ...settings,
+    baseUrl: baseUrl || DEFAULT_SETTINGS.baseUrl,
+    apiKey: apiKey || DEFAULT_SETTINGS.apiKey,
+    model: model || DEFAULT_SETTINGS.model,
+  }
+}
 
 function getDefaultFiles(boardId) {
   const board = getBoard(boardId)
   if (!board) return { 'main/main.c': '// place your code here\n' }
 
-  if (board.framework === 'arduino') {
-    return { 'sketch.ino': '// Place your Arduino code here\nvoid setup() {\n  Serial.begin(115200);\n}\n\nvoid loop() {\n}\n' }
-  }
-  if (board.framework === 'stm32cube') {
-    return {}
-  }
   return { 'main/main.c': '// Place your ESP-IDF code here\n#include <stdio.h>\n\nvoid app_main(void)\n{\n    printf("Hello from ESP32-Vibe-Coder!\\n");\n}\n' }
 }
+
+function getMainSourcePath() { return 'main/main.c' }
 
 function loadInitialBoardId() {
   return localStorage.getItem(BOARD_STORAGE_KEY) || DEFAULT_BOARD_ID
@@ -40,11 +56,11 @@ const BSP_REFERENCE_FILES = {
 function loadSettings() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) return JSON.parse(raw)
+    if (raw) return withDefaultSettings(JSON.parse(raw))
   } catch {}
-  return { baseUrl: '', apiKey: '', model: '' }
+  return DEFAULT_SETTINGS
 }
-function saveSettings(s) { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)) }
+function saveSettings(s) { localStorage.setItem(STORAGE_KEY, JSON.stringify(withDefaultSettings(s))) }
 
 export default function App() {
   const [settings, setSettings] = useState(loadSettings)
@@ -63,7 +79,11 @@ export default function App() {
     return Object.keys(files)[0] || ''
   })
 
-  function handleSaveSettings(s) { setSettings(s); saveSettings(s) }
+  function handleSaveSettings(s) {
+    const next = withDefaultSettings(s)
+    setSettings(next)
+    saveSettings(next)
+  }
   function handleBoardChange(id) { setBoardId(id); localStorage.setItem(BOARD_STORAGE_KEY, id) }
 
   useEffect(() => {
@@ -75,16 +95,16 @@ export default function App() {
 
   const handleInsertCode = useCallback((codeOrFiles) => {
     if (typeof codeOrFiles === 'string') {
-      const target = /\.(c|cc|cpp|cxx|h|hpp|ino)$/.test(activeFile) ? activeFile : 'main/main.c'
+      const target = isSourcePath(activeFile) ? activeFile : getMainSourcePath()
       setProjectFiles(prev => ({ ...prev, [target]: codeOrFiles }))
       setActiveFile(target)
     } else {
-      const { accepted } = filterInsertableFiles(codeOrFiles)
+      const { accepted } = filterInsertableFiles(codeOrFiles, board)
       setProjectFiles(prev => ({ ...prev, ...accepted }))
-      const firstSrc = Object.keys(accepted).find(k => /\.(c|cc|cpp|cxx|h|hpp|ino)$/.test(k))
+      const firstSrc = Object.keys(accepted).find(k => isSourcePath(k))
       if (firstSrc) setActiveFile(firstSrc)
     }
-  }, [activeFile])
+  }, [activeFile, board])
 
   const hasConfig = settings.apiKey && settings.baseUrl && settings.model
 
@@ -101,7 +121,7 @@ export default function App() {
             <select className="board-select-input" value={boardId} onChange={e => handleBoardChange(e.target.value)}>
               {getBoardList().map(b => (
                 <option key={b.id} value={b.id}>
-                  [{b.framework === 'arduino' ? 'Arduino' : b.framework === 'stm32cube' ? 'STM32Cube' : 'ESP-IDF'}] {b.name} ({b.chip})
+                  [ESP-IDF] {b.name} ({b.chip})
                 </option>
               ))}
             </select>
@@ -128,6 +148,7 @@ export default function App() {
             generatedFiles={generatedFiles}
             referenceFiles={BSP_REFERENCE_FILES}
             activeFile={activeFile}
+            board={board}
             onFileChange={(newFiles, newActive) => {
               setProjectFiles(newFiles)
               if (newActive !== undefined) setActiveFile(newActive)
@@ -171,7 +192,12 @@ export default function App() {
       </div>
 
       {showSettings && (
-        <SettingsModal settings={settings} onSave={handleSaveSettings} onClose={() => setShowSettings(false)} />
+        <SettingsModal
+          settings={settings}
+          defaultSettings={DEFAULT_SETTINGS}
+          onSave={handleSaveSettings}
+          onClose={() => setShowSettings(false)}
+        />
       )}
 
       {showCompile && (

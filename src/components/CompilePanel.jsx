@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { compileFirmware, downloadBin } from '../utils/compiler'
 import { getDeviceInfo, pushOta, loadOtaIp, saveOtaIp } from '../utils/ota'
 import { connectBle } from '../utils/bleOta'
-import { assembleCompileFiles, buildGeneratedConfig } from '../utils/projectAssembly'
+import { assembleCompileFiles } from '../utils/projectAssembly'
 import { validateProjectIncludes } from '../utils/projectValidation'
 import './CompilePanel.css'
 
@@ -70,14 +70,11 @@ export default function CompilePanel({ projectFiles: sourceProp, selectedSkills,
   const logEndRef = useRef(null)
   const bleSessionRef = useRef(null)
 
-  const generatedCfg = buildGeneratedConfig(boardId, selectedSkills || [])
   const { files: compileProjectFiles, mainFile } = assembleCompileFiles({
     boardId,
     projectFiles: sourceProp || {},
     selectedSkills: selectedSkills || [],
   })
-  const projectFiles = { ...generatedCfg, ...(sourceProp || {}) }
-
   useEffect(() => {
     if (!otaIp) return
     let cancelled = false
@@ -107,10 +104,10 @@ export default function CompilePanel({ projectFiles: sourceProp, selectedSkills,
     const mainPath = Object.keys(compileProjectFiles).find(k => k === mainFile || k === `main/${mainFile}` || k.endsWith(`/${mainFile}`)) || mainFile
     const code = compileProjectFiles[mainPath] || ''
     const configFiles = Object.fromEntries(Object.entries(compileProjectFiles).filter(([k]) => !k.startsWith('__') && k !== mainPath))
-    const projectMeta = Object.fromEntries(Object.entries(compileProjectFiles).filter(([k]) => k.startsWith('__')))
+    const compileMetadata = Object.fromEntries(Object.entries(compileProjectFiles).filter(([k]) => k.startsWith('__')))
 
     try {
-      const blob = await compileFirmware(code, { ...configFiles, ...projectMeta }, projectMeta, setStatus, line => {
+      const blob = await compileFirmware(code, { ...configFiles, ...compileMetadata }, setStatus, line => {
         setBuildLog(prev => [...prev, line])
         setTimeout(() => logEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 0)
       })
@@ -217,14 +214,14 @@ export default function CompilePanel({ projectFiles: sourceProp, selectedSkills,
 
         <div className="compile-body">
           <div className="project-files-row">
-            <span className="field-label" style={{ margin: 0 }}>工程配置</span>
+            <span className="field-label" style={{ margin: 0 }}>系统生成文件</span>
             <button className="files-toggle" onClick={() => setShowFiles(v => !v)}>
-              {showFiles ? '收起' : `查看 ${Object.keys(projectFiles).length} 个文件`}
+              {showFiles ? '收起' : `查看 ${Object.keys(compileProjectFiles).filter(k => !k.startsWith('__')).length} 个文件`}
             </button>
           </div>
           {showFiles && (
             <div className="project-files-preview">
-              {Object.entries(projectFiles).map(([name, content]) => (
+              {Object.entries(compileProjectFiles).filter(([name]) => !name.startsWith('__')).map(([name, content]) => (
                 <details key={name}>
                   <summary>{name}</summary>
                   <pre>{content}</pre>

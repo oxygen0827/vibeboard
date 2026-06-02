@@ -5,6 +5,9 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5173",
     "build": "vite build",
+    "test:code-generation": "node scripts/test-code-generation.mjs",
+    "test:file-placement": "node scripts/test-file-placement.mjs",
+    "test:project-config": "node scripts/test-project-config.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

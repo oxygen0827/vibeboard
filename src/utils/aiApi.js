@@ -19,6 +19,70 @@ export async function streamChat({ baseUrl, apiKey, model, messages, onChunk, on
   }
 }
 
+export async function completeChat({ baseUrl, apiKey, model, messages }) {
+  if (isAnthropicEndpoint(baseUrl)) {
+    return completeAnthropicChat({ baseUrl, apiKey, model, messages })
+  }
+  return completeOpenAIChat({ baseUrl, apiKey, model, messages })
+}
+
+async function completeOpenAIChat({ baseUrl, apiKey, model, messages }) {
+  const url = baseUrl.endsWith('/') ? baseUrl + 'chat/completions' : baseUrl + '/chat/completions'
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      stream: false,
+      max_tokens: 4096,
+      response_format: { type: 'json_object' },
+    }),
+  })
+  if (!res.ok) {
+    const errText = await res.text()
+    throw new Error(`API error ${res.status}: ${errText}`)
+  }
+  const json = await res.json()
+  return json.choices?.[0]?.message?.content || ''
+}
+
+async function completeAnthropicChat({ baseUrl, apiKey, model, messages }) {
+  let systemContent = ''
+  const filteredMessages = []
+  for (const msg of messages) {
+    if (msg.role === 'system') systemContent = msg.content
+    else filteredMessages.push(msg)
+  }
+  const url = (baseUrl || ANTHROPIC_BASE).replace(/\/$/, '') + '/v1/messages'
+  const body = {
+    model: model || 'claude-sonnet-4-6',
+    max_tokens: 4096,
+    stream: false,
+    messages: filteredMessages,
+  }
+  if (systemContent) body.system = systemContent
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const errText = await res.text()
+    throw new Error(`Anthropic API error ${res.status}: ${errText}`)
+  }
+  const json = await res.json()
+  return (json.content || []).map(part => part.text || '').join('')
+}
+
 async function streamOpenAIChat({ baseUrl, apiKey, model, messages, onChunk, onDone, onError }) {
   const url = baseUrl.endsWith('/') ? baseUrl + 'chat/completions' : baseUrl + '/chat/completions'
 

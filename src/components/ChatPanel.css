@@ -307,6 +307,18 @@
 }
 .send-btn:hover:not(:disabled) { background: var(--accent-hover); }
 .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.send-btn.generate {
+  min-width: 82px;
+}
+.send-btn:not(.generate):not(.stop) {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+.send-btn:not(.generate):not(.stop):hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
 .send-btn.stop { background: var(--red); }
 .send-btn.stop:hover { background: #ff6b6b; }
 

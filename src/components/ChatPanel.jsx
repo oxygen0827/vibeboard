@@ -2,9 +2,9 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import { streamChat } from '../utils/aiApi'
+import { completeChat, streamChat } from '../utils/aiApi'
 import { patchSkill } from '../context/index'
-import { filterInsertableFiles } from '../utils/projectAssembly'
+import { buildCodeGenerationMessages, parseGeneratedFilesResponse } from '../utils/codeGeneration'
 import './ChatPanel.css'
 
 const QUICK_PROMPTS = [
@@ -66,26 +66,11 @@ function savePatches(patches) {
   localStorage.setItem('skillPatches', JSON.stringify(patches))
 }
 
-function normalizeFilePath(raw) {
-  const p = raw.replace(/\\/g, '/').split('/').pop()
-  const rootCfgs = new Set(['CMakeLists.txt', 'sdkconfig.defaults', 'partitions.csv'])
-  const mainCfgs = new Set(['idf_component.yml'])
-  if (rootCfgs.has(p)) return p
-  if (mainCfgs.has(p)) return 'main/' + p
-  const parts = raw.replace(/\\/g, '/').split('/')
-  const idx = parts.lastIndexOf('main')
-  return idx !== -1 ? parts.slice(idx).join('/') : 'main/' + p
-}
-
-function insertFileMap(onInsertCode, fileMap) {
-  const { accepted } = filterInsertableFiles(fileMap)
-  if (Object.keys(accepted).length > 0) onInsertCode?.(accepted)
-}
-
 export default function ChatPanel({ settings, board, boardId, onInsertCode, initialPrompt, onConsumePrompt, selectedSkills = [], onSkillsChange }) {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
+  const [generating, setGenerating] = useState(false)
   const [knowledgeCard, setKnowledgeCard] = useState(null)
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
@@ -131,62 +116,7 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
 
     let aborted = false
     let finalReply = ''
-    let streamBuf = ''
     abortRef.current = () => { aborted = true }
-
-    const SKIP_LANGS = new Set(['bash', 'sh', 'shell', 'zsh', 'powershell', 'text', 'markdown', 'md'])
-    const SRC_LANGS = new Set(['c', 'cpp', 'h', 'hpp', 'cc', 'cxx', 'ino', ''])
-
-    function extractFiles(text) {
-      const result = {}
-      const patA = /FILE:\s*(\S+)[^\n]*\n[^\`]*```\w*\n([\s\S]*?)\n```/g
-      let m
-      while ((m = patA.exec(text)) !== null) {
-        result[normalizeFilePath(m[1])] = m[2].trim()
-      }
-      if (Object.keys(result).length > 0) return result
-
-      const patB = /```\w*\n([\s\S]*?)\n```/g
-      while ((m = patB.exec(text)) !== null) {
-        const code = m[1]
-        const inner = /(?:\/\/|#)\s*FILE:\s*(\S+)\n/g
-        const parts = []
-        let im
-        while ((im = inner.exec(code)) !== null) parts.push(im)
-        if (parts.length > 0) {
-          parts.forEach((pm, i) => {
-            const start = pm.index + pm[0].length
-            const end = i + 1 < parts.length ? parts[i + 1].index : code.length
-            result[normalizeFilePath(pm[1])] = code.slice(start, end).trim()
-          })
-        }
-      }
-      if (Object.keys(result).length > 0) return result
-      return null
-    }
-
-    function tryFlushCodeBlock(buf) {
-      const re = /```(\w*)\n([\s\S]*?)\n```/g
-      let m, last = null
-      while ((m = re.exec(buf)) !== null) last = m
-      if (!last) return buf
-
-      const lang = last[1].toLowerCase()
-      const code = last[2].trim()
-
-      if (!SKIP_LANGS.has(lang) && code.length > 0) {
-        const before = buf.slice(0, last.index)
-        const labelMatch = before.match(/FILE:\s*(\S+)\s*$/)
-        if (labelMatch) {
-          insertFileMap(onInsertCode, { [normalizeFilePath(labelMatch[1])]: code })
-        } else {
-          const fileMap = extractFiles(`\`\`\`${lang}\n${code}\n\`\`\``)
-          if (fileMap) insertFileMap(onInsertCode, fileMap)
-          else if (SRC_LANGS.has(lang)) onInsertCode?.(code)
-        }
-      }
-      return buf.slice(last.index + last[0].length)
-    }
 
     await streamChat({
       baseUrl: settings.baseUrl,
@@ -196,8 +126,6 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
       onChunk: (chunk) => {
         if (aborted) return
         finalReply += chunk
-        streamBuf += chunk
-        streamBuf = tryFlushCodeBlock(streamBuf)
         setMessages(prev => {
           const updated = [...prev]
           updated[updated.length - 1] = {
@@ -234,6 +162,54 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
     })
   }, [messages, streaming, hasConfig, settings, board, selectedSkills, onInsertCode])
 
+  async function generateCodeFromInput() {
+    const text = input.trim()
+    if (!text || generating || streaming || !hasConfig) return
+    setGenerating(true)
+    setKnowledgeCard(null)
+    setMessages(prev => [...prev, { role: 'user', content: text }, { role: 'assistant', content: '正在生成工程文件...' }])
+    try {
+      const content = await completeChat({
+        baseUrl: settings.baseUrl,
+        apiKey: settings.apiKey,
+        model: settings.model,
+        messages: buildCodeGenerationMessages({
+          board,
+          selectedSkills,
+          userRequest: text,
+        }),
+      })
+      const parsed = parseGeneratedFilesResponse(content, board)
+      if (!parsed.ok) {
+        const message = `生成结果未通过校验：${parsed.errors.join(', ')}`
+        setMessages(prev => {
+          const next = [...prev]
+          next[next.length - 1] = { role: 'assistant', content: message, error: true }
+          return next
+        })
+        return
+      }
+      onInsertCode?.(parsed.files)
+      setInput('')
+      setMessages(prev => {
+        const next = [...prev]
+        next[next.length - 1] = {
+          role: 'assistant',
+          content: `已生成 ${Object.keys(parsed.files).length} 个应用文件：\n\n${Object.keys(parsed.files).map(path => `- ${path}`).join('\n')}`,
+        }
+        return next
+      })
+    } catch (err) {
+      setMessages(prev => {
+        const next = [...prev]
+        next[next.length - 1] = { role: 'assistant', content: `生成失败：${err.message}`, error: true }
+        return next
+      })
+    } finally {
+      setGenerating(false)
+    }
+  }
+
   function handleKeyDown(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -269,22 +245,6 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
           <span className="code-lang">{lang}</span>
           <div className="code-actions">
             <button className="code-btn" onClick={() => navigator.clipboard.writeText(code)}>复制</button>
-            <button className="code-btn code-btn-insert" onClick={() => {
-              const filePattern = /\/\/\s*FILE:\s*(\S+)\n([\s\S]*?)(?=\/\/\s*FILE:|$)/g
-              const matches = [...code.matchAll(filePattern)]
-              if (matches.length > 1) {
-                const fileMap = {}
-                matches.forEach(m => {
-                  const p = m[1].includes('/') ? m[1] : `main/${m[1]}`
-                  fileMap[p] = m[2].trimEnd()
-                })
-                insertFileMap(onInsertCode, fileMap)
-              } else {
-                onInsertCode?.(code)
-              }
-            }}>
-              写入项目
-            </button>
           </div>
         </div>
         <SyntaxHighlighter
@@ -316,9 +276,7 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
       <div className="board-badge">
         <span className="board-chip">{board.chip}</span>
         <span className="board-name">{board.name}</span>
-        {board.framework === 'esp-idf' && <span className="board-idf">IDF {board.idfVersion}</span>}
-        {board.framework === 'arduino' && <span className="board-idf">Arduino</span>}
-        {board.framework === 'stm32cube' && <span className="board-idf">{board.mcuType}</span>}
+        <span className="board-idf">IDF {board.idfVersion}</span>
       </div>
 
       <div className="skill-selector">
@@ -404,18 +362,25 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={hasConfig ? '描述你需要的功能，AI 会结合开发板硬件信息生成代码...' : '请先配置 API Key'}
-            disabled={!hasConfig || streaming}
+            disabled={!hasConfig || streaming || generating}
             rows={3}
           />
           <button
+            className="send-btn generate"
+            onClick={generateCodeFromInput}
+            disabled={!hasConfig || streaming || generating || !input.trim()}
+          >
+            {generating ? '生成中' : '生成代码'}
+          </button>
+          <button
             className={`send-btn ${streaming ? 'stop' : ''}`}
             onClick={streaming ? handleStop : () => sendMessage(input)}
-            disabled={!hasConfig || (!streaming && !input.trim())}
+            disabled={!hasConfig || generating || (!streaming && !input.trim())}
           >
-            {streaming ? '■ 停止' : '发送'}
+            {streaming ? '■ 停止' : '解释'}
           </button>
         </div>
-        <div className="chat-input-hint">Enter 发送 · Shift+Enter 换行</div>
+        <div className="chat-input-hint">生成代码会写入左侧应用文件 · 解释只聊天不改项目</div>
       </div>
     </div>
   )

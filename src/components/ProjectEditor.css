@@ -78,6 +78,7 @@
   padding: 0 8px;
   border-left: 1px solid var(--border-muted);
   flex-shrink: 0;
+  position: relative;
 }
 
 .pe-add-btn {
@@ -93,6 +94,80 @@
 }
 .pe-add-btn:hover { background: var(--bg-hover); color: var(--text-primary); border-color: var(--border); }
 
+.pe-system-menu {
+  position: relative;
+}
+
+.pe-system-btn {
+  height: 24px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-muted);
+  color: var(--text-muted);
+  padding: 0 9px;
+  border-radius: 4px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.pe-system-btn:hover,
+.pe-system-btn.active {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  border-color: var(--border);
+}
+
+.pe-system-popover {
+  position: absolute;
+  top: 30px;
+  right: 0;
+  z-index: 20;
+  width: 260px;
+  max-height: 360px;
+  overflow: auto;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+  padding: 8px;
+}
+
+.pe-system-section + .pe-system-section {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-muted);
+}
+
+.pe-system-heading {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  margin: 0 0 5px;
+}
+
+.pe-system-item {
+  display: block;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-align: left;
+  padding: 6px 7px;
+  border-radius: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pe-system-item:hover,
+.pe-system-item.active {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.pe-system-item.reference {
+  color: var(--blue);
+}
+
 .pe-compile-btn {
   background: var(--accent);
   border: none;
@@ -105,57 +180,6 @@
   white-space: nowrap;
 }
 .pe-compile-btn:hover { background: var(--accent-hover); }
-
-/* Config files collapsible row */
-.pe-config-bar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-muted);
-  flex-shrink: 0;
-  min-height: 28px;
-  padding: 0;
-}
-
-.pe-config-toggle {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  background: none;
-  border: none;
-  border-right: 1px solid var(--border-muted);
-  color: var(--text-muted);
-  font-size: 11px;
-  padding: 0 10px;
-  height: 28px;
-  cursor: pointer;
-  user-select: none;
-  white-space: nowrap;
-  transition: color 0.15s;
-  flex-shrink: 0;
-}
-.pe-config-toggle:hover { color: var(--text-secondary); }
-.pe-config-toggle.open { color: var(--orange); }
-.pe-config-toggle.reference.open { color: var(--blue); }
-
-.pe-config-toggle-arrow { font-size: 10px; }
-
-.pe-config-count {
-  background: var(--bg-tertiary);
-  color: var(--text-muted);
-  font-size: 10px;
-  padding: 1px 5px;
-  border-radius: 8px;
-  border: 1px solid var(--border-muted);
-}
-
-.pe-config-bar .pe-tab {
-  height: 28px;
-  font-size: 11px;
-  padding: 0 10px 0 12px;
-}
 
 /* Config notice banner */
 .pe-config-notice {

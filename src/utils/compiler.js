@@ -1,27 +1,20 @@
 /**
  * Cloud compiler client — SSE streaming version
  * POST /compile     -> ESP-IDF compiler (port 8760)
- * POST /pio-compile -> PlatformIO compiler (port 8761), arduino + stm32cube
  *
  * SSE events:
  *   {log: "..."}                                    build output line
  *   {done: true, bin: "base64...", size: N}         success
- *   {done: true, bin: "base64...", filename: "..."}  success with custom filename
  *   {done: true, error: "..."}                      failure
  */
 
-const PIO_FRAMEWORKS = new Set(['arduino', 'stm32cube'])
-
-export async function compileFirmware(code, projectFiles, projectMeta = {}, onStatus, onLog) {
+export async function compileFirmware(code, projectFiles, onStatus, onLog) {
   onStatus('正在连接编译服务器...')
 
-  const framework = projectFiles.__framework || 'esp-idf'
-  const endpoint  = PIO_FRAMEWORKS.has(framework) ? '/pio-compile' : '/compile'
-
-  const res = await fetch(endpoint, {
+  const res = await fetch('/compile', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code, projectFiles, projectMeta }),
+    body: JSON.stringify({ code, projectFiles }),
   })
 
   if (!res.ok) {

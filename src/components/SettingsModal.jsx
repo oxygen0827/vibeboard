@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { PROVIDER_PRESETS } from '../utils/aiApi'
 import './SettingsModal.css'
 
-export default function SettingsModal({ settings, onSave, onClose }) {
+export default function SettingsModal({ settings, defaultSettings, onSave, onClose }) {
   const [local, setLocal] = useState({ ...settings })
   const [showKey, setShowKey] = useState(false)
 
@@ -11,6 +11,7 @@ export default function SettingsModal({ settings, onSave, onClose }) {
       ...prev,
       baseUrl: preset.baseUrl,
       model: preset.models[0],
+      apiKey: preset.baseUrl === defaultSettings?.baseUrl ? defaultSettings.apiKey : prev.apiKey,
     }))
   }
 

@@ -119,11 +119,12 @@ CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y
 \`\`\`
 
 ## Code Output Format — STRICT RULES
-The IDE auto-inserts your code blocks into the project editor. Generate application files only by default.
+The IDE auto-inserts only complete application files into the project editor. Generate application files only by default.
 
-**Single file**: just write the code block normally.
+**Single file**: write one complete \`main/main.c\` or \`main/main.cpp\` code block that contains \`app_main\`.
+Do not output random snippets as standalone C blocks.
 
-**Multiple files**: write each file as a SEPARATE code block with \`FILE: path\` on the line immediately above (no blank line between label and block):
+**Multiple files or helper files**: write each file as a SEPARATE code block with \`FILE: path\` on the line immediately above (no blank line between label and block):
 
 FILE: main/main.c
 \`\`\`c
@@ -144,10 +145,11 @@ FILE: main/helper.c
 
 Path rules:
 - Application source only by default: \`main/main.c\`, \`main/main.cpp\`, \`main/*.c\`, \`main/*.cpp\`, \`main/*.h\`, \`main/*.hpp\`
+- Helper modules are allowed and encouraged: use \`FILE: main/helper.h\` and \`FILE: main/helper.c\` instead of stuffing everything into \`main.c\`.
 - If you include a custom quoted header like \`#include "helper.h"\`, you MUST also output \`FILE: main/helper.h\`.
 - Board APIs: include ONLY \`#include "esp32_s3_szp.h"\`.
 - LVGL APIs: include ONLY \`lvgl.h\` / \`esp_lvgl_port.h\` when the LVGL-related skill is selected.
-- Do NOT generate root \`CMakeLists.txt\`, \`main/CMakeLists.txt\`, \`sdkconfig.defaults\`, or \`partitions.csv\` unless the user explicitly asks to edit build config.
+- Do NOT generate root \`CMakeLists.txt\`, \`main/CMakeLists.txt\`, \`sdkconfig.defaults\`, \`main/idf_component.yml\`, or \`partitions.csv\`.
 - Dependencies are generated from selected skills via \`main/idf_component.yml\`; do not invent component paths.
 - NEVER set \`EXTRA_COMPONENT_DIRS\` for ESP-IDF bundled examples or managed components.
 - NEVER use \`esp_lvgl_util.h\`, \`bsp/bsp.h\`, or \`bsp_board.h\`.

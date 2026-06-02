@@ -1,27 +1,18 @@
 import { buildProjectFiles } from '../context/index'
+import {
+  isConfigPath,
+  isSourcePath,
+  normalizeProjectFiles,
+} from './filePlacement'
 
 export const SYSTEM_CONFIG_FILES = new Set([
   'CMakeLists.txt',
   'main/CMakeLists.txt',
   'sdkconfig.defaults',
+  'main/idf_component.yml',
+  'partitions.csv',
 ])
-
-export function isConfigPath(path) {
-  const name = path.split('/').pop()
-  return path === 'CMakeLists.txt' ||
-    path === 'main/CMakeLists.txt' ||
-    path === 'sdkconfig.defaults' ||
-    path === 'main/idf_component.yml' ||
-    path === 'partitions.csv' ||
-    name === 'CMakeLists.txt' ||
-    name.endsWith('.yml') ||
-    name === 'sdkconfig.defaults' ||
-    name === 'partitions.csv'
-}
-
-export function isSourcePath(path) {
-  return /\.(c|cc|cpp|cxx|h|hpp|s|S)$/.test(path)
-}
+export { isConfigPath, isSourcePath }
 
 export function buildGeneratedConfig(boardId, selectedSkills = []) {
   const cfg = buildProjectFiles(boardId, 'vibe_app', selectedSkills || [])
@@ -41,19 +32,6 @@ export function assembleCompileFiles({ boardId, projectFiles, selectedSkills }) 
   return { files, mainFile }
 }
 
-export function filterInsertableFiles(files) {
-  const accepted = {}
-  const rejected = []
-
-  for (const [path, content] of Object.entries(files || {})) {
-    if (isSourcePath(path) || path.endsWith('.ino')) {
-      accepted[path] = content
-    } else if (path === 'main/idf_component.yml' || path === 'partitions.csv') {
-      accepted[path] = content
-    } else {
-      rejected.push(path)
-    }
-  }
-
-  return { accepted, rejected }
+export function filterInsertableFiles(files, boardOrFramework, options = {}) {
+  return normalizeProjectFiles(files, boardOrFramework || 'esp-idf', options)
 }
