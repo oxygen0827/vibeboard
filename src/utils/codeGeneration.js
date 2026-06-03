@@ -2,6 +2,12 @@ import { normalizeProjectFiles } from './filePlacement'
 import { validateProgramManifest } from '../domain/program/validateManifest'
 import { WRITE_SURFACES } from '../domain/program/manifestSchema'
 import { DIGITAL_TWIN_MANIFEST_KEY, extractDigitalTwinManifest } from '../domain/digitalTwin/uiManifest'
+import {
+  DEFAULT_LVGL_DESIGN_PROFILE_ID,
+  formatLvglDesignProfilesForPrompt,
+  getLvglDesignProfileById,
+  normalizeLvglDesignProfileId,
+} from '../context/boards/szpi_esp32s3/lvglDesignProfiles'
 export { inferSkillsFromRequest } from '../domain/program/intent'
 
 export function extractJsonObject(text) {
@@ -64,6 +70,10 @@ export function parseScopeClarificationResponse(text) {
   const selectedSkillIds = Array.isArray(parsed.selectedSkillIds)
     ? parsed.selectedSkillIds.map(skillId => String(skillId || '').trim()).filter(Boolean)
     : []
+  const designRequired = typeof parsed.designRequired === 'boolean'
+    ? parsed.designRequired
+    : selectedSkillIds.includes('lvgl')
+  const designProfileId = normalizeLvglDesignProfileId(parsed.designProfileId || DEFAULT_LVGL_DESIGN_PROFILE_ID)
 
   return {
     ok: true,
@@ -71,6 +81,9 @@ export function parseScopeClarificationResponse(text) {
     summary: String(parsed.scopeSummary || '').trim(),
     questions,
     selectedSkillIds,
+    designRequired,
+    designProfileId,
+    designIntent: String(parsed.designIntent || '').trim(),
     constraints: Array.isArray(parsed.constraints)
       ? parsed.constraints.map(item => String(item || '').trim()).filter(Boolean)
       : [],
@@ -409,6 +422,9 @@ Allowed output schema:
   "scopeStatus": "ready",
   "scopeSummary": "one sentence describing the bounded firmware",
   "selectedSkillIds": ["lvgl"],
+  "designRequired": true,
+  "designProfileId": "compact_control_panel",
+  "designIntent": "first LVGL screen the user must approve before firmware generation",
   "constraints": ["uses ST7789 LCD via bsp_lvgl_start", "no unsupported cloud dependency"],
   "questions": []
 }
@@ -418,9 +434,15 @@ Or, if the request is too ambiguous to implement safely:
   "scopeStatus": "needs_clarification",
   "scopeSummary": "what is known from the request",
   "selectedSkillIds": ["lvgl"],
+  "designRequired": true,
+  "designProfileId": "compact_control_panel",
+  "designIntent": "first LVGL screen cannot be drafted until the user chooses the target flow",
   "constraints": ["only use supported board peripherals"],
   "questions": ["Which board-supported output should be used: LCD display, speaker playback, WiFi log, or BLE HID?"]
 }
+
+LVGL design profiles, if the bounded firmware uses LVGL or touch/display UI:
+${formatLvglDesignProfilesForPrompt()}
 
 Rules:
 - Ask clarification only when it changes hardware capability, driver choice, data path, or first-version acceptance checks.
@@ -432,6 +454,10 @@ Rules:
 - Prefer a minimal first version over a large feature set.
 - selectedSkillIds must use only available skill IDs.
 - constraints should name the relevant board capability or BSP boundary.
+- Set designRequired=true when selectedSkillIds includes lvgl or the user asks for a touch/screen/LVGL UI that can be previewed before firmware compilation.
+- Set designRequired=false for raw camera-to-LCD preview without LVGL widgets, or for non-display firmware.
+- designProfileId must be one of the LVGL design profile IDs above when designRequired=true. Pick the closest fit; do not invent a profile.
+- designIntent should name the first screen and the visible state the user should approve.
 - Return ONLY valid JSON.`,
     },
     {
@@ -537,6 +563,89 @@ Create the Program Manifest now.`,
   ]
 }
 
+export function buildLvglDesignDraftMessages({
+  board,
+  selectedSkills = [],
+  userRequest,
+  scope = {},
+  existingFiles = {},
+}) {
+  const existingFileList = Object.keys(existingFiles).filter(path => !path.startsWith('__')).join(', ') || 'none'
+  const selectedSkillList = selectedSkills.join(', ') || 'none'
+  const designProfileId = normalizeLvglDesignProfileId(scope.designProfileId || DEFAULT_LVGL_DESIGN_PROFILE_ID)
+  const designProfile = getLvglDesignProfileById(designProfileId)
+
+  return [
+    {
+      role: 'system',
+      content: `For this VibeBoard LVGL design draft step, return ONLY the JSON object requested below. No markdown, no prose, no FILE labels.
+
+You are drafting the first 320x240 LVGL screen for the 立创实战派ESP32-S3 board before firmware generation. The user must approve this visible design before full ESP-IDF code is generated.
+
+Board display facts:
+- 320x240 ST7789 LCD with FT6336 touch.
+- LVGL preview runs directly from main/app_ui.c and main/app_ui.h without compiling or flashing firmware.
+- The draft must be portable LVGL-only source. It must not call board drivers, ESP-IDF, FreeRTOS, WiFi, audio, camera, storage, GPIO, I2C, I2S, or network APIs.
+
+Selected LVGL design profile:
+- id: ${designProfile?.id || designProfileId}
+- label: ${designProfile?.label || designProfileId}
+- bestFor: ${(designProfile?.bestFor || []).join(', ') || 'general LVGL screen'}
+- layout: ${designProfile?.layout || 'compact 320x240 app screen'}
+- widgets: ${(designProfile?.widgets || []).join(', ') || 'label, button, status'}
+- constraints: ${(designProfile?.constraints || []).join('; ') || 'fit in 320x240'}
+
+Available design profiles:
+${formatLvglDesignProfilesForPrompt()}
+
+Allowed output schema:
+{
+  "files": [
+    { "path": "main/app_ui.h", "content": "..." },
+    { "path": "main/app_ui.c", "content": "..." }
+  ],
+  "uiManifest": {
+    "title": "short preview title",
+    "screen": { "background": "#f6f8fa" },
+    "widgets": [
+      { "id": "title", "type": "label", "text": "Hello", "x": 16, "y": 12, "w": 200, "h": 28 },
+      { "id": "ok", "type": "button", "text": "OK", "x": 220, "y": 190, "w": 80, "h": 32, "action": "ok_clicked" }
+    ]
+  }
+}
+
+Rules:
+- Generate exactly main/app_ui.h and main/app_ui.c. Do not generate main/main.c in this draft step.
+- main/app_ui.h must include lvgl.h and declare void app_ui_create(lv_obj_t *root); and void app_ui_start(void);
+- main/app_ui.c must include "app_ui.h" and define both functions.
+- app_ui_create(lv_obj_t *root) must create all widgets under root.
+- app_ui_start(void) may call app_ui_create(lv_scr_act()) only.
+- Use explicit root/screen background in LVGL and set opacity to LV_OPA_COVER.
+- The uiManifest screen.background must match the actual LVGL root background color.
+- Use stable fixed dimensions for controls so preview and device layout match.
+- Use LVGL built-in widgets only. No custom fonts except lv_font_montserrat_20 unless the request clearly needs smaller/larger built-in Montserrat fonts.
+- Do not write explanatory labels about how the UI works. Show the actual app state and controls.
+- Do not use nested cards or landing-page composition. This is a small operational device screen, not a marketing page.
+- Keep all visible text short enough to fit 320x240.
+- Return ONLY valid JSON.`,
+    },
+    {
+      role: 'user',
+      content: `User request: ${userRequest}
+
+Scope summary: ${scope.summary || ''}
+Scope constraints:
+${(scope.constraints || []).map(item => `- ${item}`).join('\n') || '- none'}
+Design intent: ${scope.designIntent || 'Draft the first LVGL screen for approval.'}
+
+Selected skills: ${selectedSkillList}
+Existing editable files: ${existingFileList}
+
+Generate the LVGL design draft now.`,
+    },
+  ]
+}
+
 export function buildCodeGenerationMessages({ board, selectedSkills = [], userRequest, existingFiles = {} }) {
   const existingFileList = Object.keys(existingFiles).filter(path => !path.startsWith('__')).join(', ') || 'none'
   const selectedSkillList = selectedSkills.join(', ') || 'none'
@@ -601,6 +710,15 @@ Generate the files now.`,
 
 export function buildManifestCodeGenerationMessages({ board, manifest, userRequest, existingFiles = {} }) {
   const existingFileList = Object.keys(existingFiles).filter(path => !path.startsWith('__')).join(', ') || 'none'
+  const approvedLvglDesign = existingFiles?.['main/app_ui.c'] && existingFiles?.['main/app_ui.h']
+    ? `## Approved LVGL Design Draft
+The user has already approved the current LVGL design files:
+- main/app_ui.c
+- main/app_ui.h
+
+Preserve the approved visual layout, object hierarchy, text, colors, and dimensions in main/app_ui.c and main/app_ui.h unless the user explicitly asked to change the design in this request.
+Generate the surrounding firmware modules and entrypoint around that approved app_ui contract.`
+    : ''
   const officialExampleGuidance = buildOfficialExampleGuidance(board)
   const driverContractGuidance = buildDriverContractGuidance(
     board,
@@ -617,6 +735,8 @@ ${board.buildSystemPrompt(manifest.skillIds || [])}
 ${officialExampleGuidance}
 
 ${driverContractGuidance}
+
+${approvedLvglDesign}
 
 You are generating project files for VibeBoard from a validated Program Manifest. Return ONLY valid JSON. No markdown, no prose.
 
@@ -663,6 +783,7 @@ Validated Program Manifest:
 ${JSON.stringify(manifest, null, 2)}
 
 Existing editable files: ${existingFileList}
+${approvedLvglDesign ? `\nApproved current main/app_ui.h:\n${existingFiles['main/app_ui.h']}\n\nApproved current main/app_ui.c:\n${existingFiles['main/app_ui.c']}` : ''}
 
 Generate the files now.`,
     },

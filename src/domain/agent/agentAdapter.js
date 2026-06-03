@@ -14,6 +14,7 @@ export const AGENT_EDITIONS = {
 
 export const AGENT_TASK_TYPES = {
   SCOPE_CLARIFICATION: 'scope-clarification',
+  LVGL_DESIGN_DRAFT: 'lvgl-design-draft',
   PROGRAM_MANIFEST: 'program-manifest',
   GENERATE_CODE: 'generate-code',
   REPAIR_BUILD: 'repair-build',

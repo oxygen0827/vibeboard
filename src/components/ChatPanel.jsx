@@ -9,6 +9,7 @@ import { compileFirmware } from '../utils/compiler'
 import { assembleCompileFiles } from '../utils/projectAssembly'
 import {
   buildBuildRepairMessages,
+  buildLvglDesignDraftMessages,
   buildManifestCodeGenerationMessages,
   buildPreviewRepairMessages,
   buildProgramManifestMessages,
@@ -21,6 +22,7 @@ import {
 } from '../utils/codeGeneration'
 import {
   normalizeGeneratedSourceFiles,
+  validateLvglPreviewContract,
   validateProjectIncludes,
 } from '../utils/projectValidation'
 import {
@@ -46,6 +48,22 @@ const QUICK_PROMPTS = [
 
 const MAX_SOURCE_REPAIR_ATTEMPTS = 2
 const MAX_BUILD_REPAIR_ATTEMPTS = 2
+const LVGL_DESIGN_APPROVAL_RE = /(定稿|确认|通过|继续生成|生成完整|完整固件|可以了|就这样|ok|OK|approve|approved|continue)/i
+
+function hasLvglDesignDraft(files = {}) {
+  return Boolean(files['main/app_ui.c'] && files['main/app_ui.h'])
+}
+
+function isLvglDesignApproval(text, files = {}, skillIds = []) {
+  return hasLvglDesignDraft(files) &&
+    new Set(skillIds || []).has('lvgl') &&
+    LVGL_DESIGN_APPROVAL_RE.test(String(text || ''))
+}
+
+function needsLvglDesignDraft(scopeResult, skillIds = [], text = '', files = {}) {
+  if (isLvglDesignApproval(text, files, skillIds)) return false
+  return Boolean(scopeResult?.designRequired || new Set(skillIds || []).has('lvgl'))
+}
 
 function getQuickPrompts(board) {
   if (board.id === 'szpi_esp32s3') return QUICK_PROMPTS
@@ -96,9 +114,11 @@ function savePatches(patches) {
   localStorage.setItem('skillPatches', JSON.stringify(patches))
 }
 
-function normalizeAndValidateGeneratedFiles(files, selectedSkillIds, board) {
+function normalizeAndValidateGeneratedFiles(files, selectedSkillIds, board, options = {}) {
   const normalized = normalizeGeneratedSourceFiles(files || {})
-  const validation = validateProjectIncludes(normalized.files, selectedSkillIds, board)
+  const validation = options.previewOnly
+    ? validateLvglPreviewContract(normalized.files, selectedSkillIds)
+    : validateProjectIncludes(normalized.files, selectedSkillIds, board)
   return {
     ok: validation.ok,
     files: normalized.files,
@@ -170,6 +190,7 @@ export default function ChatPanel({
   const [generating, setGenerating] = useState(false)
   const [knowledgeCard, setKnowledgeCard] = useState(null)
   const [generationWorkflow, setGenerationWorkflow] = useState(createGenerationWorkflow)
+  const [pendingLvglDesign, setPendingLvglDesign] = useState(null)
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
   const abortRef = useRef(null)
@@ -317,25 +338,43 @@ export default function ChatPanel({
     setGenerating(true)
     setKnowledgeCard(null)
     setGenerationWorkflow(updateGenerationWorkflow(createGenerationWorkflow(), 'intent', WORKFLOW_STEP_STATUS.ACTIVE, '解析用户需求和技能'))
-    setMessages(prev => [...prev, { role: 'user', content: text }, { role: 'assistant', content: '正在结合板级能力界定功能范围...' }])
+    const approvedPendingDesign = Boolean(
+      pendingLvglDesign &&
+      hasLvglDesignDraft(projectFiles) &&
+      LVGL_DESIGN_APPROVAL_RE.test(text),
+    )
+    const effectiveUserRequest = approvedPendingDesign ? pendingLvglDesign.userRequest : text
+    setMessages(prev => [
+      ...prev,
+      { role: 'user', content: text },
+      {
+        role: 'assistant',
+        content: approvedPendingDesign
+          ? '已收到 LVGL 设计定稿，正在基于已批准界面生成完整固件...'
+          : '正在结合板级能力界定功能范围...',
+      },
+    ])
     try {
-      const inferredSkills = inferSkillsFromRequest(board, text, selectedSkills)
+      const inferredSkills = approvedPendingDesign
+        ? pendingLvglDesign.selectedSkills
+        : inferSkillsFromRequest(board, text, selectedSkills)
       if (inferredSkills.join(',') !== selectedSkills.join(',')) {
         onSkillsChange?.(inferredSkills)
       }
 
       setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'scope', WORKFLOW_STEP_STATUS.ACTIVE, '按当前板子外设/BSP/官方例程界定功能'))
-      const scopeContent = await runVibeBoardAgentTask(
-        AGENT_TASK_TYPES.SCOPE_CLARIFICATION,
-        buildScopeClarificationMessages({
-          board,
-          selectedSkills: inferredSkills,
-          userRequest: text,
-          existingFiles: projectFiles,
-        }),
-        { userRequest: text, inferredSkills },
-      )
-      const scopeResult = parseScopeClarificationResponse(scopeContent)
+      const scopeResult = approvedPendingDesign
+        ? { ...pendingLvglDesign.scope, status: 'ready', ok: true }
+        : parseScopeClarificationResponse(await runVibeBoardAgentTask(
+            AGENT_TASK_TYPES.SCOPE_CLARIFICATION,
+            buildScopeClarificationMessages({
+              board,
+              selectedSkills: inferredSkills,
+              userRequest: text,
+              existingFiles: projectFiles,
+            }),
+            { userRequest: text, inferredSkills },
+          ))
       if (!scopeResult.ok) {
         setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'scope', WORKFLOW_STEP_STATUS.FAILED, scopeResult.errors.join(', ')))
         setMessages(prev => {
@@ -373,16 +412,99 @@ export default function ChatPanel({
       }
       setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'scope', WORKFLOW_STEP_STATUS.DONE, scopeResult.summary || '功能范围已限定到板级能力'))
 
+      if (needsLvglDesignDraft(scopeResult, scopedSkills, text, projectFiles)) {
+        setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'design', WORKFLOW_STEP_STATUS.ACTIVE, '生成 LVGL 第一屏设计草稿'))
+        setMessages(prev => {
+          const next = [...prev]
+          next[next.length - 1] = {
+            role: 'assistant',
+            content: `功能范围已确认，正在先生成 LVGL 设计草稿供你定稿...\n\n设计类型：${scopeResult.designProfileId || 'compact_control_panel'}`,
+          }
+          return next
+        })
+
+        const designContent = await runVibeBoardAgentTask(
+          AGENT_TASK_TYPES.LVGL_DESIGN_DRAFT,
+          buildLvglDesignDraftMessages({
+            board,
+            selectedSkills: scopedSkills,
+            userRequest: effectiveUserRequest,
+            scope: scopeResult,
+            existingFiles: projectFiles,
+          }),
+          {
+            userRequest: effectiveUserRequest,
+            inferredSkills: scopedSkills,
+            scope: scopeResult,
+          },
+        )
+        const designParsed = parseGeneratedFilesResponseWithOptions(designContent, board, {
+          requireCompleteProject: false,
+          validateManifestFiles: false,
+        })
+        if (!designParsed.ok) {
+          const message = `LVGL 设计草稿未通过文件校验：${designParsed.errors.join(', ')}`
+          setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'design', WORKFLOW_STEP_STATUS.FAILED, designParsed.errors.join(', ')))
+          setMessages(prev => {
+            const next = [...prev]
+            next[next.length - 1] = { role: 'assistant', content: message, error: true }
+            return next
+          })
+          return
+        }
+        const designCheck = normalizeAndValidateGeneratedFiles(designParsed.files, scopedSkills, board, {
+          previewOnly: true,
+        })
+        if (!designCheck.ok) {
+          setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'design', WORKFLOW_STEP_STATUS.FAILED, designCheck.message))
+          setMessages(prev => {
+            const next = [...prev]
+            next[next.length - 1] = {
+              role: 'assistant',
+              content: `LVGL 设计草稿未通过预览契约：\n\n${designCheck.message}`,
+              error: true,
+            }
+            return next
+          })
+          return
+        }
+
+        setPendingLvglDesign({
+          userRequest: effectiveUserRequest,
+          selectedSkills: scopedSkills,
+          scope: scopeResult,
+        })
+        onInsertCode?.(designCheck.files, {
+          selectedSkills: scopedSkills,
+          autoPreview: true,
+          source: 'lvgl-design-draft',
+        })
+        setInput('')
+        setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'design', WORKFLOW_STEP_STATUS.DONE, 'LVGL 设计草稿已写入并触发预览'))
+        setMessages(prev => {
+          const next = [...prev]
+          next[next.length - 1] = {
+            role: 'assistant',
+            content: `已生成 LVGL 第一屏设计草稿，并写入 main/app_ui.c / main/app_ui.h 供预览。\n\n请先看右侧 LVGL 预览定稿：\n- 满意：回复“定稿，继续生成完整固件”\n- 不满意：直接说要改哪里，比如“按钮再大一点、背景换浅灰、列表放上面”\n\n这一步不编译、不烧录，只用于确认屏幕设计。`,
+          }
+          return next
+        })
+        return
+      }
+      if (approvedPendingDesign) {
+        setPendingLvglDesign(null)
+      }
+
       setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'manifest', WORKFLOW_STEP_STATUS.ACTIVE, '生成 Program Manifest'))
       const content = await runVibeBoardAgentTask(
         AGENT_TASK_TYPES.PROGRAM_MANIFEST,
         buildProgramManifestMessages({
           board,
           selectedSkills: scopedSkills,
-          userRequest: text,
+          userRequest: effectiveUserRequest,
           existingFiles: projectFiles,
         }),
-        { userRequest: text, inferredSkills: scopedSkills, scope: scopeResult }
+        { userRequest: effectiveUserRequest, inferredSkills: scopedSkills, scope: scopeResult }
       )
       setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'validate-manifest', WORKFLOW_STEP_STATUS.ACTIVE, '校验 Manifest'))
       const manifestResult = parseProgramManifestResponse(content, board)
@@ -418,9 +540,10 @@ export default function ChatPanel({
         buildManifestCodeGenerationMessages({
           board,
           manifest: manifestResult.manifest,
-          userRequest: text,
+          userRequest: effectiveUserRequest,
+          existingFiles: projectFiles,
         }),
-        { userRequest: text, manifest: manifestResult.manifest }
+        { userRequest: effectiveUserRequest, manifest: manifestResult.manifest }
       )
       setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'validate-source', WORKFLOW_STEP_STATUS.ACTIVE, '校验生成文件'))
       const parsed = parseGeneratedFilesResponseWithOptions(fileContent, board, {
@@ -478,7 +601,7 @@ export default function ChatPanel({
           messages: buildSourceContractRepairMessages({
             board,
             selectedSkills: manifestResult.manifest.skillIds,
-            userRequest: text,
+            userRequest: effectiveUserRequest,
             manifest: manifestResult.manifest,
             projectFiles: sourceCheck.files,
             diagnostics: sourceCheck.message,
@@ -628,7 +751,7 @@ export default function ChatPanel({
               messages: buildSourceContractRepairMessages({
                 board,
                 selectedSkills: manifestResult.manifest.skillIds,
-                userRequest: text,
+                userRequest: effectiveUserRequest,
                 manifest: manifestResult.manifest,
                 projectFiles: sourceCheck.files,
                 diagnostics: sourceCheck.message,

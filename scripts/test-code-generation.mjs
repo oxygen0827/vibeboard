@@ -26,11 +26,14 @@ await copyModule('src/domain/program/intent.js')
 await copyModule('src/domain/program/manifestSchema.js')
 await copyModule('src/domain/program/validateManifest.js')
 await copyModule('src/domain/previewRepair/repairIntent.js')
+await copyModule('src/context/boards/szpi_esp32s3/lvglDesignProfiles.js')
 await copyModule('src/utils/codeGeneration.js')
 
 const {
+  buildLvglDesignDraftMessages,
   buildManifestCodeGenerationMessages,
   buildProgramManifestMessages,
+  buildScopeClarificationMessages,
   buildBuildRepairMessages,
   buildSourceContractRepairMessages,
   extractFileBlocks,
@@ -38,6 +41,7 @@ const {
   buildPreviewRepairMessages,
   inferSkillsFromRequest,
   parseProgramManifestResponse,
+  parseScopeClarificationResponse,
   parseGeneratedFilesResponse,
   parseGeneratedFilesResponseWithOptions,
 } = await import(pathToFileURL(join(tmp, 'src/utils/codeGeneration.js')).href)
@@ -158,6 +162,22 @@ assert.deepEqual(
   new Set(['gpio']),
 )
 
+const scopedLvgl = parseScopeClarificationResponse(JSON.stringify({
+  scopeStatus: 'ready',
+  scopeSummary: 'Touch MP3 player first screen.',
+  selectedSkillIds: ['lvgl', 'audio'],
+  designRequired: true,
+  designProfileId: 'media_console',
+  designIntent: 'Approve the player home screen before firmware generation.',
+  constraints: ['Use LVGL preview first'],
+  questions: [],
+}))
+assert.equal(scopedLvgl.ok, true)
+assert.equal(scopedLvgl.status, 'ready')
+assert.equal(scopedLvgl.designRequired, true)
+assert.equal(scopedLvgl.designProfileId, 'media_console')
+assert.match(scopedLvgl.designIntent, /player home screen/)
+
 const manifest = parseProgramManifestResponse(JSON.stringify({
   schemaVersion: 1,
   boardId: 'szpi_esp32s3',
@@ -200,6 +220,25 @@ assert.match(
   /app_ui_create\(lv_obj_t \*root\)/,
 )
 assert.match(
+  buildScopeClarificationMessages({ board, selectedSkills: ['lvgl'], userRequest: 'show hello' })[0].content,
+  /designRequired=true/,
+)
+assert.match(
+  buildScopeClarificationMessages({ board, selectedSkills: ['lvgl'], userRequest: 'show hello' })[0].content,
+  /LVGL design profiles/,
+)
+const designDraftMessages = buildLvglDesignDraftMessages({
+  board,
+  selectedSkills: ['lvgl', 'audio'],
+  userRequest: '做一个触屏 MP3 音乐播放器',
+  scope: scopedLvgl,
+})
+assert.match(designDraftMessages[0].content, /LVGL design draft step/)
+assert.match(designDraftMessages[0].content, /Generate exactly main\/app_ui\.h and main\/app_ui\.c/)
+assert.match(designDraftMessages[0].content, /media_console/)
+assert.match(designDraftMessages[0].content, /uiManifest screen\.background must match/)
+assert.match(designDraftMessages[1].content, /Approve the player home screen/)
+assert.match(
   buildManifestCodeGenerationMessages({ board, manifest: manifest.manifest, userRequest: 'show hello' })[1].content,
   /Validated Program Manifest/,
 )
@@ -211,6 +250,18 @@ assert.match(
   buildManifestCodeGenerationMessages({ board, manifest: manifest.manifest, userRequest: 'show hello' })[0].content,
   /portable LVGL-only preview code/,
 )
+const manifestGenerationWithApprovedDesign = buildManifestCodeGenerationMessages({
+  board,
+  manifest: manifest.manifest,
+  userRequest: 'show hello',
+  existingFiles: {
+    'main/app_ui.h': '#pragma once\n#include "lvgl.h"\nvoid app_ui_create(lv_obj_t *root);\nvoid app_ui_start(void);',
+    'main/app_ui.c': '#include "app_ui.h"\nvoid app_ui_create(lv_obj_t *root) {}\nvoid app_ui_start(void) { app_ui_create(lv_scr_act()); }',
+  },
+})
+assert.match(manifestGenerationWithApprovedDesign[0].content, /Approved LVGL Design Draft/)
+assert.match(manifestGenerationWithApprovedDesign[0].content, /Preserve the approved visual layout/)
+assert.match(manifestGenerationWithApprovedDesign[1].content, /Approved current main\/app_ui\.c/)
 
 const generatedAgainstManifest = parseGeneratedFilesResponseWithOptions(JSON.stringify({
   files: [
