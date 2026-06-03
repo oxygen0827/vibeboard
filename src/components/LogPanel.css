@@ -41,6 +41,9 @@
 
 .log-header-right { display: flex; align-items: center; gap: 6px; }
 
+.copy-ok { color: var(--accent) !important; }
+.copy-error { color: var(--red) !important; }
+
 .analyze-btn { color: var(--purple) !important; }
 .analyze-btn:hover { background: rgba(188,140,255,0.12) !important; }
 

@@ -2,7 +2,14 @@ import { useState, useEffect, useRef } from 'react'
 import { compileFirmware, compileOfficialExample, compileOtaReceiver, downloadBin, loadOfficialExamples } from '../utils/compiler'
 import { getDeviceInfo, pushOta, loadOtaIp, saveOtaIp } from '../utils/ota'
 import { connectBle } from '../utils/bleOta'
-import { flashAppOnlyOverUsb, isWebSerialSupported, webSerialUnavailableReason } from '../utils/usbFlash'
+import {
+  flashAppOnlyOverUsb,
+  isWebSerialSupported,
+  notifyUsbFlashFinished,
+  releaseUsbLogPortForFlash,
+  waitForUsbPortSettle,
+  webSerialUnavailableReason,
+} from '../utils/usbFlash'
 import { createRemoteOtaJob, formatLastSeen, getRemoteOtaJob, isDeviceOnline, listRemoteDevices, uploadFirmwareForRemoteOta } from '../utils/remoteOta'
 import { assembleCompileFiles } from '../utils/projectAssembly'
 import { OFFICIAL_EXAMPLES, getOfficialExample } from '../data/officialExamples'
@@ -317,8 +324,16 @@ export default function CompilePanel({
     setUsbState('flashing')
     setUsbProgress(0)
     setErrorLog('')
-    setStatus('请选择 ESP32-S3 USB 串口设备...')
+    setStatus('正在释放 USB 串口日志连接...')
     try {
+      await releaseUsbLogPortForFlash({
+        onLog: line => {
+          setBuildLog(prev => [...prev, `[usb] ${line}`])
+          setTimeout(() => logEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 0)
+        },
+      })
+      await waitForUsbPortSettle()
+      setStatus('请选择 ESP32-S3 USB 串口设备...')
       await flashAppOnlyOverUsb({
         firmware,
         onProgress: pct => {
@@ -336,6 +351,8 @@ export default function CompilePanel({
       setErrorLog(e.message)
       setStatus('USB 烧录失败')
       setUsbState('error')
+    } finally {
+      notifyUsbFlashFinished()
     }
   }
 

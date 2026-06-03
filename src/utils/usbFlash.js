@@ -1,6 +1,9 @@
 import { ESPLoader, Transport } from 'esptool-js'
 
 export const USB_FLASH_APP_OFFSET = 0x10000
+export const USB_LOG_RELEASE_REQUEST_EVENT = 'vibeboard:usb-log-release-request'
+export const USB_LOG_RELEASED_EVENT = 'vibeboard:usb-log-released'
+export const USB_FLASH_FINISHED_EVENT = 'vibeboard:usb-flash-finished'
 
 export function isWebSerialSupported() {
   return typeof navigator !== 'undefined' && !!navigator.serial && window.isSecureContext
@@ -14,6 +17,43 @@ export function webSerialUnavailableReason() {
     return 'USB 直刷需要 HTTPS 或 localhost 安全上下文。'
   }
   return ''
+}
+
+export async function releaseUsbLogPortForFlash({ timeoutMs = 1800, onLog } = {}) {
+  if (typeof window === 'undefined') return false
+
+  const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`
+
+  return new Promise(resolve => {
+    let settled = false
+    const finish = released => {
+      if (settled) return
+      settled = true
+      window.clearTimeout(timer)
+      window.removeEventListener(USB_LOG_RELEASED_EVENT, handleReleased)
+      if (released) onLog?.('已临时断开 USB 串口日志，释放端口给烧录器')
+      resolve(released)
+    }
+    const handleReleased = event => {
+      if (event?.detail?.requestId !== requestId) return
+      finish(Boolean(event.detail.released))
+    }
+    const timer = window.setTimeout(() => finish(false), timeoutMs)
+
+    window.addEventListener(USB_LOG_RELEASED_EVENT, handleReleased)
+    window.dispatchEvent(new CustomEvent(USB_LOG_RELEASE_REQUEST_EVENT, {
+      detail: { requestId },
+    }))
+  })
+}
+
+export function notifyUsbFlashFinished() {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent(USB_FLASH_FINISHED_EVENT))
+}
+
+export function waitForUsbPortSettle(ms = 250) {
+  return new Promise(resolve => setTimeout(resolve, ms))
 }
 
 export async function flashAppOnlyOverUsb({ firmware, onLog, onProgress }) {

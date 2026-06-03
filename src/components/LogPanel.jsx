@@ -5,11 +5,33 @@ import {
   parseLine, LEVEL_COLOR,
 } from '../utils/logStream'
 import { loadOtaIp } from '../utils/ota'
+import {
+  USB_FLASH_FINISHED_EVENT,
+  USB_LOG_RELEASE_REQUEST_EVENT,
+  USB_LOG_RELEASED_EVENT,
+} from '../utils/usbFlash'
 import './LogPanel.css'
 
 const MAX_LINES = 1000
 const SERIAL_AUTO_CONNECT_KEY = 'vibeboard-log-serial-auto-connect'
 const SERIAL_AUTO_POLL_MS = 2000
+const SERIAL_AUTO_ERROR_COOLDOWN_MS = 8000
+
+function copyTextFallback(text) {
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.left = '-9999px'
+  textarea.style.top = '0'
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+  textarea.setSelectionRange(0, textarea.value.length)
+  const ok = document.execCommand('copy')
+  document.body.removeChild(textarea)
+  if (!ok) throw new Error('copy failed')
+}
 
 export default function LogPanel({ onAnalyze }) {
   const [lines,      setLines]      = useState([])
@@ -20,6 +42,7 @@ export default function LogPanel({ onAnalyze }) {
   const [connStatus, setConnStatus] = useState('idle') // idle|connecting|connected|disconnected|error
   const [autoScroll, setAutoScroll] = useState(true)
   const [serialHint, setSerialHint] = useState('')
+  const [copyState,  setCopyState]  = useState('idle')
 
   const streamRef  = useRef(null)
   const bottomRef  = useRef(null)
@@ -27,6 +50,8 @@ export default function LogPanel({ onAnalyze }) {
   const sourceRef  = useRef(source)
   const statusRef  = useRef(connStatus)
   const autoSerialBlockedRef = useRef(localStorage.getItem(SERIAL_AUTO_CONNECT_KEY) === 'blocked')
+  const autoSerialPausedForFlashRef = useRef(false)
+  const autoSerialCooldownUntilRef = useRef(0)
 
   /* Auto-scroll */
   useEffect(() => {
@@ -71,6 +96,7 @@ export default function LogPanel({ onAnalyze }) {
       localStorage.removeItem(SERIAL_AUTO_CONNECT_KEY)
     } catch (e) {
       streamRef.current = null
+      autoSerialCooldownUntilRef.current = Date.now() + SERIAL_AUTO_ERROR_COOLDOWN_MS
       setConnStatus('error')
       addLine(`[错误] ${e.message}`, 'serial')
     }
@@ -91,6 +117,10 @@ export default function LogPanel({ onAnalyze }) {
         streamRef.current = await createSerialLogStream(addLine, updateStatus)
       }
     } catch (e) {
+      streamRef.current = null
+      if (source === 'serial') {
+        autoSerialCooldownUntilRef.current = Date.now() + SERIAL_AUTO_ERROR_COOLDOWN_MS
+      }
       setConnStatus('error')
       addLine(`[错误] ${e.message}`, source)
     }
@@ -107,6 +137,64 @@ export default function LogPanel({ onAnalyze }) {
     setConnStatus('idle')
   }
 
+  async function copyLogLines() {
+    const text = lines.map(line => line.raw).join('\n')
+    if (!text) return
+    try {
+      if (navigator.clipboard?.writeText && window.isSecureContext) {
+        await navigator.clipboard.writeText(text)
+      } else {
+        copyTextFallback(text)
+      }
+      setCopyState('ok')
+      setTimeout(() => setCopyState('idle'), 1500)
+    } catch {
+      try {
+        copyTextFallback(text)
+        setCopyState('ok')
+        setTimeout(() => setCopyState('idle'), 1500)
+      } catch {
+        setCopyState('error')
+        setTimeout(() => setCopyState('idle'), 1500)
+      }
+    }
+  }
+
+  useEffect(() => {
+    async function handleReleaseRequest(event) {
+      const requestId = event?.detail?.requestId
+      autoSerialPausedForFlashRef.current = true
+
+      let released = false
+      if (sourceRef.current === 'serial' && streamRef.current) {
+        const stream = streamRef.current
+        streamRef.current = null
+        try { await stream.stop() } catch {}
+        setConnStatus('idle')
+        setSerialHint('USB 烧录中，串口日志已临时断开')
+        released = true
+      }
+
+      window.dispatchEvent(new CustomEvent(USB_LOG_RELEASED_EVENT, {
+        detail: { requestId, released },
+      }))
+    }
+
+    function handleFlashFinished() {
+      autoSerialPausedForFlashRef.current = false
+      if (!autoSerialBlockedRef.current) {
+        setSerialHint('')
+      }
+    }
+
+    window.addEventListener(USB_LOG_RELEASE_REQUEST_EVENT, handleReleaseRequest)
+    window.addEventListener(USB_FLASH_FINISHED_EVENT, handleFlashFinished)
+    return () => {
+      window.removeEventListener(USB_LOG_RELEASE_REQUEST_EVENT, handleReleaseRequest)
+      window.removeEventListener(USB_FLASH_FINISHED_EVENT, handleFlashFinished)
+    }
+  }, [])
+
   useEffect(() => {
     if (!isWebSerialSupported()) return undefined
 
@@ -115,6 +203,8 @@ export default function LogPanel({ onAnalyze }) {
 
     async function probe() {
       if (cancelled || probing || autoSerialBlockedRef.current) return
+      if (autoSerialPausedForFlashRef.current) return
+      if (Date.now() < autoSerialCooldownUntilRef.current) return
       if (streamRef.current || ['connecting', 'connected'].includes(statusRef.current)) return
 
       probing = true
@@ -170,6 +260,14 @@ export default function LogPanel({ onAnalyze }) {
           {counts.W > 0 && <span className="badge warn">{counts.W} WARN</span>}
         </div>
         <div className="log-header-right">
+          <button
+            className={`icon-btn ${copyState === 'ok' ? 'copy-ok' : copyState === 'error' ? 'copy-error' : ''}`}
+            onClick={copyLogLines}
+            disabled={lines.length === 0}
+            title={copyState === 'ok' ? '已复制' : copyState === 'error' ? '复制失败' : '复制串口内容'}
+          >
+            {copyState === 'ok' ? '✓' : '⧉'}
+          </button>
           <button className="icon-btn" onClick={() => setLines([])} title="清空日志">🗑</button>
           {onAnalyze && lines.length > 0 && (
             <button className="icon-btn analyze-btn"
