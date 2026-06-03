@@ -80,7 +80,7 @@ static esp_err_t pca9557_write(uint8_t reg, uint8_t val)
 {
     if (!s_pca9557_dev) return ESP_ERR_INVALID_STATE;
     uint8_t buf[2] = {reg, val};
-    return i2c_master_transmit(s_pca9557_dev, buf, 2, pdMS_TO_TICKS(50));
+    return i2c_master_transmit(s_pca9557_dev, buf, 2, 1000);
 }
 
 esp_err_t pca9557_init(void)
@@ -90,16 +90,29 @@ esp_err_t pca9557_init(void)
         return ESP_ERR_INVALID_STATE;
     }
 
+    if (s_pca9557_dev) return ESP_OK;
+
+    esp_err_t ret = ESP_FAIL;
+    for (int attempt = 0; attempt < 3; attempt++) {
+        ret = i2c_master_probe(s_i2c_bus, PCA9557_ADDR, 100);
+        if (ret == ESP_OK) break;
+        ESP_LOGW(TAG, "PCA9557 probe 0x%02x failed on attempt %d: %s",
+                 PCA9557_ADDR, attempt + 1, esp_err_to_name(ret));
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+    if (ret != ESP_OK) return ret;
+
     i2c_device_config_t dev_cfg = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
         .device_address  = PCA9557_ADDR,
         .scl_speed_hz    = BSP_I2C_FREQ_HZ,
     };
-    esp_err_t ret = i2c_master_bus_add_device(s_i2c_bus, &dev_cfg, &s_pca9557_dev);
+    ret = i2c_master_bus_add_device(s_i2c_bus, &dev_cfg, &s_pca9557_dev);
     if (ret != ESP_OK) return ret;
 
     /* OUTPUT register = 0x05: LCD_CS=1(desel), PA_EN=0, DVP_PWDN=1(camera off) */
-    pca9557_write(0x01, s_pca_out);
+    ret = pca9557_write(0x01, s_pca_out);
+    if (ret != ESP_OK) return ret;
     /* CONFIG register = 0xF8: P0-P2 as outputs, P3-P7 as inputs */
     return pca9557_write(0x03, 0xF8);
 }
@@ -141,7 +154,7 @@ esp_err_t bsp_lcd_init(void)
         .pclk_hz              = 80 * 1000 * 1000,
         .lcd_cmd_bits         = 8,
         .lcd_param_bits       = 8,
-        .spi_mode             = 0,
+        .spi_mode             = 2,
         .trans_queue_depth    = 10,
         .on_color_trans_done  = NULL,
         .user_ctx             = NULL,

@@ -14,7 +14,7 @@ extern "C" {
 /* I2C — shared bus */
 #define BSP_I2C_SDA         GPIO_NUM_1
 #define BSP_I2C_SCL         GPIO_NUM_2
-#define BSP_I2C_NUM         I2C_NUM_0
+#define BSP_I2C_NUM         (-1)
 #define BSP_I2C_FREQ_HZ     100000
 
 /* SPI LCD — ST7789, 320×240 */
@@ -76,7 +76,7 @@ extern "C" {
 
 /* ─── Function Declarations ──────────────────────────────────────────────── */
 
-/** Init I2C bus (SDA=GPIO1, SCL=GPIO2, I2C_NUM_0, 100 kHz). Call once at boot. */
+/** Init I2C bus (SDA=GPIO1, SCL=GPIO2, auto I2C controller, 100 kHz). Call once at boot. */
 esp_err_t bsp_i2c_init(void);
 
 /**
