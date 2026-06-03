@@ -14,6 +14,7 @@
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_vendor.h"  /* esp_lcd_new_panel_st7789() */
+#include "esp_heap_caps.h"
 #include "esp_spiffs.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -52,6 +53,26 @@ static esp_lcd_panel_handle_t    s_lcd_panel   = NULL;
 
 /* PCA9557 output register shadow (P0=LCD_CS, P1=PA_EN, P2=DVP_PWDN) */
 static uint8_t s_pca_out = 0x05;  /* LCD_CS=1(desel), PA_EN=0, DVP_PWDN=1(off) */
+
+static void lcd_fill_color(uint16_t color)
+{
+    if (!s_lcd_panel) return;
+
+    uint16_t *line = heap_caps_malloc(BSP_LCD_H_RES * sizeof(uint16_t),
+                                      MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
+    if (!line) {
+        ESP_LOGE(TAG, "LCD line buffer allocation failed");
+        return;
+    }
+
+    for (int x = 0; x < BSP_LCD_H_RES; x++) {
+        line[x] = color;
+    }
+    for (int y = 0; y < BSP_LCD_V_RES; y++) {
+        esp_lcd_panel_draw_bitmap(s_lcd_panel, 0, y, BSP_LCD_H_RES, y + 1, line);
+    }
+    heap_caps_free(line);
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
  *  I2C
@@ -170,18 +191,18 @@ esp_err_t bsp_lcd_init(void)
     };
     ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(s_lcd_io, &panel_cfg, &s_lcd_panel));
 
-    /* Init sequence */
-    lcd_cs(0);                              /* assert CS via PCA9557 */
+    /* Match the vendor example sequence: reset first, then hold external CS low. */
     esp_lcd_panel_reset(s_lcd_panel);
+    lcd_cs(0);
     esp_lcd_panel_init(s_lcd_panel);
     esp_lcd_panel_invert_color(s_lcd_panel, true);
     esp_lcd_panel_swap_xy(s_lcd_panel, true);
     esp_lcd_panel_mirror(s_lcd_panel, true, false);
-    esp_lcd_panel_set_gap(s_lcd_panel, 0, 0);
+    lcd_fill_color(0x0000);
     esp_lcd_panel_disp_on_off(s_lcd_panel, true);
 
     /* Backlight on */
-    bsp_display_brightness_set(80);
+    bsp_display_brightness_set(100);
 
     ESP_LOGI(TAG, "LCD init OK (%dx%d)", BSP_LCD_H_RES, BSP_LCD_V_RES);
     return ESP_OK;
@@ -200,8 +221,8 @@ esp_err_t bsp_display_brightness_set(int percent)
     if (!ledc_inited) {
         ledc_timer_config_t timer = {
             .speed_mode      = LEDC_LOW_SPEED_MODE,
-            .duty_resolution = LEDC_TIMER_8_BIT,
-            .timer_num       = LEDC_TIMER_0,
+            .duty_resolution = LEDC_TIMER_10_BIT,
+            .timer_num       = LEDC_TIMER_1,
             .freq_hz         = 5000,
             .clk_cfg         = LEDC_AUTO_CLK,
         };
@@ -211,15 +232,16 @@ esp_err_t bsp_display_brightness_set(int percent)
             .gpio_num   = BSP_LCD_BL,
             .speed_mode = LEDC_LOW_SPEED_MODE,
             .channel    = LEDC_CHANNEL_0,
-            .timer_sel  = LEDC_TIMER_0,
+            .timer_sel  = LEDC_TIMER_1,
             .duty       = 0,
             .hpoint     = 0,
+            .flags.output_invert = true,
         };
         ledc_channel_config(&channel);
         ledc_inited = true;
     }
 
-    uint32_t duty = (percent * 255) / 100;
+    uint32_t duty = (percent * 1023) / 100;
     ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty);
     ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
     return ESP_OK;
@@ -254,8 +276,8 @@ esp_err_t bsp_lvgl_start(void)
         .hres            = BSP_LCD_H_RES,
         .vres            = BSP_LCD_V_RES,
         .monochrome      = false,
-        .rotation        = { .swap_xy = false, .mirror_x = false, .mirror_y = false },
-        .flags           = { .buff_dma = true },
+        .rotation        = { .swap_xy = true, .mirror_x = true, .mirror_y = false },
+        .flags           = { .buff_spiram = true },
     };
     lv_disp_t *disp = lvgl_port_add_disp(&disp_cfg);
     if (!disp) {
@@ -271,7 +293,7 @@ esp_err_t bsp_lvgl_start(void)
         .rst_gpio_num = -1,
         .int_gpio_num = -1,
         .levels    = { .reset = 0, .interrupt = 0 },
-        .flags     = { .swap_xy = true, .mirror_x = false, .mirror_y = true },
+        .flags     = { .swap_xy = true, .mirror_x = true, .mirror_y = false },
     };
     esp_lcd_panel_io_handle_t tp_io = NULL;
     esp_lcd_panel_io_i2c_config_t tp_io_cfg = ESP_LCD_TOUCH_IO_I2C_FT5x06_CONFIG();

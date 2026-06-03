@@ -108,6 +108,16 @@ esp_get_feed_data(raw, buf, len)
 12. Use ESP_ERROR_CHECK(...), not BSP_ERROR_CHECK(...)
 13. If using ESP_LOGI/ESP_LOGE/ESP_LOGW, include "esp_log.h" in that file
 
+## LVGL Display Contract
+- For LVGL apps call only \`bsp_i2c_init(); pca9557_init(); bsp_lvgl_start();\` before creating UI.
+- \`bsp_lvgl_start()\` owns LVGL port init, ST7789 registration, FT6336 touch registration, and backlight.
+- Do not duplicate \`lvgl_port_init()\`, \`lvgl_port_add_disp()\`, \`lvgl_port_add_touch()\`, or raw touch init in app code.
+- LCD/LVGL rotation must stay aligned: \`swap_xy=true\`, \`mirror_x=true\`, \`mirror_y=false\`.
+- LVGL buffers use PSRAM: \`buff_dma=false\`, \`buff_spiram=true\`; DMA and SPIRAM must never both be true.
+- FT6336 touch is FT5x06-compatible: \`x_max=240\`, \`y_max=320\`, reset/int GPIO = NC.
+- \`CONFIG_LV_COLOR_16_SWAP=y\` is required for correct 16-bit colors.
+- Official demos require \`#include "demos/lv_demos.h"\` and only one \`lv_demo_*\` should run at a time.
+
 ## Always-On Debug Transport
 Every VibeBoard ESP-IDF project includes platform-owned \`vibeboard_debug.c/.h\`.
 The app entrypoint is auto-normalized to call:
@@ -184,6 +194,17 @@ export const szpi_esp32s3Board = {
   flashSize: '16MB',
   psramSize: '8MB Octal',
   description: '16MB Flash + 8MB Octal PSRAM, 320x240 ST7789 LCD, ES8311+ES7210 audio, GC0308 camera, QMI8658 IMU',
+  projectConfig: {
+    sdkconfig: [
+      'CONFIG_SPIRAM=y',
+      'CONFIG_SPIRAM_MODE_OCT=y',
+      'CONFIG_SPIRAM_SPEED_80M=y',
+      'CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y',
+      'CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB=y',
+      'CONFIG_ESP32S3_DATA_CACHE_64KB=y',
+      'CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y',
+    ],
+  },
 
   /** Hardware context injected into AI system prompt */
   basePrompt,

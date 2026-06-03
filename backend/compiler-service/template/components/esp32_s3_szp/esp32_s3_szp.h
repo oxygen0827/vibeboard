@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "driver/gpio.h"
+#include "driver/i2c_master.h"
 #include "esp_err.h"
 
 #ifdef __cplusplus
@@ -14,7 +15,7 @@ extern "C" {
 /* I2C — shared bus */
 #define BSP_I2C_SDA         GPIO_NUM_1
 #define BSP_I2C_SCL         GPIO_NUM_2
-#define BSP_I2C_NUM         (-1)
+#define BSP_I2C_NUM         I2C_NUM_0
 #define BSP_I2C_FREQ_HZ     100000
 
 /* SPI LCD — ST7789, 320×240 */

@@ -458,8 +458,10 @@ project(${projectName})`,
 }
 
 function defaultProjectConfigsForBoard(board) {
-  if (board?.id === 'szpi_esp32s3') return [VIBEBOARD_DEBUG_CONFIG]
-  return []
+  const configs = []
+  if (board?.projectConfig) configs.push(board.projectConfig)
+  if (board?.id === 'szpi_esp32s3') configs.push(VIBEBOARD_DEBUG_CONFIG)
+  return configs
 }
 
 function defaultProjectFilesForBoard(board) {
