@@ -19,6 +19,8 @@ BUILD_BASE   = Path("/tmp/builds")
 REMOTE_OTA_DIR = Path(os.environ.get("REMOTE_OTA_DIR", "/tmp/vibeboard-remote-ota"))
 IDF_PATH     = Path(os.environ.get("IDF_PATH", "/opt/esp/idf"))
 BUILD_TIMEOUT_SECONDS = int(os.environ.get("BUILD_TIMEOUT_SECONDS", "300"))
+DEFAULT_OTA_WIFI_SSID = os.environ.get("DEFAULT_OTA_WIFI_SSID", "1-306")
+DEFAULT_OTA_WIFI_PASSWORD = os.environ.get("DEFAULT_OTA_WIFI_PASSWORD", "szyt1008")
 
 BUILD_BASE.mkdir(parents=True, exist_ok=True)
 REMOTE_OTA_DIR.mkdir(parents=True, exist_ok=True)
@@ -159,6 +161,26 @@ def project_signature(code: str, project_files: dict) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
+def directory_signature(source: Path) -> str:
+    digest = hashlib.sha256()
+    files = sorted(
+        (p for p in source.rglob("*") if p.is_file()),
+        key=lambda p: str(p.relative_to(source)).replace("\\", "/"),
+    )
+    for path in files:
+        rel = str(path.relative_to(source)).replace("\\", "/")
+        digest.update(rel.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def fixed_build_id(prefix: str, value: str) -> str:
+    name = re.sub(r"[^A-Za-z0-9_.:-]+", "-", value).strip("-")
+    return f"{prefix}-{name}"[:120]
+
+
 def sync_project_files(build_dir: Path, code: str, project_files: dict):
     main_file = project_files.get("__mainFile", "main.c")
     expected = set()
@@ -257,13 +279,39 @@ def create_official_example_project(build_dir: Path, example_id: str):
     log.info(f"  official example copied unchanged: {example_id}")
 
 
+def prepare_cached_official_example(build_dir: Path, example_id: str):
+    source = official_example_path(example_id)
+    signature = directory_signature(source)
+    stamp = build_dir / ".vibeboard-example-signature"
+    if not build_dir.exists():
+        shutil.copytree(source, build_dir)
+        stamp.write_text(signature)
+        return "cache-created"
+    if not (build_dir / "CMakeLists.txt").exists():
+        shutil.rmtree(build_dir, ignore_errors=True)
+        shutil.copytree(source, build_dir)
+        stamp.write_text(signature)
+        return "cache-recreated"
+    previous = stamp.read_text(errors="ignore").strip() if stamp.exists() else ""
+    if previous != signature:
+        shutil.rmtree(build_dir, ignore_errors=True)
+        shutil.copytree(source, build_dir)
+        stamp.write_text(signature)
+        return "cache-updated"
+    return "cache-hit"
+
+
 def c_string(value: str) -> str:
     return json.dumps(str(value or ""))[1:-1]
 
 
-def create_ota_receiver_project(build_dir: Path, wifi_ssid: str, wifi_password: str, device_id: str, device_token: str, server_url: str):
+def create_ota_receiver_project(build_dir: Path, wifi_ssid: str, wifi_password: str, device_id: str, device_token: str, server_url: str, version: str | None = None):
     if not OTA_RECEIVER_DIR.exists():
         raise ValueError("OTA receiver template not installed")
+    wifi_ssid = str(wifi_ssid or DEFAULT_OTA_WIFI_SSID)
+    wifi_password = str(wifi_password if wifi_password is not None else DEFAULT_OTA_WIFI_PASSWORD)
+    device_id = str(device_id or "szpi-s3-ota-receiver")
+    device_token = str(device_token or "vibeboard-ota-receiver")
     if not isinstance(wifi_ssid, str) or not wifi_ssid.strip():
         raise ValueError("WiFi SSID is required")
     if len(wifi_ssid.encode("utf-8")) > 32:
@@ -280,9 +328,9 @@ def create_ota_receiver_project(build_dir: Path, wifi_ssid: str, wifi_password: 
 
     shutil.copytree(OTA_RECEIVER_DIR, build_dir)
     config = build_dir / "main" / "vibeboard_wifi_config.h"
-    version = f"vibeboard-ota-receiver-{uuid.uuid4().hex[:8]}"
-    resolved_device_id = device_id or f"szpi-s3-{uuid.uuid4().hex[:8]}"
-    resolved_device_token = device_token or uuid.uuid4().hex
+    version = version or f"vibeboard-ota-receiver-{uuid.uuid4().hex[:8]}"
+    resolved_device_id = device_id
+    resolved_device_token = device_token
     config.write_text(
         "#pragma once\n\n"
         f"#define VIBEBOARD_WIFI_SSID \"{c_string(wifi_ssid.strip())}\"\n"
@@ -297,6 +345,53 @@ def create_ota_receiver_project(build_dir: Path, wifi_ssid: str, wifi_password: 
         "deviceId": resolved_device_id,
         "deviceToken": resolved_device_token,
         "serverUrl": server_url,
+        "version": version,
+    }
+
+
+def ota_receiver_signature(wifi_ssid: str, wifi_password: str, device_id: str, device_token: str, server_url: str):
+    payload = {
+        "template": directory_signature(OTA_RECEIVER_DIR),
+        "wifiSsid": str(wifi_ssid or DEFAULT_OTA_WIFI_SSID).strip(),
+        "wifiPassword": str(wifi_password if wifi_password is not None else DEFAULT_OTA_WIFI_PASSWORD),
+        "deviceId": str(device_id or "szpi-s3-ota-receiver"),
+        "deviceToken": str(device_token or "vibeboard-ota-receiver"),
+        "serverUrl": str(server_url or "").strip().rstrip("/"),
+    }
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest(), payload
+
+
+def prepare_cached_ota_receiver(build_dir: Path, wifi_ssid: str, wifi_password: str, device_id: str, device_token: str, server_url: str):
+    signature, payload = ota_receiver_signature(wifi_ssid, wifi_password, device_id, device_token, server_url)
+    version = f"vibeboard-ota-receiver-{signature[:8]}"
+    stamp = build_dir / ".vibeboard-ota-receiver-signature"
+
+    def recreate(status: str):
+        shutil.rmtree(build_dir, ignore_errors=True)
+        agent = create_ota_receiver_project(
+            build_dir,
+            payload["wifiSsid"],
+            payload["wifiPassword"],
+            payload["deviceId"],
+            payload["deviceToken"],
+            payload["serverUrl"],
+            version=version,
+        )
+        stamp.write_text(signature)
+        return status, agent
+
+    if not build_dir.exists():
+        return recreate("cache-created")
+    if not (build_dir / "CMakeLists.txt").exists():
+        return recreate("cache-recreated")
+    previous = stamp.read_text(errors="ignore").strip() if stamp.exists() else ""
+    if previous != signature:
+        return recreate("cache-updated")
+    return "cache-hit", {
+        "deviceId": payload["deviceId"],
+        "deviceToken": payload["deviceToken"],
+        "serverUrl": payload["serverUrl"],
         "version": version,
     }
 
@@ -418,6 +513,23 @@ def run_idf_build(job_id: str, build_dir: Path, cleanup: bool = True):
     })
     if cleanup:
         shutil.rmtree(build_dir, ignore_errors=True)
+
+
+def cached_build_payload(job_id: str, build_dir: Path):
+    bin_path = find_app_binary(build_dir)
+    if not bin_path:
+        return None
+    size = bin_path.stat().st_size
+    bin_b64 = base64.b64encode(bin_path.read_bytes()).decode()
+    return {
+        "done": True,
+        "bin": bin_b64,
+        "size": size,
+        "filename": bin_path.name,
+        "flashFiles": find_flash_artifacts(build_dir, bin_path),
+        "buildId": job_id,
+        "command": "cached build artifact",
+    }
 
 
 def with_extra_done_metadata(events, metadata: dict):
@@ -681,15 +793,22 @@ def compile_example():
     example_id = data.get("exampleId", "")
 
     job_id = uuid.uuid4().hex[:8]
-    build_dir = BUILD_BASE / job_id
+    build_dir = BUILD_BASE / fixed_build_id("example", str(example_id))
 
     def generate():
         try:
-            create_official_example_project(build_dir, example_id)
+            cache_status = prepare_cached_official_example(build_dir, example_id)
+            yield sse({"log": f"Official example cache: {cache_status}"})
         except Exception as e:
             yield sse({"done": True, "error": str(e)})
             return
-        yield from run_idf_build(job_id, build_dir)
+        if cache_status == "cache-hit":
+            cached = cached_build_payload(job_id, build_dir)
+            if cached:
+                yield sse({"log": "Official example cached artifact reused"})
+                yield sse(cached)
+                return
+        yield from run_idf_build(job_id, build_dir, cleanup=False)
 
     return Response(generate(), content_type="text/event-stream",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
@@ -705,15 +824,24 @@ def compile_ota_receiver():
     server_url = data.get("serverUrl", "")
 
     job_id = uuid.uuid4().hex[:8]
-    build_dir = BUILD_BASE / job_id
+    signature, _ = ota_receiver_signature(wifi_ssid, wifi_password, device_id, device_token, server_url)
+    build_dir = BUILD_BASE / f"ota-receiver-{signature[:16]}"
 
     def generate():
         try:
-            agent = create_ota_receiver_project(build_dir, wifi_ssid, wifi_password, device_id, device_token, server_url)
+            cache_status, agent = prepare_cached_ota_receiver(build_dir, wifi_ssid, wifi_password, device_id, device_token, server_url)
+            yield sse({"log": f"OTA receiver cache: {cache_status}"})
         except Exception as e:
             yield sse({"done": True, "error": str(e)})
             return
-        yield from with_extra_done_metadata(run_idf_build(job_id, build_dir), {"agent": agent})
+        if cache_status == "cache-hit":
+            cached = cached_build_payload(job_id, build_dir)
+            if cached:
+                yield sse({"log": "OTA receiver cached artifact reused"})
+                cached.update({"agent": agent})
+                yield sse(cached)
+                return
+        yield from with_extra_done_metadata(run_idf_build(job_id, build_dir, cleanup=False), {"agent": agent})
 
     return Response(generate(), content_type="text/event-stream",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
