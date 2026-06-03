@@ -575,13 +575,16 @@ def preview_interaction_point(interactions):
 
 
 def rgba_to_png(rgba_path, viewport):
-    if Image is None:
-        raise RuntimeError("Pillow is required to encode the LVGL preview framebuffer.")
     width, height = viewport["width"], viewport["height"]
     raw = rgba_path.read_bytes()
     expected = width * height * 4
     if len(raw) != expected:
         raise RuntimeError(f"LVGL preview framebuffer has {len(raw)} bytes, expected {expected}.")
+    if Image is None:
+        pixels = bytearray()
+        for index in range(0, len(raw), 4):
+            pixels.extend(raw[index:index + 3])
+        return make_png(width, height, pixels)
     image = Image.frombytes("RGBA", (width, height), raw)
     buffer = BytesIO()
     image.convert("RGB").save(buffer, format="PNG")
