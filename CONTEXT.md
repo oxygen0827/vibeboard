@@ -76,6 +76,14 @@ The post-failure workflow that uses Build Evidence or Device Evidence to patch
 Application Source, revalidate, rebuild, and rerun while preserving
 System-Owned Project Files.
 
+**Digital Twin**
+
+A layered simulation surface for generated firmware. The current browser
+preview is a semantic UI preview, not proof of firmware correctness. The target
+digital twin runs real generated LVGL UI code through a browser/PC simulator,
+drives board-level peripheral mocks, then uses real build and device evidence to
+calibrate the simulation.
+
 ## Current Architecture Notes
 
 - The current Board Profile and Capability Skills live under
@@ -85,6 +93,8 @@ System-Owned Project Files.
 - `src/utils/projectAssembly.js` generates ESP-IDF project files from selected
   skills.
 - `backend/compiler-service/server.py` performs server-side ESP-IDF builds.
+- `docs/digital-twin-architecture.md` defines the fidelity ladder from
+  semantic UI preview to real LVGL runtime and board-level peripheral mocks.
 - The next architectural step is to introduce Program Intent, Program Manifest,
   Hardware Workflow, Build Evidence, and Device Evidence as explicit modules
   instead of leaving them implicit inside UI components.

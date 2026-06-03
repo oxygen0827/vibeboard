@@ -50,7 +50,7 @@ VibeBoard 现在是 ESP-IDF-first。Arduino 和泛用多板卡模板不是当前
 用于 USB 直刷的 HTTPS 地址：
 
 ```text
-https://fireplace-verification-holder-properties.trycloudflare.com
+https://habitat-cas-lens-dept.trycloudflare.com
 ```
 
 原有 FRP HTTP 地址：
@@ -59,7 +59,7 @@ https://fireplace-verification-holder-properties.trycloudflare.com
 http://150.158.146.192:6054/
 ```
 
-USB 直刷必须使用 HTTPS 地址。Chrome / Edge 只有在可信安全上下文中才会开放 `navigator.serial`，所以普通 HTTP FRP 页面不能直接连接 USB 串口。
+当前 FRP HTTP 地址可能不可达。USB 直刷必须使用 HTTPS 地址。Chrome / Edge 只有在可信安全上下文中才会开放 `navigator.serial`，所以普通 HTTP FRP 页面不能直接连接 USB 串口。
 
 当前 HTTPS 链路是 Cloudflare Quick Tunnel：
 
@@ -93,7 +93,7 @@ systemctl --user restart vibeboard-cloudflared.service
 使用 Chrome 或 Edge 打开：
 
 ```text
-https://fireplace-verification-holder-properties.trycloudflare.com
+https://habitat-cas-lens-dept.trycloudflare.com
 ```
 
 ### 2. 首次刷 OTA 基础固件

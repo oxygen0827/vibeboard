@@ -1,6 +1,8 @@
 import { normalizeProjectFiles } from './filePlacement'
 import { validateProgramManifest } from '../domain/program/validateManifest'
 import { WRITE_SURFACES } from '../domain/program/manifestSchema'
+import { DIGITAL_TWIN_MANIFEST_KEY, extractDigitalTwinManifest } from '../domain/digitalTwin/uiManifest'
+export { inferSkillsFromRequest } from '../domain/program/intent'
 
 export function extractJsonObject(text) {
   const trimmed = String(text || '').trim()
@@ -79,7 +81,11 @@ export function parseGeneratedFilesResponseWithOptions(text, board, options = {}
   if (!hasMain) errors.push('missing-main-app-main')
   errors.push(...validateGeneratedFileSet(accepted, options.manifest))
 
-  return { ok: errors.length === 0, files: accepted, errors }
+  const files = { ...accepted }
+  const digitalTwinManifest = extractDigitalTwinManifest(parsed)
+  if (digitalTwinManifest) files[DIGITAL_TWIN_MANIFEST_KEY] = digitalTwinManifest
+
+  return { ok: errors.length === 0, files, errors, digitalTwinManifest }
 }
 
 export function findBalancedJsonCandidates(text) {
@@ -169,47 +175,6 @@ export function validateGeneratedFileSet(files, manifest) {
   }
 
   return errors
-}
-
-const SKILL_KEYWORDS = {
-  gpio: [
-    /boot|按键|按钮|key|button|gpio0|gpio|中断|interrupt/i,
-  ],
-  lvgl: [
-    /触摸|触屏|touch|ui|界面|屏幕|显示|slider|下拉|dropdown|lvgl|lcd/i,
-  ],
-  audio: [
-    /mp3|音乐|播放器|播放|音频|声音|喇叭|扬声器|speaker|audio|codec|es8311|spiffs/i,
-  ],
-  wifi: [
-    /wifi|wi-fi|无线|联网|网络|http|ota|远程|heartbeat|心跳/i,
-  ],
-  ble: [
-    /ble|蓝牙|hid|keyboard|键盘/i,
-  ],
-  camera: [
-    /摄像头|相机|camera|拍照|预览|gc0308/i,
-  ],
-  imu: [
-    /imu|姿态|加速度|陀螺仪|qmi8658|倾角/i,
-  ],
-  sdcard: [
-    /sd\s*卡|micro\s*sd|sdmmc|存储卡|文件系统/i,
-  ],
-  speech: [
-    /语音识别|唤醒词|esp-sr|speech|wakenet|命令词/i,
-  ],
-  vision: [
-    /人脸|目标检测|yolo|face|detect|识别画面/i,
-  ],
-}
-
-const SKILL_CO_REQUIREMENTS = {
-  audio: ['lvgl'],
-  wifi: ['lvgl'],
-  ble: ['lvgl'],
-  speech: ['audio', 'lvgl'],
-  vision: ['camera'],
 }
 
 const SZPI_OFFICIAL_EXAMPLES = [
@@ -305,33 +270,6 @@ Derived rules:
 - Speech recognition needs speech + audio + lvgl.
 - Camera preview uses camera and the LCD init path; do not force LVGL unless the user asks for touch UI/widgets.
 - Storage may mean SD card (sdcard) or SPIFFS owned by audio/speech; choose based on the requested medium.`
-}
-
-export function inferSkillsFromRequest(board, userRequest, selectedSkills = []) {
-  const valid = new Set((board?.skills || []).map(skill => skill.id))
-  const inferred = new Set((selectedSkills || []).filter(id => valid.has(id)))
-  const text = String(userRequest || '')
-
-  for (const [skillId, patterns] of Object.entries(SKILL_KEYWORDS)) {
-    if (!valid.has(skillId)) continue
-    if (patterns.some(pattern => pattern.test(text))) inferred.add(skillId)
-  }
-
-  let changed = true
-  while (changed) {
-    changed = false
-    for (const [skillId, required] of Object.entries(SKILL_CO_REQUIREMENTS)) {
-      if (!inferred.has(skillId)) continue
-      for (const requiredSkill of required) {
-        if (valid.has(requiredSkill) && !inferred.has(requiredSkill)) {
-          inferred.add(requiredSkill)
-          changed = true
-        }
-      }
-    }
-  }
-
-  return [...inferred]
 }
 
 export function parseProgramManifestResponse(text, board) {
@@ -441,7 +379,15 @@ Allowed output schema:
     { "path": "main/main.c", "content": "..." },
     { "path": "main/app_ui.h", "content": "..." },
     { "path": "main/app_ui.c", "content": "..." }
-  ]
+  ],
+  "uiManifest": {
+    "title": "short preview title",
+    "screen": { "background": "#f6f8fa" },
+    "widgets": [
+      { "id": "title", "type": "label", "text": "Hello", "x": 16, "y": 12, "w": 200, "h": 28 },
+      { "id": "ok", "type": "button", "text": "OK", "x": 220, "y": 190, "w": 80, "h": 32, "action": "ok_clicked" }
+    ]
+  }
 }
 
 Rules:
@@ -487,20 +433,32 @@ Allowed output schema:
     { "path": "main/main.c", "content": "..." },
     { "path": "main/app_ui.h", "content": "..." },
     { "path": "main/app_ui.c", "content": "..." }
-  ]
+  ],
+  "uiManifest": {
+    "title": "short preview title",
+    "screen": { "background": "#f6f8fa" },
+    "widgets": [
+      { "id": "title", "type": "label", "text": "Hello", "x": 16, "y": 12, "w": 200, "h": 28 },
+      { "id": "ok", "type": "button", "text": "OK", "x": 220, "y": 190, "w": 80, "h": 32, "action": "ok_clicked" }
+    ]
+  }
 }
 
 Rules:
 - Generate exactly the files listed in the manifest unless a required matching local header is missing.
 - Generate Application Source only: main/main.c, main/main.cpp, main/**/*.c, main/**/*.cpp, main/**/*.h, main/**/*.hpp.
 - Follow the official SZPI examples: keep app_main thin and move feature logic into app_*.c/app_*.h modules.
+- For LVGL/display UI, expose void app_ui_start(void) in app_ui.c/app_ui.h so VibeBoard can reuse the same UI source in the LVGL simulator.
 - Use main/assets/* for generated C assets and main/bt/* for BLE helper modules when listed in the manifest.
 - Do not generate CMakeLists.txt, sdkconfig.defaults, idf_component.yml, partitions.csv, components/*, or BSP files.
 - Include a complete app_main in the manifest entry file.
 - If a file includes a local quoted header, generate that header too.
 - Use #include "esp32_s3_szp.h" for board APIs.
 - Do not use APIs from a skill family that is absent from manifest.skillIds.
-- Keep system configuration owned by VibeBoard.`,
+- Keep system configuration owned by VibeBoard.
+- Also include uiManifest for immediate semantic browser preview when the program uses LVGL, LCD, buttons, sliders, lists, dropdowns, textareas, WiFi status, audio controls, BLE status, camera preview, IMU status, or speech status.
+- uiManifest is not firmware source and is not proof of LVGL correctness; it is a 320x240 screen description used before the real LVGL simulator runs. Use only these widget types: label, button, slider, dropdown, textarea, list, image, status.
+- Match uiManifest to the generated LVGL/app behavior closely enough that users can preview layout and state flow before compiling.`,
     },
     {
       role: 'user',

@@ -20,6 +20,8 @@ async function copyModule(relPath) {
 
 await copyModule('src/utils/filePlacement.js')
 await copyModule('src/domain/workflow/failureCategories.js')
+await copyModule('src/domain/digitalTwin/uiManifest.js')
+await copyModule('src/domain/program/intent.js')
 await copyModule('src/domain/program/manifestSchema.js')
 await copyModule('src/domain/program/validateManifest.js')
 await copyModule('src/utils/codeGeneration.js')
@@ -51,6 +53,24 @@ const ok = parseGeneratedFilesResponse(JSON.stringify({
 }))
 assert.equal(ok.ok, true)
 assert.deepEqual(Object.keys(ok.files).sort(), ['main/helper.c', 'main/helper.h', 'main/main.c'])
+
+const withUiManifest = parseGeneratedFilesResponse(JSON.stringify({
+  files: [
+    { path: 'main/main.c', content: 'void app_main(void) {}' },
+  ],
+  uiManifest: {
+    title: 'Hello UI',
+    screen: { background: '#101820' },
+    widgets: [
+      { id: 'title', type: 'label', text: 'Hello', x: 12, y: 10, w: 160, h: 28 },
+      { id: 'start', type: 'button', text: 'Start', x: 220, y: 190, w: 80, h: 32 },
+    ],
+  },
+}))
+assert.equal(withUiManifest.ok, true)
+assert.equal(withUiManifest.files.__digitalTwinManifest.title, 'Hello UI')
+assert.equal(withUiManifest.files.__digitalTwinManifest.widgets.length, 2)
+assert.equal(withUiManifest.digitalTwinManifest.screen.background, '#101820')
 
 const fileBlockRaw = `FILE: main/main.c
 \`\`\`c

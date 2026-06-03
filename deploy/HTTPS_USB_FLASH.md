@@ -6,7 +6,7 @@ context. Plain public HTTP FRP links are not enough.
 ## Current Deployed Entry
 
 ```text
-https://fireplace-verification-holder-properties.trycloudflare.com
+https://habitat-cas-lens-dept.trycloudflare.com
 ```
 
 This is a Cloudflare Quick Tunnel running on the 4060Ti home server. It proxies
@@ -41,8 +41,9 @@ The existing public VibeBoard entry is:
 http://150.158.146.192:6054/
 ```
 
-It works for normal web access, build, official examples, OTA controls, and
-downloads. It cannot enable Web Serial because Chrome and Edge require
+It may be unreachable in the current deployment. When it is reachable, it works
+for normal web access, build, official examples, OTA controls, and downloads.
+It cannot enable Web Serial because Chrome and Edge require
 `window.isSecureContext` for `navigator.serial`.
 
 The current frps server exposes TCP ports only:

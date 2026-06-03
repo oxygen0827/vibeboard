@@ -9,6 +9,7 @@ import { buildGeneratedConfig } from './utils/projectAssembly'
 import { isSourcePath } from './utils/filePlacement'
 import { normalizeGeneratedSourceFiles } from './utils/projectValidation'
 import { normalizeApplicationFiles } from './domain/compilePackage/compilePackage'
+import { DIGITAL_TWIN_MANIFEST_KEY } from './domain/digitalTwin/uiManifest'
 import bspHeader from '../backend/compiler-service/template/components/esp32_s3_szp/esp32_s3_szp.h?raw'
 import bspSource from '../backend/compiler-service/template/components/esp32_s3_szp/esp32_s3_szp.c?raw'
 import bspCmake from '../backend/compiler-service/template/components/esp32_s3_szp/CMakeLists.txt?raw'
@@ -124,11 +125,13 @@ export default function App() {
       setProjectFiles(prev => ({ ...prev, ...normalized }))
       setActiveFile(target)
     } else {
+      const digitalTwinManifest = codeOrFiles?.[DIGITAL_TWIN_MANIFEST_KEY]
       const { files: applicationFiles } = normalizeApplicationFiles(codeOrFiles, board)
       const normalized = normalizeGeneratedSourceFiles(applicationFiles).files
       const nextActive = chooseActiveGeneratedFile(normalized)
       setProjectFiles(prev => {
         const next = { ...prev, ...normalized }
+        if (digitalTwinManifest) next[DIGITAL_TWIN_MANIFEST_KEY] = digitalTwinManifest
         if (normalized['main/main.cpp']) delete next['main/main.c']
         if (normalized['main/main.c']) delete next['main/main.cpp']
         return next
@@ -180,6 +183,7 @@ export default function App() {
             referenceFiles={BSP_REFERENCE_FILES}
             activeFile={activeFile}
             board={board}
+            selectedSkills={selectedSkills}
             onFileChange={(newFiles, newActive) => {
               setProjectFiles(newFiles)
               if (newActive !== undefined) setActiveFile(newActive)

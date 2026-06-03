@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import Editor from '@monaco-editor/react'
 import { isConfigPath, normalizeProjectPath } from '../utils/filePlacement'
+import DigitalTwinPreview from './DigitalTwinPreview'
 import './ProjectEditor.css'
 
 const LANG_MAP = {
@@ -50,7 +51,7 @@ function fileIcon(path) {
   return 'F'
 }
 
-export default function ProjectEditor({ files, generatedFiles = {}, referenceFiles = {}, activeFile, board, onFileChange, onFileSelect, onCompile }) {
+export default function ProjectEditor({ files, generatedFiles = {}, referenceFiles = {}, activeFile, board, selectedSkills = [], onFileChange, onFileSelect, onCompile }) {
   const [expanded, setExpanded] = useState(() => new Set(['main', 'main/assets', 'main/bt', 'components', 'components/esp32_s3_szp']))
 
   const displayFiles = { ...generatedFiles, ...files }
@@ -172,6 +173,8 @@ export default function ProjectEditor({ files, generatedFiles = {}, referenceFil
         </aside>
 
         <section className="pe-main">
+          <DigitalTwinPreview files={files} selectedSkills={selectedSkills} board={board} />
+
           <div className="pe-topbar">
             <div className="pe-current-file" title={activeFile || ''}>
               {activeFile || '选择文件'}

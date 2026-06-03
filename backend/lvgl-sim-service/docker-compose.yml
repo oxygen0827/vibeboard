@@ -1,0 +1,13 @@
+services:
+  lvgl-sim:
+    build: .
+    image: vibeboard-lvgl-sim:latest
+    container_name: vibeboard-lvgl-sim
+    restart: unless-stopped
+    ports:
+      - "8770:8770"
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2g
