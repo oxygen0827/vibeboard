@@ -10,3 +10,5 @@ services:
     container_name: esp32-compiler
     restart: unless-stopped
     network_mode: host
+    volumes:
+      - ${VIBEBOARD_BUILD_CACHE:-/home/wq/vibeboard-build-cache}:/tmp/builds
