@@ -143,6 +143,80 @@
   color: #101820;
 }
 
+.dt-screen.lvgl-enabled {
+  background: #05070a;
+}
+
+.dt-lvgl-frame {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: crosshair;
+}
+
+.dt-lvgl-frame:focus-visible {
+  outline: 2px solid #58a6ff;
+  outline-offset: -2px;
+}
+
+.dt-lvgl-image,
+.dt-lvgl-fallback {
+  width: 100%;
+  height: 100%;
+}
+
+.dt-lvgl-image {
+  display: block;
+  object-fit: fill;
+}
+
+.dt-lvgl-fallback {
+  pointer-events: none;
+}
+
+.dt-lvgl-badge {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: rgba(15, 23, 42, 0.76);
+  border: 1px solid rgba(148, 163, 184, 0.42);
+  color: #dbeafe;
+  font: 9px var(--font-mono);
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+.dt-lvgl-badge.ok {
+  color: #7ee787;
+  border-color: rgba(63, 185, 80, 0.55);
+  background: rgba(46, 160, 67, 0.28);
+}
+
+.dt-lvgl-badge.warn {
+  color: #ffd33d;
+  border-color: rgba(210, 153, 34, 0.55);
+  background: rgba(116, 81, 15, 0.48);
+}
+
+.dt-lvgl-touch-dot {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.82);
+  background: #f85149;
+  box-shadow: 0 0 0 4px rgba(248, 81, 73, 0.2);
+  pointer-events: none;
+}
+
 .dt-side-face {
   position: absolute;
   left: 20px;

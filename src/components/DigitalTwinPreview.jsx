@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { DIGITAL_TWIN_SCENES, detectDigitalTwinScene } from '../domain/digitalTwin/detectScene'
 import { DIGITAL_TWIN_MANIFEST_KEY } from '../domain/digitalTwin/uiManifest'
+import { createPreviewRequest, PREVIEW_STATUS, previewDataUrl, renderLvglPreview, stablePreviewFingerprint } from '../utils/preview'
 import './DigitalTwinPreview.css'
 
 const SCENE_LABELS = {
@@ -21,6 +22,7 @@ const SCENE_LABELS = {
 
 const MOCK_SSIDS = ['VibeBoard-Lab', 'SZPI-Office', 'Maker-2G', 'ESP32-Test']
 const MOCK_TRACKS = ['Canon.mp3', 'For_Elise.mp3', 'new_epic.mp3']
+const LVGL_VIEWPORT = { width: 320, height: 240 }
 
 function capabilityItems(capabilities) {
   return [
@@ -39,6 +41,49 @@ function capabilityItems(capabilities) {
 
 function addLog(logs, line) {
   return [`${new Date().toLocaleTimeString()} ${line}`, ...logs].slice(0, 5)
+}
+
+function hasLvglPreviewContract(files = {}) {
+  const appUiC = String(files['main/app_ui.c'] || '')
+  const appUiH = String(files['main/app_ui.h'] || '')
+  return Boolean(
+    appUiC &&
+    appUiH &&
+    /\bapp_ui_create\s*\(\s*lv_obj_t\s*\*\s*\w+\s*\)/.test(appUiC) &&
+    /\bvoid\s+app_ui_create\s*\(\s*lv_obj_t\s*\*\s*\w+\s*\)\s*;/.test(appUiH),
+  )
+}
+
+function previewPeripherals(capabilities = {}) {
+  const ids = []
+  const add = id => {
+    if (!ids.includes(id)) ids.push(id)
+  }
+  if (capabilities.display) add('display')
+  if (capabilities.touch) add('touch')
+  if (capabilities.wifi) add('wifi')
+  if (capabilities.ble) add('ble')
+  if (capabilities.audio) add('speaker')
+  if (capabilities.microphone) add('microphone')
+  if (capabilities.camera) add('camera')
+  if (capabilities.imu) add('imu')
+  if (capabilities.storage) add('sdcard')
+  if (capabilities.speech) add('microphone')
+  if (capabilities.gpio) add('gpio')
+  return ids.map(id => ({
+    id,
+    state: id === 'display' ? 'active' : 'ready',
+  }))
+}
+
+function buildLvglPreviewManifest(uiManifest, analysis) {
+  return {
+    programName: uiManifest?.title || SCENE_LABELS[analysis.scene] || 'LVGL Preview',
+    preview: {
+      viewport: LVGL_VIEWPORT,
+      peripherals: previewPeripherals(analysis.capabilities),
+    },
+  }
 }
 
 function WifiScreen({ wifiState, setWifiState, setLogs }) {
@@ -261,13 +306,156 @@ function ManifestScreen({ manifest, setLogs }) {
   )
 }
 
+function LvglFramebufferScreen({ preview, previewState, interaction, fallback, onTap }) {
+  const imageUrl = previewDataUrl(preview)
+  const rendererLabel = preview?.renderer === 'real-lvgl-8.3-headless' ? 'LVGL' : 'Preview'
+  const badgeClass = previewState === PREVIEW_STATUS.SUCCESS
+    ? 'ok'
+    : previewState === PREVIEW_STATUS.FAILURE
+      ? 'warn'
+      : ''
+
+  function handleKeyDown(event) {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    onTap(event, { x: LVGL_VIEWPORT.width / 2, y: LVGL_VIEWPORT.height / 2 })
+  }
+
+  return (
+    <div
+      className={`dt-lvgl-frame ${previewState === PREVIEW_STATUS.RENDERING ? 'rendering' : ''}`}
+      role="button"
+      tabIndex={0}
+      onClick={onTap}
+      onKeyDown={handleKeyDown}
+      title="LVGL interactive preview"
+    >
+      {imageUrl ? (
+        <img className="dt-lvgl-image" src={imageUrl} alt="LVGL framebuffer preview" />
+      ) : (
+        <div className="dt-lvgl-fallback">{fallback}</div>
+      )}
+      {interaction && (
+        <span
+          className="dt-lvgl-touch-dot"
+          style={{
+            left: `${(interaction.x / LVGL_VIEWPORT.width) * 100}%`,
+            top: `${(interaction.y / LVGL_VIEWPORT.height) * 100}%`,
+          }}
+        />
+      )}
+      {previewState !== PREVIEW_STATUS.IDLE && (
+        <span className={`dt-lvgl-badge ${badgeClass}`}>
+          {previewState === PREVIEW_STATUS.RENDERING ? 'Rendering' : rendererLabel}
+        </span>
+      )}
+    </div>
+  )
+}
+
 export default function DigitalTwinPreview({ files, selectedSkills = [], board }) {
   const uiManifest = files?.[DIGITAL_TWIN_MANIFEST_KEY]
   const analysis = useMemo(() => detectDigitalTwinScene(files, selectedSkills), [files, selectedSkills])
+  const canRenderLvgl = useMemo(() => hasLvglPreviewContract(files), [files])
+  const lvglManifest = useMemo(() => buildLvglPreviewManifest(uiManifest, analysis), [uiManifest, analysis])
+  const lvglFingerprint = useMemo(() => stablePreviewFingerprint({
+    projectFiles: files,
+    selectedSkills,
+    manifest: lvglManifest,
+  }), [files, lvglManifest, selectedSkills])
   const [wifiState, setWifiState] = useState({ page: 'scan' })
   const [mp3State, setMp3State] = useState({ trackIndex: 0, playing: false, volume: 72 })
   const [logs, setLogs] = useState(['digital twin ready'])
+  const [lvglPreview, setLvglPreview] = useState(null)
+  const [lvglPreviewState, setLvglPreviewState] = useState(PREVIEW_STATUS.IDLE)
+  const [lvglInteraction, setLvglInteraction] = useState(null)
   const capabilities = capabilityItems(analysis.capabilities)
+
+  const renderLvgl = useCallback(async (interactions = []) => {
+    setLvglPreviewState(PREVIEW_STATUS.RENDERING)
+    const result = await renderLvglPreview(createPreviewRequest({
+      boardId: board?.id,
+      selectedSkills,
+      projectFiles: files,
+      manifest: lvglManifest,
+      viewport: LVGL_VIEWPORT,
+      interactions,
+    }))
+    setLvglPreview(result)
+    setLvglPreviewState(result.status === 'success' ? PREVIEW_STATUS.SUCCESS : PREVIEW_STATUS.FAILURE)
+    return result
+  }, [board?.id, files, lvglManifest, selectedSkills])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!canRenderLvgl) {
+      setLvglPreview(null)
+      setLvglPreviewState(PREVIEW_STATUS.IDLE)
+      setLvglInteraction(null)
+      return () => { cancelled = true }
+    }
+
+    setLvglInteraction(null)
+    setLvglPreviewState(PREVIEW_STATUS.RENDERING)
+    renderLvglPreview(createPreviewRequest({
+      boardId: board?.id,
+      selectedSkills,
+      projectFiles: files,
+      manifest: lvglManifest,
+      viewport: LVGL_VIEWPORT,
+      interactions: [],
+    }))
+      .then(result => {
+        if (cancelled) return
+        setLvglPreview(result)
+        setLvglPreviewState(result.status === 'success' ? PREVIEW_STATUS.SUCCESS : PREVIEW_STATUS.FAILURE)
+        setLogs(logs => addLog(logs, `LVGL preview: ${result.renderer || 'ready'}`))
+      })
+      .catch(err => {
+        if (cancelled) return
+        setLvglPreview(err.previewEvidence || null)
+        setLvglPreviewState(PREVIEW_STATUS.FAILURE)
+        setLogs(logs => addLog(logs, `LVGL preview unavailable: ${err.message}`))
+      })
+    return () => { cancelled = true }
+  }, [board?.id, canRenderLvgl, files, lvglFingerprint, lvglManifest, selectedSkills])
+
+  const handleLvglTap = useCallback(async (event, forcedPoint = null) => {
+    if (!canRenderLvgl || lvglPreviewState === PREVIEW_STATUS.RENDERING) return
+    const rect = event.currentTarget.getBoundingClientRect()
+    const tap = forcedPoint || {
+      x: Math.round(((event.clientX - rect.left) / rect.width) * LVGL_VIEWPORT.width),
+      y: Math.round(((event.clientY - rect.top) / rect.height) * LVGL_VIEWPORT.height),
+    }
+    tap.x = Math.max(0, Math.min(LVGL_VIEWPORT.width - 1, tap.x))
+    tap.y = Math.max(0, Math.min(LVGL_VIEWPORT.height - 1, tap.y))
+    setLvglInteraction(tap)
+    setLogs(logs => addLog(logs, `LVGL tap ${tap.x},${tap.y}`))
+    try {
+      const result = await renderLvgl([tap])
+      setLogs(logs => addLog(logs, `LVGL replay: ${result.renderer || 'ready'}`))
+    } catch (err) {
+      setLvglPreview(err.previewEvidence || null)
+      setLvglPreviewState(PREVIEW_STATUS.FAILURE)
+      setLogs(logs => addLog(logs, `LVGL replay failed: ${err.message}`))
+    }
+  }, [canRenderLvgl, lvglPreviewState, renderLvgl])
+
+  const semanticScreen = uiManifest ? (
+    <ManifestScreen manifest={uiManifest} setLogs={setLogs} />
+  ) : analysis.scene === DIGITAL_TWIN_SCENES.WIFI_CONNECT ? (
+    <WifiScreen wifiState={wifiState} setWifiState={setWifiState} setLogs={setLogs} />
+  ) : analysis.scene === DIGITAL_TWIN_SCENES.MP3_PLAYER ? (
+    <Mp3Screen mp3State={mp3State} setMp3State={setMp3State} setLogs={setLogs} />
+  ) : [
+    DIGITAL_TWIN_SCENES.LCD_BITMAP,
+    DIGITAL_TWIN_SCENES.CAMERA_LCD,
+    DIGITAL_TWIN_SCENES.LVGL_DEMO,
+  ].includes(analysis.scene) ? (
+    <LcdScreen scene={analysis.scene} />
+  ) : (
+    <GenericScreen scene={analysis.scene} setLogs={setLogs} />
+  )
 
   return (
     <section className="digital-twin">
@@ -289,22 +477,16 @@ export default function DigitalTwinPreview({ files, selectedSkills = [], board }
                 <div className="dt-led-dot" />
               </div>
               <div className="dt-screen-bezel">
-                <div className="dt-screen">
-                  {uiManifest ? (
-                    <ManifestScreen manifest={uiManifest} setLogs={setLogs} />
-                  ) : analysis.scene === DIGITAL_TWIN_SCENES.WIFI_CONNECT ? (
-                    <WifiScreen wifiState={wifiState} setWifiState={setWifiState} setLogs={setLogs} />
-                  ) : analysis.scene === DIGITAL_TWIN_SCENES.MP3_PLAYER ? (
-                    <Mp3Screen mp3State={mp3State} setMp3State={setMp3State} setLogs={setLogs} />
-                  ) : [
-                    DIGITAL_TWIN_SCENES.LCD_BITMAP,
-                    DIGITAL_TWIN_SCENES.CAMERA_LCD,
-                    DIGITAL_TWIN_SCENES.LVGL_DEMO,
-                  ].includes(analysis.scene) ? (
-                    <LcdScreen scene={analysis.scene} />
-                  ) : (
-                    <GenericScreen scene={analysis.scene} setLogs={setLogs} />
-                  )}
+                <div className={`dt-screen ${canRenderLvgl ? 'lvgl-enabled' : ''}`}>
+                  {canRenderLvgl ? (
+                    <LvglFramebufferScreen
+                      preview={lvglPreview}
+                      previewState={lvglPreviewState}
+                      interaction={lvglInteraction}
+                      fallback={semanticScreen}
+                      onTap={handleLvglTap}
+                    />
+                  ) : semanticScreen}
                 </div>
               </div>
               <div className="dt-side-face">
@@ -323,6 +505,7 @@ export default function DigitalTwinPreview({ files, selectedSkills = [], board }
             {capabilities.map(item => (
               <span key={item.key} className={`dt-cap ${item.active ? 'active' : ''}`}>{item.label}</span>
             ))}
+            {canRenderLvgl && <span className="dt-cap active">LVGL Touch</span>}
           </div>
           <div className="dt-log">
             {logs.map((line, index) => <div key={`${line}-${index}`}>{line}</div>)}
