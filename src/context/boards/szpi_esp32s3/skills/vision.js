@@ -2,6 +2,7 @@
 export const visionSkill = {
   id: 'vision',
   label: '人脸/目标检测',
+  driverContractIds: ['vision.camera-detect'],
   projectConfig: {
     srcs: [],
     mainExt: 'cpp',

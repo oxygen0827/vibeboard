@@ -21,6 +21,36 @@ VibeBoard 是一个面向 ESP-IDF 开发板的 AI 硬件开发工作台。它把
 
 VibeBoard 现在是 ESP-IDF-first。Arduino 和泛用多板卡模板不是当前重点。
 
+## MCU 分层开发标准
+
+VibeBoard 的 AI 生成代码不按普通 Linux 应用开发来处理。Linux 应用通常站在操作系统和成熟驱动之上，开发重点是业务逻辑；MCU 固件必须同时满足功能逻辑、板卡事实、外设初始化、BSP API、编译配置、烧录布局和真实硬件反馈。
+
+项目采用固定分层：
+
+```text
+L0 Hardware Facts       芯片、模组、Flash/PSRAM、器件、引脚、保留 GPIO
+L1 Chip Peripherals    GPIO/I2C/SPI/I2S/UART/WiFi/BLE/DMA/中断等芯片外设
+L2 Board Support       BSP、板级初始化、电源/复位/扩展 IO、官方例程事实
+L3 Driver Contracts    每项能力允许调用的 API、初始化顺序、禁止项、常见失败
+L4 App Orchestration   app_main、FreeRTOS task、状态机、外设组合、日志
+L5 Product Behavior    用户自然语言描述的设备行为、交互、验收结果
+```
+
+职责边界：
+
+- VibeBoard 负责 L0-L3：板卡事实、BSP、工程配置、组件依赖、分区表、Driver Contract 和安全写入边界。
+- AI 负责 L4-L5：把用户需求转换成应用源码、状态机、任务编排、UI/外设组合和可观察日志。
+- AI 不允许自由修改系统拥有文件：`CMakeLists.txt`、`sdkconfig.defaults`、`idf_component.yml`、`partitions.csv`、BSP/component 文件。
+- 每个硬件能力必须尽量沉淀为 Driver Contract，而不是只写在 prompt 里。
+
+当前 SZPI ESP32-S3 的 Driver Contract 位于：
+
+```text
+src/context/boards/szpi_esp32s3/driverContracts.js
+```
+
+Program Manifest 是 AI 规划和 AI 写代码之间的稳定中间产物，包含 `skillIds`、`driverContracts`、`runtimeServices`、`acceptanceChecks` 和应用源码文件计划。
+
 ## 当前已跑通的能力
 
 - 自然语言生成 ESP-IDF 应用代码。
@@ -266,6 +296,19 @@ src/context/boards/szpi_esp32s3/skills/
 - 注入 AI 的外设使用说明和限制。
 - ESP-IDF 工程配置需求。
 - 分区表、组件依赖、sdkconfig 片段和测试约束。
+- Driver Contract：结构化的初始化顺序、允许 API、禁止 API、验收检查和常见失败。
+
+### Driver Contract 开发要求
+
+新增或修改硬件能力时，必须同步维护：
+
+1. Board Profile：硬件事实是否完整，尤其是引脚、保留资源、芯片型号、外设型号。
+2. Capability Skill：是否声明 `projectConfig`、依赖组件、sdkconfig、prompt 片段。
+3. Driver Contract：是否声明 `requiredInit`、`allowedApis`、`forbiddenApis`、`acceptanceChecks`、`commonFailures`。
+4. Manifest 校验：是否能拒绝缺失 skill、未知 contract、非法 runtime service。
+5. Source Validation：是否能在编译前拦截明显越权 API 或系统文件写入。
+
+这套标准的目标是让 AI 只做应用编排，不让 AI 猜硬件驱动、猜 GPIO、猜工程配置。
 
 ## 本地开发
 
@@ -317,6 +360,36 @@ docker run -d --name esp32-compiler -p 8760:8760 vibeboard-esp32-compiler
 
 构建结果通过 Server-Sent Events 流式返回。成功时返回 app `.bin`，并在可用时返回 `flashFiles`，供网页 USB 全量烧录。
 
+## 数字孪生 / LVGL 仿真服务
+
+数字孪生前端预览已接入 [src/components/DigitalTwinPreview.jsx](./src/components/DigitalTwinPreview.jsx)。当前有两层：
+
+- 语义预览：AI 返回 `uiManifest` 后，浏览器立即渲染 320x240 的屏幕/控件预览。
+- LVGL Runtime Package：平台从应用源码生成 `sim/lvgl-runtime/` 仿真工作区，后续由 LVGL/Emscripten 或 LVGL/SDL 服务真实渲染。
+
+服务代码位于：
+
+```text
+backend/lvgl-sim-service
+```
+
+家里服务器部署命令：
+
+```bash
+cd backend/lvgl-sim-service
+docker build -t vibeboard-lvgl-sim .
+docker compose up -d
+```
+
+主 nginx 已代理：
+
+| 路径 | 后端 |
+| --- | --- |
+| `POST /simulate-lvgl` | `127.0.0.1:8770/simulate-lvgl` |
+| `GET /lvgl-sim-health` | `127.0.0.1:8770/health` |
+
+当前 LVGL 服务边界已经建立，但真实 LVGL/Emscripten 源码集成仍在推进中；没有 `emcc` 或 LVGL runtime 未接入时，服务会返回明确状态而不是伪装成功。
+
 ## 关键源码结构
 
 - [src/components/ChatPanel.jsx](./src/components/ChatPanel.jsx)：AI 对话和生成代码。
@@ -348,6 +421,7 @@ docker run -d --name esp32-compiler -p 8760:8760 vibeboard-esp32-compiler
 npm run test:official-examples-backend
 npm run test:remote-ota-backend
 npm run test:project-validation
+npm run test:board-skills
 npm run test:code-generation
 npm run test:file-placement
 npm run test:project-config
@@ -355,6 +429,12 @@ npm run test:program-manifest
 npm run test:build-evidence
 npm run build
 ```
+
+与 MCU 分层标准相关的重点测试：
+
+- `test:program-manifest`：校验 manifest、driver contract、runtime service、写入边界。
+- `test:project-validation`：校验生成源码的 include、skill API 和 contract 禁止项。
+- `test:code-generation`：校验结构化 JSON 代码生成解析和 manifest 文件计划。
 
 ## 生产化 HTTPS 方案
 

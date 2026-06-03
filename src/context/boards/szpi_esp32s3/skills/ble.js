@@ -2,6 +2,7 @@
 export const bleSkill = {
   id: 'ble',
   label: 'BLE (HID)',
+  driverContractIds: ['bluetooth.ble-hid'],
   projectConfig: {
     srcs: [],
     sdkconfig: [

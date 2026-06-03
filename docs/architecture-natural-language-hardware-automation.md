@@ -41,6 +41,55 @@ VibeBoard
   = board-aware product shell + internal skills + executable workflows
 ```
 
+## MCU Development Layering Standard
+
+VibeBoard treats MCU firmware generation differently from Linux application
+generation. A Linux application usually sits above an OS, stable system APIs,
+and mature device drivers. MCU firmware must satisfy product behavior and the
+physical board at the same time: pin ownership, peripheral configuration, BSP
+APIs, sdkconfig, partition layout, boot/flashing constraints, runtime timing,
+memory, and device feedback.
+
+The project standard is:
+
+```text
+L0 Hardware Facts
+  Chip, module, Flash/PSRAM, device models, pinout, reserved pins.
+
+L1 Chip Peripherals
+  GPIO, I2C, SPI, I2S, UART, WiFi, BLE, DMA, interrupts, timers.
+
+L2 Board Support
+  BSP APIs, board init sequence, power/reset/IO expander behavior,
+  official-example facts, generated build configuration.
+
+L3 Driver Contracts
+  Per-capability API boundary: required init order, allowed APIs,
+  forbidden APIs, required components, acceptance checks, common failures.
+
+L4 Application Orchestration
+  app_main, FreeRTOS tasks, event loops, state machines, UI logic,
+  peripheral composition, logs, error handling.
+
+L5 Product Behavior
+  The user's natural-language device behavior, interactions, and observable
+  success criteria.
+```
+
+Responsibility boundary:
+
+- VibeBoard owns L0-L3. These layers are product data and system-owned files.
+- AI owns L4-L5. It generates application source that composes approved
+  hardware capabilities.
+- AI must not freely generate CMakeLists, sdkconfig, partition tables, BSP
+  components, pin maps, or low-level board drivers.
+- Every hardware capability should move from prompt-only knowledge to a
+  structured Driver Contract.
+
+This is the core product distinction from general AI coding tools: the assistant
+does not merely write C code; it writes application orchestration inside a
+board-aware hardware contract.
+
 ## Reusable Pieces Moved From `embed-ai-tool`
 
 These parts are useful enough to bring into VibeBoard directly, adapted to the
@@ -107,6 +156,7 @@ Target shape:
     spiffs: false,
     compileOptions: []
   },
+  driverContractIds: ['network.wifi-sta'],
   promptContext: '',
   validationRules: [],
   examples: []
@@ -179,6 +229,9 @@ Suggested shape:
     "display": true,
     "network": true
   },
+  "driverContracts": ["display.lvgl-ui", "network.wifi-sta"],
+  "runtimeServices": ["freertos-task", "nvs", "wifi", "lvgl", "serial-log"],
+  "acceptanceChecks": ["LCD shows WiFi status", "serial log contains WIFI_READY"],
   "allowedWriteSurface": "application-source-only"
 }
 ```
@@ -186,6 +239,15 @@ Suggested shape:
 The manifest becomes the stable seam between AI planning and AI code writing.
 If code generation fails, the repair loop can ask for a patch against the
 manifest instead of restarting from raw chat.
+
+The manifest carries the MCU layering boundary:
+
+- `skillIds`: L2/L3 capability selection.
+- `driverContracts`: exact L3 contracts the generated source must obey.
+- `runtimeServices`: runtime resources such as FreeRTOS tasks, NVS, WiFi, BLE,
+  LVGL, OTA, or serial logs.
+- `acceptanceChecks`: observable build or device behavior used by evidence and
+  repair loops.
 
 ### 5. Source Generator
 
@@ -220,6 +282,8 @@ Target responsibility:
   forbidden pins, and System-Owned Project Files.
 - Check that every quoted local include has a matching file.
 - Check selected skills match used APIs when possible.
+- Check generated source against Driver Contract forbidden APIs and headers
+  before compile.
 - Produce structured validation errors for the UI and repair loop.
 
 Failure categories should mirror the style of `embed-ai-tool`:
@@ -461,6 +525,7 @@ Device Evidence + user symptom
 - Keep ESP-IDF-only and SZPI ESP32-S3-first boundaries.
 - Define Board Profile, Capability Skill, Program Intent, Program Manifest,
   Build Evidence, Device Evidence, and Repair Loop.
+- Document the L0-L5 MCU development layering standard.
 - Fix stale agent docs references.
 
 Exit criteria:
@@ -473,6 +538,7 @@ Exit criteria:
 - Rename `systemPrompt` to or alias it as `promptContext`.
 - Add `description`, `dependencies`, `conflicts`, `validationRules`, and
   `examples` to each board skill.
+- Add `driverContractIds` to each board skill that touches hardware.
 - Add a schema validator for skills.
 - Add tests that every board skill has valid project config.
 
@@ -480,8 +546,24 @@ Exit criteria:
 
 - Selecting skills is data-driven.
 - Project config generation no longer relies on undocumented skill fields.
+- Each hardware-facing skill points at one or more Driver Contracts.
 
-### Phase 3: Introduce Program Manifest
+### Phase 3: Introduce Driver Contracts
+
+- Add `driverContracts.js` per board.
+- Each contract defines `requiredInit`, `allowedApis`, `forbiddenApis`,
+  `requiredComponents`, `acceptanceChecks`, and `commonFailures`.
+- Attach contracts to skills.
+- Inject selected contracts into planning, source generation, and repair prompts.
+- Validate contract IDs and contract-skill ownership in the manifest.
+- Add source validation for forbidden contract patterns.
+
+Exit criteria:
+
+- AI sees a structured hardware API boundary before writing source.
+- Generated source can be rejected before compile when it violates a contract.
+
+### Phase 4: Introduce Program Manifest
 
 - Add manifest schema and validator.
 - Change generation to produce manifest first, then source files.
@@ -493,7 +575,7 @@ Exit criteria:
 - AI code generation has a stable plan artifact.
 - Invalid plans fail before code is written.
 
-### Phase 4: Split Generation Into Workflow Steps
+### Phase 5: Split Generation Into Workflow Steps
 
 - Move chat-only explanation away from generation internals.
 - Add workflow state for `intent -> manifest -> files -> validate -> applied`.
@@ -504,7 +586,7 @@ Exit criteria:
 - The UI can show which step failed.
 - The assistant can retry a failed step without restarting the whole task.
 
-### Phase 5: Structure Build Evidence
+### Phase 6: Structure Build Evidence
 
 - Update compiler service and client to emit structured build result events.
 - Preserve full build logs long enough for repair.
@@ -516,7 +598,7 @@ Exit criteria:
 - Build failure is machine-readable.
 - Repair prompts no longer depend on copying ad hoc terminal text.
 
-### Phase 6: Add Repair Loop
+### Phase 7: Add Repair Loop
 
 - Add "修复编译错误" using Build Evidence.
 - Restrict repair output to Application Source.
@@ -528,7 +610,7 @@ Exit criteria:
 - A failed build or runtime log can trigger a controlled source patch.
 - System-Owned Project Files remain protected.
 
-### Phase 7: Add More Delivery Adapters And Local Agents
+### Phase 8: Add More Delivery Adapters And Local Agents
 
 - Keep WiFi OTA and BLE OTA as first delivery adapters.
 - Add serial `idf.py flash` or local-agent bridge later.

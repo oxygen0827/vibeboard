@@ -17,6 +17,7 @@
     "test:lvgl-sim-service": "node scripts/test-lvgl-sim-service.mjs",
     "test:compile-package": "node scripts/test-compile-package.mjs",
     "test:project-validation": "node scripts/test-project-validation.mjs",
+    "test:board-skills": "node scripts/test-board-skills.mjs",
     "test:project-config": "node scripts/test-project-config.mjs",
     "preview": "vite preview"
   },

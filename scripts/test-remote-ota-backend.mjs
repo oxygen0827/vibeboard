@@ -90,10 +90,17 @@ assert server.secure_firmware_filename("app.bin") == "app.bin"
 print("remote ota backend tests passed")
 `
 
-const result = spawnSync('python3', ['-c', py], {
-  cwd: process.cwd(),
-  encoding: 'utf8',
-})
+function runPython(command) {
+  return spawnSync(command, ['-c', py], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+  })
+}
+
+let result = runPython('python3')
+if (result.error?.code === 'ENOENT' || (result.status !== 0 && !result.stdout && !result.stderr)) {
+  result = runPython('python')
+}
 
 assert.equal(result.status, 0, result.stderr || result.stdout)
 assert.match(result.stdout, /remote ota backend tests passed/)

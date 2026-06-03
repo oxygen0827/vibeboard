@@ -272,6 +272,32 @@ Derived rules:
 - Storage may mean SD card (sdcard) or SPIFFS owned by audio/speech; choose based on the requested medium.`
 }
 
+function selectedDriverContracts(board, skillIds = [], manifestContracts = []) {
+  const selectedSkills = new Set(skillIds || [])
+  const requestedContracts = new Set(manifestContracts || [])
+  return (board?.driverContracts || []).filter(contract =>
+    requestedContracts.has(contract.id) || selectedSkills.has(contract.skillId)
+  )
+}
+
+function buildDriverContractGuidance(board, skillIds = [], manifestContracts = []) {
+  const contracts = selectedDriverContracts(board, skillIds, manifestContracts)
+  if (!contracts.length) return ''
+
+  const lines = contracts.map(contract => [
+    `- ${contract.id} (${contract.label}, skill=${contract.skillId})`,
+    `  requiredInit: ${(contract.requiredInit || []).join(' -> ') || 'none'}`,
+    `  allowedApis: ${(contract.allowedApis || []).join(', ') || 'none'}`,
+    `  forbiddenApis: ${(contract.forbiddenApis || []).join(', ') || 'none'}`,
+    `  acceptanceChecks: ${(contract.acceptanceChecks || []).join('; ') || 'none'}`,
+    `  commonFailures: ${(contract.commonFailures || []).join('; ') || 'none'}`,
+  ].join('\n')).join('\n')
+
+  return `## Driver Contracts
+Use these structured contracts as the hardware API boundary. Generate application orchestration code that follows requiredInit, uses only relevant allowed APIs, and avoids forbidden APIs.
+${lines}`
+}
+
 export function parseProgramManifestResponse(text, board) {
   const jsonText = extractJsonObject(text)
   if (!jsonText) return { ok: false, manifest: null, errors: ['missing-json'] }
@@ -297,6 +323,10 @@ export function buildProgramManifestMessages({ board, selectedSkills = [], userR
   const selectedSkillList = selectedSkills.join(', ') || 'none'
   const validSkills = board.skills.map(skill => `${skill.id}: ${skill.label}`).join('\n')
   const officialExampleGuidance = buildOfficialExampleGuidance(board)
+  const driverContractGuidance = buildDriverContractGuidance(board, selectedSkills)
+  const validDriverContracts = (board.driverContracts || [])
+    .map(contract => `${contract.id}: ${contract.label} (skill=${contract.skillId})`)
+    .join('\n') || 'none'
 
   return [
     {
@@ -306,6 +336,8 @@ export function buildProgramManifestMessages({ board, selectedSkills = [], userR
 ${board.buildSystemPrompt(selectedSkills)}
 
 ${officialExampleGuidance}
+
+${driverContractGuidance}
 
 You are planning a VibeBoard ESP-IDF firmware Program Manifest. Return ONLY valid JSON. No markdown, no prose.
 
@@ -328,6 +360,9 @@ Allowed output schema:
     "camera": false,
     "storage": false
   },
+  "driverContracts": ["display.lvgl-ui"],
+  "runtimeServices": ["freertos-task", "serial-log"],
+  "acceptanceChecks": ["LCD shows the main screen", "serial log contains READY"],
   "allowedWriteSurface": "${WRITE_SURFACES.APPLICATION_SOURCE_ONLY}"
 }
 
@@ -342,8 +377,13 @@ Rules:
 - The entry must be present in files.
 - Use only selected skills unless the request clearly requires another valid skill. If adding a skill, include it in skillIds.
 - skillIds must cover every true requires.* field and every API family used by the planned files.
+- driverContracts must use only valid IDs and each contract's skill must be present in skillIds.
+- runtimeServices may only use: freertos-task, event-loop, nvs, wifi, ble, lvgl, ota, serial-log.
+- acceptanceChecks should describe observable build or device behavior, not implementation wishes.
 - Valid skill IDs:
-${validSkills}`,
+${validSkills}
+- Valid driver contract IDs:
+${validDriverContracts}`,
     },
     {
       role: 'user',
@@ -361,6 +401,7 @@ export function buildCodeGenerationMessages({ board, selectedSkills = [], userRe
   const existingFileList = Object.keys(existingFiles).filter(path => !path.startsWith('__')).join(', ') || 'none'
   const selectedSkillList = selectedSkills.join(', ') || 'none'
   const officialExampleGuidance = buildOfficialExampleGuidance(board)
+  const driverContractGuidance = buildDriverContractGuidance(board, selectedSkills)
 
   return [
     {
@@ -370,6 +411,8 @@ export function buildCodeGenerationMessages({ board, selectedSkills = [], userRe
 ${board.buildSystemPrompt(selectedSkills)}
 
 ${officialExampleGuidance}
+
+${driverContractGuidance}
 
 You are generating project files for VibeBoard. Return ONLY valid JSON. No markdown, no prose.
 
@@ -416,6 +459,11 @@ Generate the files now.`,
 export function buildManifestCodeGenerationMessages({ board, manifest, userRequest, existingFiles = {} }) {
   const existingFileList = Object.keys(existingFiles).filter(path => !path.startsWith('__')).join(', ') || 'none'
   const officialExampleGuidance = buildOfficialExampleGuidance(board)
+  const driverContractGuidance = buildDriverContractGuidance(
+    board,
+    manifest.skillIds || [],
+    manifest.driverContracts || [],
+  )
   return [
     {
       role: 'system',
@@ -424,6 +472,8 @@ export function buildManifestCodeGenerationMessages({ board, manifest, userReque
 ${board.buildSystemPrompt(manifest.skillIds || [])}
 
 ${officialExampleGuidance}
+
+${driverContractGuidance}
 
 You are generating project files for VibeBoard from a validated Program Manifest. Return ONLY valid JSON. No markdown, no prose.
 

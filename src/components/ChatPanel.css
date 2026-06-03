@@ -356,6 +356,130 @@
 .skill-tag:hover { border-color: var(--accent); color: var(--accent); }
 .skill-tag.active { background: var(--accent); border-color: var(--accent); color: white; }
 
+.workflow-strip {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 1px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-muted);
+  background: var(--bg-primary);
+}
+
+.workflow-step {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 4px 6px;
+  color: var(--text-muted);
+  font-size: 10px;
+  border-radius: 4px;
+}
+
+.workflow-step-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--border);
+}
+
+.workflow-step-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-step.active {
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+}
+.workflow-step.active .workflow-step-dot { background: var(--accent); }
+.workflow-step.done .workflow-step-dot { background: var(--accent-hover); }
+.workflow-step.failed {
+  color: var(--red);
+  background: rgba(248, 81, 73, 0.08);
+}
+.workflow-step.failed .workflow-step-dot { background: var(--red); }
+
+.manifest-preview {
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+
+.manifest-preview-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.manifest-program {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.manifest-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px;
+  font-size: 11px;
+}
+
+.manifest-grid > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.manifest-label {
+  color: var(--text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.manifest-grid span:last-child {
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+}
+
+.manifest-files,
+.manifest-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 10px 10px;
+}
+
+.manifest-file,
+.manifest-checks span {
+  max-width: 100%;
+  padding: 3px 7px;
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.manifest-checks span {
+  font-family: var(--font-sans);
+  color: var(--text-muted);
+}
+
 /* Self-evolution knowledge card */
 .knowledge-card {
   margin: 8px 12px;

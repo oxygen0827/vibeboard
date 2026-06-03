@@ -2,6 +2,7 @@
 export const gpioSkill = {
   id: 'gpio',
   label: 'GPIO / 按键',
+  driverContractIds: ['input.boot-button'],
   projectConfig: {
     srcs: [],
     sdkconfig: [],

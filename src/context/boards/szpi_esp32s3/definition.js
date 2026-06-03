@@ -6,6 +6,7 @@
  */
 
 import { szpi_esp32s3Skills } from './skills/index'
+import { szpiEsp32s3DriverContracts } from './driverContracts'
 
 // ── Hardware Context (injected into every AI conversation) ────
 
@@ -179,4 +180,5 @@ export const szpi_esp32s3Board = {
 
   /** Available peripheral skills for this board */
   skills: szpi_esp32s3Skills,
+  driverContracts: szpiEsp32s3DriverContracts,
 }

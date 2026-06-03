@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile, writeFile, mkdtemp, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 const tmp = await mkdtemp(join(tmpdir(), 'vibeboard-program-intent-'))
 
@@ -24,7 +25,7 @@ const {
   PROGRAM_INTENT_SCHEMA_VERSION,
   createProgramIntent,
   inferSkillsFromRequest,
-} = await import(join(tmp, 'src/domain/program/intent.js'))
+} = await import(pathToFileURL(join(tmp, 'src/domain/program/intent.js')).href)
 
 const board = {
   id: 'szpi_esp32s3',

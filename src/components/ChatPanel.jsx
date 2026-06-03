@@ -13,6 +13,11 @@ import {
   parseGeneratedFilesResponseWithOptions,
   parseProgramManifestResponse,
 } from '../utils/codeGeneration'
+import {
+  WORKFLOW_STEP_STATUS,
+  createGenerationWorkflow,
+  updateGenerationWorkflow,
+} from '../domain/workflow/generationWorkflow'
 import './ChatPanel.css'
 
 const QUICK_PROMPTS = [
@@ -80,6 +85,7 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
   const [streaming, setStreaming] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [knowledgeCard, setKnowledgeCard] = useState(null)
+  const [generationWorkflow, setGenerationWorkflow] = useState(createGenerationWorkflow)
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
   const abortRef = useRef(null)
@@ -182,6 +188,7 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
     if (!text || generating || streaming || !hasConfig) return
     setGenerating(true)
     setKnowledgeCard(null)
+    setGenerationWorkflow(updateGenerationWorkflow(createGenerationWorkflow(), 'intent', WORKFLOW_STEP_STATUS.ACTIVE, '解析用户需求和技能'))
     setMessages(prev => [...prev, { role: 'user', content: text }, { role: 'assistant', content: '正在生成工程文件...' }])
     try {
       const inferredSkills = inferSkillsFromRequest(board, text, selectedSkills)
@@ -189,6 +196,7 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
         onSkillsChange?.(inferredSkills)
       }
 
+      setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'manifest', WORKFLOW_STEP_STATUS.ACTIVE, '生成 Program Manifest'))
       const content = await completeChat({
         baseUrl: settings.baseUrl,
         apiKey: settings.apiKey,
@@ -199,9 +207,11 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
           userRequest: text,
         }),
       })
+      setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'validate-manifest', WORKFLOW_STEP_STATUS.ACTIVE, '校验 Manifest'))
       const manifestResult = parseProgramManifestResponse(content, board)
       if (!manifestResult.ok) {
         const message = `程序清单未通过校验：${manifestResult.errors.join(', ')}`
+        setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'validate-manifest', WORKFLOW_STEP_STATUS.FAILED, manifestResult.errors.join(', ')))
         setMessages(prev => {
           const next = [...prev]
           next[next.length - 1] = { role: 'assistant', content: message, error: true }
@@ -209,16 +219,19 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
         })
         return
       }
+      setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'validate-manifest', WORKFLOW_STEP_STATUS.DONE, 'Manifest 已通过校验'))
 
       if (manifestResult.manifest.skillIds?.length) {
         onSkillsChange?.(manifestResult.manifest.skillIds)
       }
 
+      setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'generate-files', WORKFLOW_STEP_STATUS.ACTIVE, `生成 ${manifestResult.manifest.files.length} 个应用文件`))
       setMessages(prev => {
         const next = [...prev]
         next[next.length - 1] = {
           role: 'assistant',
           content: `已生成程序清单，正在生成 ${manifestResult.manifest.files.length} 个应用文件...`,
+          manifest: manifestResult.manifest,
         }
         return next
       })
@@ -233,11 +246,13 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
           userRequest: text,
         }),
       })
+      setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'validate-source', WORKFLOW_STEP_STATUS.ACTIVE, '校验生成文件'))
       const parsed = parseGeneratedFilesResponseWithOptions(fileContent, board, {
         manifest: manifestResult.manifest,
       })
       if (!parsed.ok) {
         const message = `生成结果未通过校验：${parsed.errors.join(', ')}`
+        setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'validate-source', WORKFLOW_STEP_STATUS.FAILED, parsed.errors.join(', ')))
         setMessages(prev => {
           const next = [...prev]
           next[next.length - 1] = { role: 'assistant', content: message, error: true }
@@ -246,6 +261,7 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
         return
       }
       if (Object.keys(parsed.files).length === 0) {
+        setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'validate-source', WORKFLOW_STEP_STATUS.FAILED, '没有可写入的应用源码文件'))
         setMessages(prev => {
           const next = [...prev]
           next[next.length - 1] = { role: 'assistant', content: '生成结果没有可写入的应用源码文件。', error: true }
@@ -253,17 +269,22 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
         })
         return
       }
+      setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'validate-source', WORKFLOW_STEP_STATUS.DONE, '源码结构已通过校验'))
+      setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'apply-source', WORKFLOW_STEP_STATUS.ACTIVE, '写入编辑器'))
       onInsertCode?.(parsed.files)
       setInput('')
+      setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'apply-source', WORKFLOW_STEP_STATUS.DONE, `${Object.keys(parsed.files).length} 个文件已写入`))
       setMessages(prev => {
         const next = [...prev]
         next[next.length - 1] = {
           role: 'assistant',
           content: `已写入左侧编辑器，共 ${Object.keys(parsed.files).length} 个应用文件：\n\n${Object.keys(parsed.files).map(path => `- ${path}`).join('\n')}\n\n使用技能：${manifestResult.manifest.skillIds.join(', ') || 'none'}`,
+          manifest: manifestResult.manifest,
         }
         return next
       })
     } catch (err) {
+      setGenerationWorkflow(prev => updateGenerationWorkflow(prev, prev.activeStep || 'intent', WORKFLOW_STEP_STATUS.FAILED, err.message))
       setMessages(prev => {
         const next = [...prev]
         next[next.length - 1] = { role: 'assistant', content: `生成失败：${err.message}`, error: true }
@@ -342,6 +363,7 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
   function clearChat() {
     setMessages([])
     setKnowledgeCard(null)
+    setGenerationWorkflow(createGenerationWorkflow())
   }
 
   function acceptKnowledge() {
@@ -371,6 +393,60 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
         >
           {code}
         </SyntaxHighlighter>
+      </div>
+    )
+  }
+
+  function ManifestPreview({ manifest }) {
+    if (!manifest) return null
+    return (
+      <div className="manifest-preview">
+        <div className="manifest-preview-header">
+          <span>Program Manifest</span>
+          <span className="manifest-program">{manifest.programName || 'vibe_app'}</span>
+        </div>
+        <div className="manifest-grid">
+          <div>
+            <span className="manifest-label">Skills</span>
+            <span>{manifest.skillIds?.join(', ') || 'none'}</span>
+          </div>
+          <div>
+            <span className="manifest-label">Contracts</span>
+            <span>{manifest.driverContracts?.join(', ') || 'none'}</span>
+          </div>
+          <div>
+            <span className="manifest-label">Runtime</span>
+            <span>{manifest.runtimeServices?.join(', ') || 'none'}</span>
+          </div>
+          <div>
+            <span className="manifest-label">Entry</span>
+            <span>{manifest.entry}</span>
+          </div>
+        </div>
+        <div className="manifest-files">
+          {(manifest.files || []).map(file => (
+            <span key={`${file.role}:${file.path}`} className="manifest-file">{file.role}: {file.path}</span>
+          ))}
+        </div>
+        {manifest.acceptanceChecks?.length > 0 && (
+          <div className="manifest-checks">
+            {manifest.acceptanceChecks.map(check => <span key={check}>{check}</span>)}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  function WorkflowStrip({ workflow }) {
+    if (!workflow || workflow.status === 'idle') return null
+    return (
+      <div className={`workflow-strip ${workflow.status}`}>
+        {workflow.steps.map(step => (
+          <div key={step.id} className={`workflow-step ${step.status}`}>
+            <span className="workflow-step-dot" />
+            <span className="workflow-step-label">{step.label}</span>
+          </div>
+        ))}
       </div>
     )
   }
@@ -409,6 +485,8 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
         ))}
       </div>
 
+      <WorkflowStrip workflow={generationWorkflow} />
+
       <div className="chat-messages">
         {messages.length === 0 && (
           <div className="chat-empty">
@@ -443,6 +521,9 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
               )}
               {streaming && i === messages.length - 1 && msg.role === 'assistant' && (
                 <span className="cursor-blink">▋</span>
+              )}
+              {msg.role === 'assistant' && msg.manifest && (
+                <ManifestPreview manifest={msg.manifest} />
               )}
             </div>
           </div>

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile, writeFile, mkdtemp, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 const tmp = await mkdtemp(join(tmpdir(), 'vibeboard-code-generation-'))
 
@@ -36,7 +37,7 @@ const {
   parseProgramManifestResponse,
   parseGeneratedFilesResponse,
   parseGeneratedFilesResponseWithOptions,
-} = await import(join(tmp, 'src/utils/codeGeneration.js'))
+} = await import(pathToFileURL(join(tmp, 'src/utils/codeGeneration.js')).href)
 
 assert.equal(extractJsonObject('```json\n{"files":[]}\n```'), '{"files":[]}')
 assert.equal(extractJsonObject('```c\nvoid app_main(void) {}\n```'), '')

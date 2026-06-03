@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile, writeFile, mkdtemp, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 const tmp = await mkdtemp(join(tmpdir(), 'vibeboard-digital-twin-'))
 
@@ -23,7 +24,7 @@ await copyModule('src/domain/digitalTwin/detectScene.js')
 const {
   DIGITAL_TWIN_SCENES,
   detectDigitalTwinScene,
-} = await import(join(tmp, 'src/domain/digitalTwin/detectScene.js'))
+} = await import(pathToFileURL(join(tmp, 'src/domain/digitalTwin/detectScene.js')).href)
 
 assert.equal(detectDigitalTwinScene({
   'main/main.c': 'void app_main(void){ bsp_lvgl_start(); app_wifi_connect(); }',

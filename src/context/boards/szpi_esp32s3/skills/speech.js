@@ -2,6 +2,7 @@
 export const speechSkill = {
   id: 'speech',
   label: '语音识别 (esp-sr)',
+  driverContractIds: ['speech.recognition'],
   projectConfig: {
     srcs: [],
     sdkconfig: [

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile, writeFile, mkdtemp, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 const tmp = await mkdtemp(join(tmpdir(), 'vibeboard-build-evidence-'))
 
@@ -25,8 +26,8 @@ const {
   createBuildEvidence,
   findFirstBuildError,
   buildEvidenceToOutcome,
-} = await import(join(tmp, 'src/domain/evidence/buildEvidence.js'))
-const { WORKFLOW_STATUS } = await import(join(tmp, 'src/domain/workflow/outcome.js'))
+} = await import(pathToFileURL(join(tmp, 'src/domain/evidence/buildEvidence.js')).href)
+const { WORKFLOW_STATUS } = await import(pathToFileURL(join(tmp, 'src/domain/workflow/outcome.js')).href)
 
 const firstError = findFirstBuildError([
   '-- Configuring done',

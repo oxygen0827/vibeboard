@@ -14,6 +14,17 @@ export const FILE_ROLES = new Set([
   'test',
 ])
 
+export const RUNTIME_SERVICES = new Set([
+  'freertos-task',
+  'event-loop',
+  'nvs',
+  'wifi',
+  'ble',
+  'lvgl',
+  'ota',
+  'serial-log',
+])
+
 export { FAILURE_CATEGORIES }
 
 export function createEmptyProgramManifest({ boardId, skillIds = [], programName = 'vibe_app' } = {}) {
@@ -27,6 +38,9 @@ export function createEmptyProgramManifest({ boardId, skillIds = [], programName
       { path: 'main/main.c', role: 'entry' },
     ],
     requires: {},
+    driverContracts: [],
+    runtimeServices: [],
+    acceptanceChecks: [],
     allowedWriteSurface: WRITE_SURFACES.APPLICATION_SOURCE_ONLY,
   }
 }

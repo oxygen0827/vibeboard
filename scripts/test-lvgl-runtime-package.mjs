@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile, writeFile, mkdtemp, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 const tmp = await mkdtemp(join(tmpdir(), 'vibeboard-lvgl-runtime-'))
 
@@ -24,7 +25,7 @@ await copyModule('src/domain/digitalTwin/runtimePackage.js')
 
 const {
   createLvglRuntimePackage,
-} = await import(join(tmp, 'src/domain/digitalTwin/runtimePackage.js'))
+} = await import(pathToFileURL(join(tmp, 'src/domain/digitalTwin/runtimePackage.js')).href)
 
 const runtimePackage = createLvglRuntimePackage({
   selectedSkills: ['lvgl', 'wifi'],

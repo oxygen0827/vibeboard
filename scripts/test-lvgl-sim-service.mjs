@@ -42,14 +42,22 @@ assert present['status'] == 'lvgl-runtime-not-wired'
 print('lvgl sim service tests passed')
 `
 
-const result = spawnSync('python3', ['-c', script], {
-  cwd: process.cwd(),
-  encoding: 'utf8',
-})
+function runPython(command) {
+  return spawnSync(command, ['-c', script], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+  })
+}
+
+let result = runPython('python3')
+if (result.error?.code === 'ENOENT' || (result.status !== 0 && !result.stdout && !result.stderr)) {
+  result = runPython('python')
+}
 
 if (result.status !== 0) {
   process.stdout.write(result.stdout)
   process.stderr.write(result.stderr)
+  if (result.error) process.stderr.write(`${result.error.message}\n`)
   process.exit(result.status)
 }
 

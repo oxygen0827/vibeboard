@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile, writeFile, mkdtemp, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 const tmp = await mkdtemp(join(tmpdir(), 'vibeboard-program-manifest-'))
 
@@ -26,8 +27,8 @@ await copyModule('src/domain/program/validateManifest.js')
 const {
   createEmptyProgramManifest,
   WRITE_SURFACES,
-} = await import(join(tmp, 'src/domain/program/manifestSchema.js'))
-const { validateProgramManifest } = await import(join(tmp, 'src/domain/program/validateManifest.js'))
+} = await import(pathToFileURL(join(tmp, 'src/domain/program/manifestSchema.js')).href)
+const { validateProgramManifest } = await import(pathToFileURL(join(tmp, 'src/domain/program/validateManifest.js')).href)
 
 const board = {
   id: 'szpi_esp32s3',
@@ -36,6 +37,11 @@ const board = {
     { id: 'wifi' },
     { id: 'audio' },
     { id: 'sdcard' },
+  ],
+  driverContracts: [
+    { id: 'display.lvgl-ui', skillId: 'lvgl' },
+    { id: 'network.wifi-sta', skillId: 'wifi' },
+    { id: 'camera.capture', skillId: 'camera' },
   ],
 }
 
@@ -53,12 +59,18 @@ const valid = validateProgramManifest({
     { path: 'main/assets/font_alipuhui20.h', role: 'header' },
   ],
   requires: { display: true, network: true },
+  driverContracts: ['display.lvgl-ui', 'network.wifi-sta', 'network.wifi-sta'],
+  runtimeServices: ['lvgl', 'wifi', 'serial-log', 'serial-log'],
+  acceptanceChecks: ['LCD shows status', 'WiFi connects'],
   allowedWriteSurface: WRITE_SURFACES.APPLICATION_SOURCE_ONLY,
 }, { board })
 
 assert.equal(valid.ok, true)
 assert.equal(valid.manifest.entry, 'main/main.c')
 assert.deepEqual(valid.manifest.skillIds, ['lvgl', 'wifi'])
+assert.deepEqual(valid.manifest.driverContracts, ['display.lvgl-ui', 'network.wifi-sta'])
+assert.deepEqual(valid.manifest.runtimeServices, ['lvgl', 'wifi', 'serial-log'])
+assert.deepEqual(valid.manifest.acceptanceChecks, ['LCD shows status', 'WiFi connects'])
 assert.deepEqual(valid.manifest.files.map(file => file.path).sort(), [
   'main/assets/font_alipuhui20.c',
   'main/assets/font_alipuhui20.h',
@@ -94,6 +106,42 @@ const badSkill = validateProgramManifest({
 }, { board })
 assert.equal(badSkill.ok, false)
 assert.match(badSkill.errors.map(e => e.category).join(','), /invalid-skill/)
+
+const missingContractSkill = validateProgramManifest({
+  schemaVersion: 1,
+  boardId: 'szpi_esp32s3',
+  skillIds: ['lvgl'],
+  entry: 'main/main.c',
+  files: [{ path: 'main/main.c', role: 'entry' }],
+  driverContracts: ['network.wifi-sta'],
+  allowedWriteSurface: WRITE_SURFACES.APPLICATION_SOURCE_ONLY,
+}, { board })
+assert.equal(missingContractSkill.ok, false)
+assert.match(missingContractSkill.errors.map(e => e.message).join(','), /requires skill: wifi/)
+
+const unknownContract = validateProgramManifest({
+  schemaVersion: 1,
+  boardId: 'szpi_esp32s3',
+  skillIds: ['lvgl'],
+  entry: 'main/main.c',
+  files: [{ path: 'main/main.c', role: 'entry' }],
+  driverContracts: ['display.unicorn'],
+  allowedWriteSurface: WRITE_SURFACES.APPLICATION_SOURCE_ONLY,
+}, { board })
+assert.equal(unknownContract.ok, false)
+assert.match(unknownContract.errors.map(e => e.message).join(','), /unknown driver contract/)
+
+const badRuntimeService = validateProgramManifest({
+  schemaVersion: 1,
+  boardId: 'szpi_esp32s3',
+  skillIds: ['lvgl'],
+  entry: 'main/main.c',
+  files: [{ path: 'main/main.c', role: 'entry' }],
+  runtimeServices: ['quantum-loop'],
+  allowedWriteSurface: WRITE_SURFACES.APPLICATION_SOURCE_ONLY,
+}, { board })
+assert.equal(badRuntimeService.ok, false)
+assert.match(badRuntimeService.errors.map(e => e.message).join(','), /unknown runtime service/)
 
 const missingDisplaySkill = validateProgramManifest({
   schemaVersion: 1,

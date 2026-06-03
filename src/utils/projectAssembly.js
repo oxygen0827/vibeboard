@@ -1,4 +1,5 @@
 import { buildProjectFiles } from '../context/index'
+import { getBoard } from '../context/boards/index'
 import {
   isConfigPath,
   isSourcePath,
@@ -24,7 +25,8 @@ export function buildGeneratedConfig(boardId, selectedSkills = []) {
 }
 
 export function assembleCompileFiles({ boardId, projectFiles, selectedSkills }) {
-  const compilePackage = createCompilePackage({ boardId, projectFiles, selectedSkills })
+  const board = getBoard(boardId)
+  const compilePackage = createCompilePackage({ boardId, board, projectFiles, selectedSkills })
   return {
     files: compilePackage.files,
     mainFile: compilePackage.mainFile,

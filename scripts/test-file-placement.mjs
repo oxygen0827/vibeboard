@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile, writeFile, mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 const tmp = await mkdtemp(join(tmpdir(), 'vibeboard-file-placement-'))
 const modulePath = join(tmp, 'filePlacement.mjs')
@@ -10,7 +11,7 @@ await writeFile(modulePath, await readFile(new URL('../src/utils/filePlacement.j
 const {
   normalizeProjectFiles,
   normalizeProjectPath,
-} = await import(modulePath)
+} = await import(pathToFileURL(modulePath).href)
 
 function path(raw, context, expected, options) {
   const result = normalizeProjectPath(raw, context, options)

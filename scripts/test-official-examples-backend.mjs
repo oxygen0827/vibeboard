@@ -77,11 +77,18 @@ else:
 print("official examples backend tests passed")
 `
 
-const result = spawnSync('python3', ['-c', py], {
-  cwd: tmp,
-  encoding: 'utf8',
-  env: { ...process.env, PYTHONPATH: tmp },
-})
+function runPython(command) {
+  return spawnSync(command, ['-c', py], {
+    cwd: tmp,
+    encoding: 'utf8',
+    env: { ...process.env, PYTHONPATH: tmp },
+  })
+}
+
+let result = runPython('python3')
+if (result.error?.code === 'ENOENT' || (result.status !== 0 && !result.stdout && !result.stderr)) {
+  result = runPython('python')
+}
 
 assert.equal(result.status, 0, result.stderr || result.stdout)
 assert.match(result.stdout, /official examples backend tests passed/)

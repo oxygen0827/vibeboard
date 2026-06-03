@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile, writeFile, mkdtemp, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 const tmp = await mkdtemp(join(tmpdir(), 'vibeboard-compile-package-'))
 
@@ -31,6 +32,7 @@ const modules = [
   'src/context/boards/szpi_esp32s3/skills/vision.js',
   'src/context/boards/szpi_esp32s3/skills/handheld.js',
   'src/context/boards/szpi_esp32s3/skills/index.js',
+  'src/context/boards/szpi_esp32s3/driverContracts.js',
   'src/context/boards/szpi_esp32s3/definition.js',
   'src/context/boards/index.js',
   'src/context/index.js',
@@ -43,7 +45,7 @@ for (const rel of modules) await copyModule(rel)
 const {
   createCompilePackage,
   normalizeApplicationFiles,
-} = await import(join(tmp, 'src/domain/compilePackage/compilePackage.js'))
+} = await import(pathToFileURL(join(tmp, 'src/domain/compilePackage/compilePackage.js')).href)
 
 const validPackage = createCompilePackage({
   boardId: 'szpi_esp32s3',

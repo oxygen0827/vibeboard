@@ -5,6 +5,7 @@ import SettingsModal from './components/SettingsModal'
 import CompilePanel from './components/CompilePanel'
 import ProjectEditor from './components/ProjectEditor'
 import { BOARDS, DEFAULT_BOARD_ID, getBoardList, getBoard } from './context/boards'
+import { providerKeyForBaseUrl } from './utils/aiApi'
 import { buildGeneratedConfig } from './utils/projectAssembly'
 import { isSourcePath } from './utils/filePlacement'
 import { normalizeGeneratedSourceFiles } from './utils/projectValidation'
@@ -22,6 +23,9 @@ const DEFAULT_SETTINGS = {
   baseUrl: 'https://rehdasu.cn/v1',
   apiKey: 'sk-d55e0d8500404f752a39a2c5baced590b6475c3fcc8b6d84b9c1f000e6f00cd5',
   model: 'gpt-5.5',
+  providerKeys: {
+    [providerKeyForBaseUrl('https://rehdasu.cn/v1')]: 'sk-d55e0d8500404f752a39a2c5baced590b6475c3fcc8b6d84b9c1f000e6f00cd5',
+  },
 }
 
 const LEGACY_DEFAULT_SETTINGS = {
@@ -32,13 +36,22 @@ const LEGACY_DEFAULT_SETTINGS = {
 
 function withDefaultSettings(settings = {}) {
   const baseUrl = settings.baseUrl?.trim()
-  const apiKey = settings.apiKey?.trim()
   const model = settings.model?.trim()
+  const providerKeys = {
+    ...(DEFAULT_SETTINGS.providerKeys || {}),
+    ...(settings.providerKeys || {}),
+  }
+  const activeProviderKey = providerKeyForBaseUrl(baseUrl || DEFAULT_SETTINGS.baseUrl)
+  if (settings.apiKey && !settings.providerKeys?.[activeProviderKey]) {
+    providerKeys[activeProviderKey] = settings.apiKey.trim()
+  }
+  const apiKey = providerKeys[activeProviderKey] || ''
   return {
     ...DEFAULT_SETTINGS,
     ...settings,
     baseUrl: baseUrl || DEFAULT_SETTINGS.baseUrl,
-    apiKey: apiKey || DEFAULT_SETTINGS.apiKey,
+    providerKeys,
+    apiKey,
     model: model || DEFAULT_SETTINGS.model,
   }
 }

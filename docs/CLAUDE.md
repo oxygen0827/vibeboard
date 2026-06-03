@@ -179,11 +179,13 @@ npm run build     # Output to dist/
 
 ## Docker Architecture (Production)
 
-Two containers, both `network_mode: host`:
+Main containers use `network_mode: host`:
 - `esp32-vibe-coder` — nginx on port 4100, serves frontend
 - `esp32-compiler` — Flask/gunicorn on port 8760, runs ESP-IDF builds
+- `vibeboard-lvgl-sim` — Flask/gunicorn on port 8770, receives LVGL runtime packages
 
 nginx proxies `/compile` and `/health` → `127.0.0.1:8760`.
+nginx proxies `/simulate-lvgl` and `/lvgl-sim-health` → `127.0.0.1:8770`.
 
 ## ⚠️ Deployment — CRITICAL LESSON
 
@@ -209,6 +211,17 @@ npm run build
 docker build -t esp32-vibe-coder:latest -f deploy/Dockerfile .
 docker compose -f deploy/docker-compose.yml up -d --force-recreate esp32-vibe-coder
 ```
+
+### LVGL digital twin service:
+```bash
+cd backend/lvgl-sim-service
+docker build -t vibeboard-lvgl-sim:latest .
+docker compose up -d
+curl http://127.0.0.1:8770/health
+```
+
+If nginx config changed, rebuild/recreate `esp32-vibe-coder` so `/simulate-lvgl`
+and `/lvgl-sim-health` proxy to the service.
 
 ### Python deploy helper (for remote server via SSH):
 ```python

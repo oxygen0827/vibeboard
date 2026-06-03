@@ -2,6 +2,7 @@
 export const cameraSkill = {
   id: 'camera',
   label: '摄像头 (GC0308)',
+  driverContractIds: ['display.raw-lcd', 'camera.capture'],
   projectConfig: {
     srcs: [],
     sdkconfig: [

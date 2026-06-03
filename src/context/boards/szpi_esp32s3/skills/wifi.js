@@ -2,6 +2,7 @@
 export const wifiSkill = {
   id: 'wifi',
   label: 'WiFi',
+  driverContractIds: ['network.wifi-sta'],
   projectConfig: {
     srcs: [],
     sdkconfig: [

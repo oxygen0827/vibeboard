@@ -2,6 +2,7 @@ import {
   FAILURE_CATEGORIES,
   FILE_ROLES,
   PROGRAM_MANIFEST_SCHEMA_VERSION,
+  RUNTIME_SERVICES,
   WRITE_SURFACES,
 } from './manifestSchema'
 import { normalizeProjectPath } from '../../utils/filePlacement'
@@ -21,6 +22,16 @@ function normalizeSkillIds(skillIds) {
 
 function boardSkillIds(board) {
   return new Set((board?.skills || []).map(skill => skill.id).filter(Boolean))
+}
+
+function boardDriverContracts(board) {
+  const contracts = board?.driverContracts || []
+  return new Map(contracts.map(contract => [contract.id, contract]).filter(([id]) => Boolean(id)))
+}
+
+function normalizeStringArray(value) {
+  if (!Array.isArray(value)) return []
+  return [...new Set(value.filter(item => typeof item === 'string' && item.trim()).map(item => item.trim()))]
 }
 
 const REQUIRE_SKILL_OPTIONS = {
@@ -47,6 +58,9 @@ export function normalizeManifest(rawManifest) {
       : '',
     files: Array.isArray(manifest.files) ? manifest.files : [],
     requires: isPlainObject(manifest.requires) ? manifest.requires : {},
+    driverContracts: normalizeStringArray(manifest.driverContracts),
+    runtimeServices: normalizeStringArray(manifest.runtimeServices),
+    acceptanceChecks: normalizeStringArray(manifest.acceptanceChecks),
     allowedWriteSurface: manifest.allowedWriteSurface || WRITE_SURFACES.APPLICATION_SOURCE_ONLY,
   }
 }
@@ -85,6 +99,35 @@ export function validateProgramManifest(rawManifest, { board } = {}) {
       if (!validSkillIds.has(skillId)) {
         addError(errors, FAILURE_CATEGORIES.INVALID_SKILL, `unknown skill: ${skillId}`, { skillId })
       }
+    }
+  }
+
+  const validContracts = boardDriverContracts(board)
+  if (validContracts.size > 0) {
+    for (const contractId of manifest.driverContracts) {
+      const contract = validContracts.get(contractId)
+      if (!contract) {
+        addError(errors, FAILURE_CATEGORIES.INVALID_SKILL, `unknown driver contract: ${contractId}`, {
+          driverContract: contractId,
+        })
+        continue
+      }
+      if (contract.skillId && !manifest.skillIds.includes(contract.skillId)) {
+        addError(
+          errors,
+          FAILURE_CATEGORIES.INVALID_SKILL,
+          `driver contract ${contractId} requires skill: ${contract.skillId}`,
+          { driverContract: contractId, skillId: contract.skillId },
+        )
+      }
+    }
+  }
+
+  for (const runtimeService of manifest.runtimeServices) {
+    if (!RUNTIME_SERVICES.has(runtimeService)) {
+      addError(errors, FAILURE_CATEGORIES.MANIFEST_INVALID, `unknown runtime service: ${runtimeService}`, {
+        runtimeService,
+      })
     }
   }
 

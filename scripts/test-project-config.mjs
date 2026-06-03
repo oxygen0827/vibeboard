@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile, writeFile, mkdtemp, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 const tmp = await mkdtemp(join(tmpdir(), 'vibeboard-project-config-'))
 
@@ -31,6 +32,7 @@ const modules = [
   'src/context/boards/szpi_esp32s3/skills/vision.js',
   'src/context/boards/szpi_esp32s3/skills/handheld.js',
   'src/context/boards/szpi_esp32s3/skills/index.js',
+  'src/context/boards/szpi_esp32s3/driverContracts.js',
   'src/context/boards/szpi_esp32s3/definition.js',
   'src/context/boards/index.js',
   'src/context/index.js',
@@ -41,8 +43,8 @@ const modules = [
 ]
 for (const rel of modules) await copyModule(rel)
 
-const { buildProjectFiles } = await import(join(tmp, 'src/context/index.js'))
-const { assembleCompileFiles } = await import(join(tmp, 'src/utils/projectAssembly.js'))
+const { buildProjectFiles } = await import(pathToFileURL(join(tmp, 'src/context/index.js')).href)
+const { assembleCompileFiles } = await import(pathToFileURL(join(tmp, 'src/utils/projectAssembly.js')).href)
 
 function files(skills = []) {
   return buildProjectFiles('szpi_esp32s3', 'vibe_app', skills)

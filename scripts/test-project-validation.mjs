@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile, writeFile, mkdtemp, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 const tmp = await mkdtemp(join(tmpdir(), 'vibeboard-project-validation-'))
 
@@ -24,7 +25,22 @@ const {
   normalizeGeneratedSource,
   normalizeGeneratedSourceFiles,
   validateProjectIncludes,
-} = await import(join(tmp, 'src/utils/projectValidation.js'))
+} = await import(pathToFileURL(join(tmp, 'src/utils/projectValidation.js')).href)
+
+const board = {
+  driverContracts: [
+    {
+      id: 'display.lvgl-ui',
+      skillId: 'lvgl',
+      forbiddenApis: ['esp_lvgl_util.h', 'lv_font_montserrat_24'],
+    },
+    {
+      id: 'camera.capture',
+      skillId: 'camera',
+      forbiddenApis: ['dvp_pwdn', 'GPIO46'],
+    },
+  ],
+}
 
 const broken = `#include "esp32_s3_szp.h"
 #include "lvgl.h"
@@ -85,5 +101,18 @@ const speechCoversAudioAndLvgl = validateProjectIncludes({
   'main/main.c': '#include "lvgl.h"\n#include "audio_player.h"\nvoid app_main(void) { bsp_lvgl_start(); bsp_codec_init(); app_sr_init(); }\n',
 }, ['speech'])
 assert.equal(speechCoversAudioAndLvgl.ok, true)
+
+const contractViolation = validateProjectIncludes({
+  'main/main.c': '#include "esp_lvgl_util.h"\nvoid app_main(void) { lv_font_montserrat_24.line_height; }\n',
+}, ['lvgl'], board)
+assert.equal(contractViolation.ok, false)
+assert.match(contractViolation.message, /violates selected Driver Contracts/)
+assert.match(contractViolation.message, /display\.lvgl-ui forbids esp_lvgl_util\.h/)
+
+const cameraContractViolation = validateProjectIncludes({
+  'main/main.c': '#include "esp32_s3_szp.h"\nvoid app_main(void) { dvp_pwdn(0); }\n',
+}, ['camera'], board)
+assert.equal(cameraContractViolation.ok, false)
+assert.match(cameraContractViolation.message, /camera\.capture forbids dvp_pwdn/)
 
 console.log('project validation tests passed')

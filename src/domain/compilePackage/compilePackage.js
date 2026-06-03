@@ -51,6 +51,7 @@ export function createCompilePackage({
     files,
     applicationFiles,
     mainFile,
+    board,
     selectedSkills: systemFiles.__selectedSkills || selectedSkills,
     rejectedFiles: userResult.rejected,
   })
@@ -107,6 +108,7 @@ export function validateCompilePackage({
   files = {},
   applicationFiles = {},
   mainFile = 'main.c',
+  board = null,
   selectedSkills = [],
   rejectedFiles = [],
 } = {}) {
@@ -153,7 +155,7 @@ export function validateCompilePackage({
     })
   }
 
-  const sourceValidation = validateProjectIncludes(files, selectedSkills)
+  const sourceValidation = validateProjectIncludes(files, selectedSkills, board)
   if (!sourceValidation.ok) {
     diagnostics.push({
       category: 'source-validation-failed',

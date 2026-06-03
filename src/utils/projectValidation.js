@@ -111,7 +111,7 @@ function candidateLocalPaths(fromPath, includePath) {
   return [...paths]
 }
 
-export function validateProjectIncludes(projectFiles, selectedSkills = []) {
+export function validateProjectIncludes(projectFiles, selectedSkills = [], board = null) {
   const allowed = new Set(GLOBAL_HEADERS)
   for (const skillId of selectedSkills || []) {
     for (const header of SKILL_HEADERS[skillId] || []) allowed.add(header)
@@ -135,8 +135,11 @@ export function validateProjectIncludes(projectFiles, selectedSkills = []) {
   }
 
   const skillMismatches = validateSkillApiUsage(projectFiles, selectedSkills)
+  const contractViolations = validateDriverContractUsage(projectFiles, selectedSkills, board)
 
-  if (missing.length === 0 && skillMismatches.length === 0) return { ok: true, message: '' }
+  if (missing.length === 0 && skillMismatches.length === 0 && contractViolations.length === 0) {
+    return { ok: true, message: '' }
+  }
 
   const lines = missing.map(m => `- ${m.source}: #include "${m.header}"`)
   const sections = []
@@ -146,11 +149,73 @@ export function validateProjectIncludes(projectFiles, selectedSkills = []) {
   if (skillMismatches.length > 0) {
     sections.push(`AI generated APIs from skills that are not enabled, so compile was stopped before upload.\n${skillMismatches.map(item => `- ${item.source}: ${item.label} needs skill "${item.skillId}"`).join('\n')}\n\nEnable the matching board skill or ask AI to regenerate without that API family.`)
   }
+  if (contractViolations.length > 0) {
+    sections.push(`AI generated source that violates selected Driver Contracts, so compile was stopped before upload.\n${contractViolations.map(item => `- ${item.source}: ${item.contractId} forbids ${item.forbidden}`).join('\n')}\n\nAsk AI to regenerate within the Driver Contract boundary.`)
+  }
 
   return {
     ok: false,
     message: sections.join('\n\n'),
   }
+}
+
+function validateDriverContractUsage(projectFiles, selectedSkills = [], board = null) {
+  const contracts = selectedDriverContractsForBoard(board, selectedSkills)
+  if (contracts.length === 0) return []
+
+  const violations = []
+  const seen = new Set()
+
+  for (const [path, content] of Object.entries(projectFiles || {})) {
+    if (!/\.(c|cc|cpp|cxx|h|hpp)$/.test(path)) continue
+    const source = String(content || '')
+
+    for (const contract of contracts) {
+      for (const forbidden of contract.forbiddenApis || []) {
+        const pattern = forbiddenPattern(forbidden)
+        if (!pattern || !pattern.test(source)) continue
+
+        const key = `${path}:${contract.id}:${forbidden}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        violations.push({ source: path, contractId: contract.id, forbidden })
+      }
+    }
+  }
+
+  return violations
+}
+
+function selectedDriverContractsForBoard(board, selectedSkills = []) {
+  const selected = new Set(selectedSkills || [])
+  return (board?.driverContracts || []).filter(contract => skillIsEnabled([...selected], contract.skillId))
+}
+
+function forbiddenPattern(forbidden) {
+  const text = String(forbidden || '').trim()
+  if (!text) return null
+
+  if (/\.h$/.test(text)) {
+    return new RegExp(`#\\s*include\\s+[<"]${escapeRegex(text)}[>"]`)
+  }
+  if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(text)) {
+    return new RegExp(`\\b${escapeRegex(text)}\\s*\\(`)
+  }
+  if (/^[a-zA-Z_][a-zA-Z0-9_]*\(\d+\)$/.test(text)) {
+    const name = text.slice(0, text.indexOf('('))
+    const arg = text.slice(text.indexOf('(') + 1, -1)
+    return new RegExp(`\\b${escapeRegex(name)}\\s*\\(\\s*${escapeRegex(arg)}\\s*\\)`)
+  }
+  if (/0x[0-9a-f]+/i.test(text)) {
+    const hex = text.match(/0x[0-9a-f]+/i)[0]
+    return new RegExp(`\\b${escapeRegex(hex)}\\b`, 'i')
+  }
+  if (/GPIO\d+/i.test(text)) {
+    const gpio = text.match(/GPIO\d+/i)[0]
+    return new RegExp(`\\b${escapeRegex(gpio)}\\b`, 'i')
+  }
+
+  return null
 }
 
 function validateSkillApiUsage(projectFiles, selectedSkills = []) {

@@ -2,6 +2,7 @@
 export const lvglSkill = {
   id: 'lvgl',
   label: 'LVGL 显示',
+  driverContractIds: ['display.lvgl-ui'],
   projectConfig: {
     srcs: [],
     sdkconfig: [

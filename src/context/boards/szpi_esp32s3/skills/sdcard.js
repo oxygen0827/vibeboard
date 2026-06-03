@@ -2,6 +2,7 @@
 export const sdcardSkill = {
   id: 'sdcard',
   label: '存储 (SD卡/SPIFFS)',
+  driverContractIds: ['storage.sdcard'],
   projectConfig: {
     srcs: [],
     sdkconfig: [

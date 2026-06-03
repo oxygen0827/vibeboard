@@ -3,6 +3,10 @@
 
 const ANTHROPIC_BASE = 'https://api.anthropic.com'
 
+export function providerKeyForBaseUrl(baseUrl = '') {
+  return String(baseUrl || '').trim().replace(/\/+$/, '').toLowerCase()
+}
+
 function isAnthropicEndpoint(baseUrl) {
   return baseUrl.includes('anthropic.com')
 }

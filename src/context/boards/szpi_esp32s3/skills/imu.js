@@ -3,6 +3,7 @@
 export const imuSkill = {
   id: 'imu',
   label: 'IMU (QMI8658)',
+  driverContractIds: ['sensor.imu-qmi8658'],
   projectConfig: {
     srcs: [],
     sdkconfig: [],

@@ -2,6 +2,7 @@
 export const audioSkill = {
   id: 'audio',
   label: '音频 (ES8311/ES7210)',
+  driverContractIds: ['audio.codec-playback', 'audio.mic-feed'],
   projectConfig: {
     srcs: [],
     sdkconfig: [

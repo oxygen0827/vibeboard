@@ -2,6 +2,7 @@
 export const handheldSkill = {
   id: 'handheld',
   label: '综合手持设备',
+  driverContractIds: ['device.handheld-full-stack'],
   projectConfig: {
     srcs: [],
     sdkconfig: [
