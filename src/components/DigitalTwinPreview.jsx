@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { DIGITAL_TWIN_SCENES, detectDigitalTwinScene } from '../domain/digitalTwin/detectScene'
+import {
+  applyManifestWidgetAction,
+  createManifestInteractionState,
+  resolveManifestWidgetText,
+  resolveManifestWidgetValue,
+  updateManifestSliderValue,
+} from '../domain/digitalTwin/interactiveManifest'
 import { DIGITAL_TWIN_MANIFEST_KEY } from '../domain/digitalTwin/uiManifest'
 import { createPreviewRequest, PREVIEW_STATUS, previewDataUrl, renderLvglPreview, stablePreviewFingerprint } from '../utils/preview'
 import './DigitalTwinPreview.css'
@@ -49,8 +56,8 @@ function hasLvglPreviewContract(files = {}) {
   return Boolean(
     appUiC &&
     appUiH &&
-    /\bapp_ui_create\s*\(\s*lv_obj_t\s*\*\s*\w+\s*\)/.test(appUiC) &&
-    /\bvoid\s+app_ui_create\s*\(\s*lv_obj_t\s*\*\s*\w+\s*\)\s*;/.test(appUiH),
+    /\bapp_ui_create\s*\(/.test(appUiC) &&
+    /\bapp_ui_create\s*\(/.test(appUiH),
   )
 }
 
@@ -245,7 +252,7 @@ function GenericScreen({ scene, setLogs }) {
   )
 }
 
-function ManifestWidget({ widget, setLogs }) {
+function ManifestWidget({ widget, interactionState, setInteractionState, setLogs }) {
   const style = {
     left: `${(widget.x / 320) * 100}%`,
     top: `${(widget.y / 240) * 100}%`,
@@ -253,16 +260,36 @@ function ManifestWidget({ widget, setLogs }) {
     height: `${(widget.h / 240) * 100}%`,
     color: widget.color || undefined,
   }
-  const text = widget.text || widget.id
+  const text = resolveManifestWidgetText(widget, interactionState)
 
   if (widget.type === 'button') {
-    return <button className="dt-manifest-widget dt-manifest-button" style={style} onClick={() => setLogs(logs => addLog(logs, widget.action || `${widget.id} clicked`))}>{text}</button>
+    return (
+      <button
+        className="dt-manifest-widget dt-manifest-button"
+        style={style}
+        onClick={() => {
+          setInteractionState(state => applyManifestWidgetAction(state, widget))
+          setLogs(logs => addLog(logs, widget.action || `${widget.id} clicked`))
+        }}
+      >
+        {text}
+      </button>
+    )
   }
   if (widget.type === 'slider') {
     return (
-      <div className="dt-manifest-widget dt-manifest-slider" style={style}>
-        <span style={{ width: `${widget.value || 50}%` }} />
-      </div>
+      <input
+        className="dt-manifest-widget dt-manifest-range"
+        type="range"
+        min="0"
+        max="100"
+        value={resolveManifestWidgetValue(widget, interactionState)}
+        style={style}
+        onChange={event => {
+          setInteractionState(state => updateManifestSliderValue(state, event.target.value))
+          setLogs(logs => addLog(logs, `slider ${event.target.value}`))
+        }}
+      />
     )
   }
   if (widget.type === 'dropdown') {
@@ -297,10 +324,18 @@ function ManifestWidget({ widget, setLogs }) {
 }
 
 function ManifestScreen({ manifest, setLogs }) {
+  const [interactionState, setInteractionState] = useState(createManifestInteractionState)
+
   return (
     <div className="dt-manifest-screen" style={{ background: manifest.screen.background }}>
       {manifest.widgets.map(widget => (
-        <ManifestWidget key={widget.id} widget={widget} setLogs={setLogs} />
+        <ManifestWidget
+          key={widget.id}
+          widget={widget}
+          interactionState={interactionState}
+          setInteractionState={setInteractionState}
+          setLogs={setLogs}
+        />
       ))}
     </div>
   )

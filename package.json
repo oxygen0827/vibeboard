@@ -15,6 +15,7 @@
     "test:remote-ota-backend": "node scripts/test-remote-ota-backend.mjs",
     "test:program-intent": "node scripts/test-program-intent.mjs",
     "test:program-manifest": "node scripts/test-program-manifest.mjs",
+    "test:digital-twin-interaction": "node scripts/test-digital-twin-interaction.mjs",
     "test:digital-twin-scene": "node scripts/test-digital-twin-scene.mjs",
     "test:lvgl-runtime-package": "node scripts/test-lvgl-runtime-package.mjs",
     "test:lvgl-sim-service": "node scripts/test-lvgl-sim-service.mjs",
