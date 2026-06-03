@@ -11,6 +11,7 @@ import { isSourcePath } from './utils/filePlacement'
 import { normalizeGeneratedSourceFiles } from './utils/projectValidation'
 import { normalizeApplicationFiles } from './domain/compilePackage/compilePackage'
 import { DIGITAL_TWIN_MANIFEST_KEY } from './domain/digitalTwin/uiManifest'
+import { stablePreviewFingerprint } from './utils/preview'
 import bspHeader from '../backend/compiler-service/template/components/esp32_s3_szp/esp32_s3_szp.h?raw'
 import bspSource from '../backend/compiler-service/template/components/esp32_s3_szp/esp32_s3_szp.c?raw'
 import bspCmake from '../backend/compiler-service/template/components/esp32_s3_szp/CMakeLists.txt?raw'
@@ -118,6 +119,7 @@ export default function App() {
   const [selectedSkills, setSelectedSkills] = useState([])
   const [latestManifest, setLatestManifest] = useState(null)
   const [latestPreviewContext, setLatestPreviewContext] = useState(null)
+  const [latestCompileArtifact, setLatestCompileArtifact] = useState(null)
   const board = BOARDS[boardId]
   const generatedFiles = buildGeneratedConfig(boardId, selectedSkills)
 
@@ -135,6 +137,7 @@ export default function App() {
   function handleBoardChange(id) {
     setBoardId(id)
     setCompileSessionId(newCompileSessionId())
+    setLatestCompileArtifact(null)
     localStorage.setItem(BOARD_STORAGE_KEY, id)
   }
 
@@ -154,6 +157,7 @@ export default function App() {
     setActiveFile(Object.keys(files)[0] || '')
     setPendingLogAnalysis(null)
     setPendingBuildRepair(null)
+    setLatestCompileArtifact(null)
     setCompileSessionId(newCompileSessionId())
   }
 
@@ -163,6 +167,7 @@ export default function App() {
     setSelectedSkills([])
     setLatestManifest(null)
     setLatestPreviewContext(null)
+    setLatestCompileArtifact(null)
     setActiveFile(Object.keys(files)[0] || '')
   }, [boardId])
 
@@ -193,6 +198,32 @@ export default function App() {
     }
     setLatestManifest(manifest || null)
   }, [activeFile, board, latestManifest, projectFiles])
+
+  const currentCompileFingerprint = useCallback((files = projectFiles, skills = selectedSkills, manifest = latestManifest) =>
+    stablePreviewFingerprint({
+      projectFiles: files,
+      selectedSkills: skills,
+      manifest,
+    }), [latestManifest, projectFiles, selectedSkills])
+
+  const handleCompileArtifact = useCallback((artifact) => {
+    if (!artifact?.firmware) {
+      setLatestCompileArtifact(null)
+      return
+    }
+    setLatestCompileArtifact({
+      ...artifact,
+      boardId,
+      fingerprint: artifact.fingerprint || currentCompileFingerprint(artifact.projectFiles, artifact.selectedSkills, artifact.manifest),
+    })
+    if (artifact.autoFlash) setShowCompile(true)
+  }, [boardId, currentCompileFingerprint])
+
+  const reusableCompileArtifact = latestCompileArtifact &&
+    latestCompileArtifact.boardId === boardId &&
+    latestCompileArtifact.fingerprint === currentCompileFingerprint()
+      ? latestCompileArtifact
+      : null
 
   const hasConfig = settings.apiKey && settings.baseUrl && settings.model
 
@@ -241,6 +272,7 @@ export default function App() {
             onPreviewContextChange={handlePreviewContextChange}
             onFileChange={(newFiles, newActive) => {
               setProjectFiles(newFiles)
+              setLatestCompileArtifact(null)
               if (newActive !== undefined) setActiveFile(newActive)
             }}
             onFileSelect={setActiveFile}
@@ -264,6 +296,7 @@ export default function App() {
                 board={board}
                 boardId={boardId}
                 onInsertCode={handleInsertCode}
+                onCompileArtifact={handleCompileArtifact}
                 initialPrompt={pendingLogAnalysis}
                 onConsumePrompt={() => setPendingLogAnalysis(null)}
                 repairRequest={pendingBuildRepair}
@@ -304,6 +337,15 @@ export default function App() {
           selectedSkills={selectedSkills}
           boardId={boardId}
           projectId={compileSessionId}
+          manifest={latestManifest}
+          initialFirmware={reusableCompileArtifact?.firmware || null}
+          initialBuildEvidence={reusableCompileArtifact?.buildEvidence || null}
+          initialBuildStatus={reusableCompileArtifact ? `AI 已自动编译成功 · ${(reusableCompileArtifact.firmware.size / 1024).toFixed(1)} KB` : ''}
+          initialAutoFlash={Boolean(reusableCompileArtifact?.autoFlash)}
+          onCompileArtifact={handleCompileArtifact}
+          onConsumeInitialAutoFlash={() => {
+            setLatestCompileArtifact(prev => prev ? { ...prev, autoFlash: false } : prev)
+          }}
           onRepairBuildFailure={(request) => {
             setPendingBuildRepair(request)
             setRightTab('chat')

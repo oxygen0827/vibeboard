@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { compileFirmware, compileOfficialExample, compileOtaReceiver, downloadBin, loadOfficialExamples } from '../utils/compiler'
 import { getDeviceInfo, pushOta, loadOtaIp, saveOtaIp } from '../utils/ota'
 import { connectBle } from '../utils/bleOta'
+import { getPairedSerialDebugPorts, isSerialAutoConnectBlocked } from '../utils/logStream'
 import {
   flashAppOnlyOverUsb,
   isWebSerialSupported,
@@ -79,6 +80,13 @@ export default function CompilePanel({
   selectedSkills,
   boardId,
   projectId,
+  manifest = null,
+  initialFirmware = null,
+  initialBuildEvidence = null,
+  initialBuildStatus = '',
+  initialAutoFlash = false,
+  onCompileArtifact,
+  onConsumeInitialAutoFlash,
   onClose,
   onRepairBuildFailure,
 }) {
@@ -113,6 +121,7 @@ export default function CompilePanel({
   const [buildEvidence, setBuildEvidence] = useState(null)
   const logEndRef = useRef(null)
   const bleSessionRef = useRef(null)
+  const autoFlashAttemptedRef = useRef(false)
   const officialExample = getOfficialExample(officialExampleId)
   const availableExampleIds = new Set(serverExamples.map(example => example.id))
   const selectedServerExample = serverExamples.find(example => example.id === officialExampleId)
@@ -125,16 +134,19 @@ export default function CompilePanel({
   })
 
   useEffect(() => {
+    const hasReusableProjectFirmware = compileMode === 'project' && initialFirmware
     setBuildState('idle')
     setOtaState('idle')
     setBleState('idle')
     setUsbState('idle')
     setRemoteState('idle')
-    setFirmware(null)
-    setBuildEvidence(null)
+    setFirmware(hasReusableProjectFirmware ? initialFirmware : null)
+    setBuildEvidence(hasReusableProjectFirmware ? (initialBuildEvidence || initialFirmware.buildEvidence || null) : null)
     setErrorLog('')
-    setStatus('')
-  }, [sourceProp, selectedSkills, boardId, compileMode, officialExampleId])
+    setStatus(hasReusableProjectFirmware ? (initialBuildStatus || `编译成功 · ${(initialFirmware.size / 1024).toFixed(1)} KB`) : '')
+    setBuildState(hasReusableProjectFirmware ? 'ok' : 'idle')
+    autoFlashAttemptedRef.current = false
+  }, [sourceProp, selectedSkills, boardId, compileMode, officialExampleId, initialFirmware, initialBuildEvidence, initialBuildStatus])
   useEffect(() => {
     let cancelled = false
     function refresh() {
@@ -234,6 +246,16 @@ export default function CompilePanel({
       setBuildEvidence(blob.buildEvidence || null)
       setStatus(`编译成功 · ${(blob.size / 1024).toFixed(1)} KB`)
       setBuildState('ok')
+      if (compileMode === 'project') {
+        onCompileArtifact?.({
+          firmware: blob,
+          buildEvidence: blob.buildEvidence || null,
+          projectFiles: sourceProp || {},
+          selectedSkills: selectedSkills || [],
+          manifest,
+          source: 'manual-compile',
+        })
+      }
     } catch (e) {
       setBuildEvidence(e.buildEvidence || null)
       setErrorLog(e.message)
@@ -319,7 +341,7 @@ export default function CompilePanel({
     }
   }
 
-  async function handleUsbFlash() {
+  async function handleUsbFlash({ port = null, automatic = false } = {}) {
     if (!firmware) return
     setUsbState('flashing')
     setUsbProgress(0)
@@ -333,9 +355,10 @@ export default function CompilePanel({
         },
       })
       await waitForUsbPortSettle()
-      setStatus('请选择 ESP32-S3 USB 串口设备...')
+      setStatus(automatic ? '检测到已授权 ESP32-S3 USB 串口，开始自动烧录...' : '请选择 ESP32-S3 USB 串口设备...')
       await flashAppOnlyOverUsb({
         firmware,
+        port,
         onProgress: pct => {
           setUsbProgress(pct)
           setStatus(`USB 烧录中... ${pct}%`)
@@ -355,6 +378,38 @@ export default function CompilePanel({
       notifyUsbFlashFinished()
     }
   }
+
+  useEffect(() => {
+    if (!initialAutoFlash || autoFlashAttemptedRef.current) return
+    if (compileMode !== 'project' || buildState !== 'ok' || !firmware) return
+
+    autoFlashAttemptedRef.current = true
+    onConsumeInitialAutoFlash?.()
+
+    async function autoFlashIfPossible() {
+      if (!isWebSerialSupported()) {
+        setStatus(`AI 已自动编译成功；${webSerialUnavailableReason()}`)
+        return
+      }
+      if (isSerialAutoConnectBlocked()) {
+        setStatus('AI 已自动编译成功；USB 串口已手动断开，未自动烧录')
+        return
+      }
+      const ports = await getPairedSerialDebugPorts()
+      if (ports.length === 0) {
+        setStatus('AI 已自动编译成功；未检测到已授权 USB 串口，可点击 USB 直刷手动选择')
+        return
+      }
+      await handleUsbFlash({ port: ports[0], automatic: true })
+    }
+
+    autoFlashIfPossible().catch(err => {
+      setErrorLog(err.message)
+      setStatus('自动 USB 烧录失败')
+      setUsbState('error')
+      notifyUsbFlashFinished()
+    })
+  }, [initialAutoFlash, compileMode, buildState, firmware]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleRemoteOta() {
     if (!firmware || !remoteDeviceId) return

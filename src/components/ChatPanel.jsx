@@ -147,6 +147,7 @@ export default function ChatPanel({
   board,
   boardId,
   onInsertCode,
+  onCompileArtifact,
   initialPrompt,
   onConsumePrompt,
   repairRequest,
@@ -398,6 +399,7 @@ export default function ChatPanel({
       let sourceRepairAttempts = 0
       let buildRepairAttempts = 0
       let buildVerified = false
+      let compiledFirmware = null
 
       while (!sourceCheck.ok && sourceRepairAttempts < MAX_SOURCE_REPAIR_ATTEMPTS) {
         sourceRepairAttempts += 1
@@ -489,7 +491,7 @@ export default function ChatPanel({
 
         const compileLog = []
         try {
-          await compileGeneratedFiles({
+          compiledFirmware = await compileGeneratedFiles({
             boardId,
             files: currentFiles,
             selectedSkills: manifestResult.manifest.skillIds,
@@ -633,13 +635,24 @@ export default function ChatPanel({
         selectedSkills: manifestResult.manifest.skillIds,
         autoPreview: true,
       })
+      if (compiledFirmware) {
+        onCompileArtifact?.({
+          firmware: compiledFirmware,
+          buildEvidence: compiledFirmware.buildEvidence || null,
+          projectFiles: finalFiles,
+          selectedSkills: manifestResult.manifest.skillIds,
+          manifest: manifestResult.manifest,
+          autoFlash: true,
+          source: 'ai-auto-compile',
+        })
+      }
       setInput('')
       setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'apply-source', WORKFLOW_STEP_STATUS.DONE, `${Object.keys(finalFiles).length} 个文件已写入`))
       setMessages(prev => {
         const next = [...prev]
         next[next.length - 1] = {
           role: 'assistant',
-          content: `已通过源码自检和自动编译验证，并写入左侧编辑器，共 ${Object.keys(finalFiles).length} 个应用文件：\n\n${Object.keys(finalFiles).map(path => `- ${path}`).join('\n')}\n\n${sourceDetail}\n${buildDetail}\n使用技能：${manifestResult.manifest.skillIds.join(', ') || 'none'}`,
+          content: `已通过源码自检和自动编译验证，并写入左侧编辑器，共 ${Object.keys(finalFiles).length} 个应用文件：\n\n${Object.keys(finalFiles).map(path => `- ${path}`).join('\n')}\n\n${sourceDetail}\n${buildDetail}\n编译产物已保存，可直接烧录；检测到已授权 USB 串口时会自动开始 USB 直刷。\n使用技能：${manifestResult.manifest.skillIds.join(', ') || 'none'}`,
           manifest: manifestResult.manifest,
         }
         return next

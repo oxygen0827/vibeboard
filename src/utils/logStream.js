@@ -39,6 +39,12 @@ export const SERIAL_DEBUG_FILTERS = [
   { usbVendorId: 0x10c4 }, // Silicon Labs USB-UART bridges
   { usbVendorId: 0x1a86 }, // CH34x USB-UART bridges
 ]
+export const SERIAL_AUTO_CONNECT_KEY = 'vibeboard-log-serial-auto-connect'
+
+export function isSerialAutoConnectBlocked() {
+  if (typeof localStorage === 'undefined') return false
+  return localStorage.getItem(SERIAL_AUTO_CONNECT_KEY) === 'blocked'
+}
 
 export function isWebSerialSupported() {
   return typeof navigator !== 'undefined' &&

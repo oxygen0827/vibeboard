@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import {
   createWsLogStream, createSerialLogStream,
   describeSerialPort, getPairedSerialDebugPorts, isWebSerialSupported,
-  parseLine, LEVEL_COLOR,
+  parseLine, LEVEL_COLOR, SERIAL_AUTO_CONNECT_KEY,
 } from '../utils/logStream'
 import { loadOtaIp } from '../utils/ota'
 import {
@@ -13,7 +13,6 @@ import {
 import './LogPanel.css'
 
 const MAX_LINES = 1000
-const SERIAL_AUTO_CONNECT_KEY = 'vibeboard-log-serial-auto-connect'
 const SERIAL_AUTO_POLL_MS = 2000
 const SERIAL_AUTO_ERROR_COOLDOWN_MS = 8000
 

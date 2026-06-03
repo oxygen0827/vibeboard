@@ -56,13 +56,13 @@ export function waitForUsbPortSettle(ms = 250) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-export async function flashAppOnlyOverUsb({ firmware, onLog, onProgress }) {
+export async function flashAppOnlyOverUsb({ firmware, port: providedPort = null, onLog, onProgress }) {
   if (!isWebSerialSupported()) {
     throw new Error(webSerialUnavailableReason())
   }
   if (!firmware) throw new Error('没有可烧录的固件，请先编译成功。')
 
-  const port = await navigator.serial.requestPort({
+  const port = providedPort || await navigator.serial.requestPort({
     filters: [
       { usbVendorId: 0x303a },
       { usbVendorId: 0x10c4 },
