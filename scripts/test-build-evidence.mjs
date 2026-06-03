@@ -24,6 +24,7 @@ await copyModule('src/domain/evidence/buildEvidence.js')
 
 const {
   createBuildEvidence,
+  createBuildRepairContext,
   findFirstBuildError,
   buildEvidenceToOutcome,
 } = await import(pathToFileURL(join(tmp, 'src/domain/evidence/buildEvidence.js')).href)
@@ -46,13 +47,32 @@ const failure = createBuildEvidence({
     'ninja: build stopped: subcommand failed.',
   ],
 })
-assert.equal(failure.failureCategory, 'project-config-error')
+assert.equal(failure.failureCategory, 'missing-local-include')
 assert.equal(failure.firstError.file, 'main/main.c')
+assert.equal(failure.repairContext.kind, 'missing-local-include')
+assert.equal(failure.repairContext.missingHeader, 'wifi_scan.h')
 
 const outcome = buildEvidenceToOutcome(failure)
 assert.equal(outcome.status, WORKFLOW_STATUS.FAILURE)
 assert.equal(outcome.nextAction, 'repair-build-failure')
-assert.equal(outcome.failureCategory, 'project-config-error')
+assert.equal(outcome.failureCategory, 'missing-local-include')
+
+const undefinedReference = createBuildRepairContext({
+  logLines: [
+    "build/main/libmain.a(app_main.c.obj):(.literal.app_main+0x8): undefined reference to `app_ui_start'",
+    'collect2: error: ld returned 1 exit status',
+  ],
+})
+assert.equal(undefinedReference.kind, 'undefined-symbol')
+assert.equal(undefinedReference.missingSymbol, 'app_ui_start')
+
+const implicitDeclaration = createBuildRepairContext({
+  logLines: [
+    "main/app_wifi.c:42:5: error: implicit declaration of function 'wifi_start_scan' [-Werror=implicit-function-declaration]",
+  ],
+})
+assert.equal(implicitDeclaration.kind, 'implicit-declaration')
+assert.equal(implicitDeclaration.missingSymbol, 'wifi_start_scan')
 
 const success = buildEvidenceToOutcome(createBuildEvidence({
   status: WORKFLOW_STATUS.SUCCESS,

@@ -529,6 +529,7 @@ export function buildBuildRepairMessages({ board, selectedSkills = [], buildEvid
     Object.entries(projectFiles || {}).filter(([path]) => !path.startsWith('__'))
   )
   const officialExampleGuidance = buildOfficialExampleGuidance(board)
+  const repairContext = buildEvidence?.repairContext || null
   return [
     {
       role: 'system',
@@ -554,6 +555,7 @@ Rules:
 - Preserve the official-example structure: keep app_main thin and repair app_*.c/app_*.h modules when possible.
 - Do not generate CMakeLists.txt, sdkconfig.defaults, idf_component.yml, partitions.csv, components/*, or BSP files.
 - Preserve the user's intended behavior; fix the compile error with the smallest complete source update.
+- Follow the Repair Context first. If it identifies a missing header, missing symbol, implicit declaration, CMake layout issue, or LVGL thread-safety issue, repair that root cause directly before making broader changes.
 - Include full replacement content for every changed file.
 - If main includes a missing local header, either generate that header or remove the include.
 - Include a complete app_main in main/main.c or main/main.cpp.
@@ -563,6 +565,9 @@ Rules:
       role: 'user',
       content: `Build Evidence:
 ${JSON.stringify(buildEvidence || {}, null, 2)}
+
+Repair Context:
+${JSON.stringify(repairContext || {}, null, 2)}
 
 Build log tail:
 ${(buildLog || []).slice(-80).join('\n')}
