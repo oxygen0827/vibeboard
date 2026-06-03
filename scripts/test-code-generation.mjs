@@ -25,6 +25,7 @@ await copyModule('src/domain/digitalTwin/uiManifest.js')
 await copyModule('src/domain/program/intent.js')
 await copyModule('src/domain/program/manifestSchema.js')
 await copyModule('src/domain/program/validateManifest.js')
+await copyModule('src/domain/previewRepair/repairIntent.js')
 await copyModule('src/utils/codeGeneration.js')
 
 const {
@@ -39,6 +40,11 @@ const {
   parseGeneratedFilesResponse,
   parseGeneratedFilesResponseWithOptions,
 } = await import(pathToFileURL(join(tmp, 'src/utils/codeGeneration.js')).href)
+const {
+  buildPreviewFeedbackEvidence,
+  hasEditableProject,
+  isLikelyPreviewRepairRequest,
+} = await import(pathToFileURL(join(tmp, 'src/domain/previewRepair/repairIntent.js')).href)
 
 assert.equal(extractJsonObject('```json\n{"files":[]}\n```'), '{"files":[]}')
 assert.equal(extractJsonObject('```c\nvoid app_main(void) {}\n```'), '')
@@ -239,12 +245,52 @@ assert.match(repairMessages[1].content, /helper\.h/)
 const previewRepairMessages = buildPreviewRepairMessages({
   board,
   selectedSkills: ['lvgl'],
-  previewEvidence: { category: 'preview-contract-missing' },
+  previewEvidence: { category: 'preview-contract-missing', userFeedback: 'slider 看不清' },
   manifest: manifest.manifest,
   projectFiles: { 'main/main.c': 'void app_main(void) {}' },
 })
 assert.match(previewRepairMessages[0].content, /LVGL preview repair/)
 assert.match(previewRepairMessages[0].content, /app_ui_create/)
+assert.match(previewRepairMessages[0].content, /uiManifest/)
 assert.match(previewRepairMessages[1].content, /Preview Evidence/)
+assert.match(previewRepairMessages[1].content, /slider 看不清/)
+
+const defaultProject = {
+  'main/main.c': '// Place your ESP-IDF code here\nvoid app_main(void) {}\n',
+}
+assert.equal(hasEditableProject(defaultProject, null), false)
+assert.equal(isLikelyPreviewRepairRequest({
+  text: 'slider 看不清',
+  projectFiles: defaultProject,
+}), false)
+
+const uiProject = {
+  'main/main.c': '#include "app_ui.h"\nvoid app_main(void) { app_ui_start(); }',
+  'main/app_ui.h': '#pragma once\nvoid app_ui_start(void);',
+  'main/app_ui.c': '#include "app_ui.h"\nvoid app_ui_create(lv_obj_t *root) { lv_slider_create(root); }',
+}
+assert.equal(hasEditableProject(uiProject, manifest.manifest), true)
+assert.equal(isLikelyPreviewRepairRequest({
+  text: 'slider 看不清，按钮太小',
+  projectFiles: uiProject,
+  manifest: manifest.manifest,
+  previewContext: { hasSource: true },
+}), true)
+assert.equal(isLikelyPreviewRepairRequest({
+  text: '做一个新的 WiFi 扫描界面',
+  projectFiles: uiProject,
+  manifest: manifest.manifest,
+  previewContext: { hasSource: true },
+}), false)
+
+const feedbackEvidence = buildPreviewFeedbackEvidence({
+  userFeedback: '按钮没反应',
+  projectFiles: uiProject,
+  previewContext: { scene: 'lvgl-demo' },
+  activeFile: 'main/app_ui.c',
+})
+assert.equal(feedbackEvidence.feedbackType, 'interaction')
+assert.equal(feedbackEvidence.activeFile, 'main/app_ui.c')
+assert.deepEqual(feedbackEvidence.editablePaths.sort(), ['main/app_ui.c', 'main/app_ui.h', 'main/main.c'])
 
 console.log('code generation tests passed')

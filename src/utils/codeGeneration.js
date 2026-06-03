@@ -611,11 +611,12 @@ Repair the source files now.`,
   ]
 }
 
-export function buildPreviewRepairMessages({ board, selectedSkills = [], previewEvidence, manifest, projectFiles = {} }) {
+export function buildPreviewRepairMessages({ board, selectedSkills = [], previewEvidence, manifest, projectFiles = {}, userFeedback = '' }) {
   const editableFiles = Object.fromEntries(
     Object.entries(projectFiles || {}).filter(([path]) => !path.startsWith('__'))
   )
   const officialExampleGuidance = buildOfficialExampleGuidance(board)
+  const feedback = userFeedback || previewEvidence?.userFeedback || previewEvidence?.summary || ''
   return [
     {
       role: 'system',
@@ -633,7 +634,15 @@ Allowed output schema:
     { "path": "main/main.c", "content": "..." },
     { "path": "main/app_ui.h", "content": "..." },
     { "path": "main/app_ui.c", "content": "..." }
-  ]
+  ],
+  "uiManifest": {
+    "title": "short preview title",
+    "screen": { "background": "#f6f8fa" },
+    "widgets": [
+      { "id": "title", "type": "label", "text": "Hello", "x": 16, "y": 12, "w": 200, "h": 28 },
+      { "id": "ok", "type": "button", "text": "OK", "x": 220, "y": 190, "w": 80, "h": 32, "action": "ok_clicked" }
+    ]
+  }
 }
 
 Rules:
@@ -641,13 +650,19 @@ Rules:
 - For LVGL/display projects, main/app_ui.c must define void app_ui_create(lv_obj_t *root), and main/app_ui.h must declare it.
 - app_ui.* must be portable LVGL-only preview code: include lvgl.h only, create widgets under root, and never call ESP-IDF, BSP, FreeRTOS, WiFi, audio, camera, NVS, GPIO, or task APIs.
 - main/main.c should own hardware init and call app_ui_create(lv_scr_act()) after bsp_lvgl_start().
-- Preserve the user's intended behavior and fix the preview issue with the smallest complete source update.
+- Preserve the user's intended behavior and fix the reported preview issue with the smallest complete source update.
+- Treat the current files as the project to patch. Do not restart from a new unrelated program.
+- Infer the affected file from the current source. UI layout, widget text, sizing, colors, and interactions usually belong in main/app_ui.c and the matching uiManifest.
 - Include full replacement content for every changed file.
+- If the visual layout changes, include an updated uiManifest that matches the changed LVGL/app behavior for immediate semantic browser preview.
 - Do not generate CMakeLists.txt, sdkconfig.defaults, idf_component.yml, partitions.csv, components/*, or BSP files.`,
     },
     {
       role: 'user',
-      content: `Preview Evidence:
+      content: `User preview feedback:
+${feedback || '(no separate user feedback)'}
+
+Preview Evidence:
 ${JSON.stringify(previewEvidence || {}, null, 2)}
 
 Program Manifest:

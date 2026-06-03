@@ -415,7 +415,7 @@ function LvglFramebufferScreen({ preview, previewState, interaction, fallback, o
   )
 }
 
-export default function DigitalTwinPreview({ files, selectedSkills = [], board }) {
+export default function DigitalTwinPreview({ files, selectedSkills = [], board, onPreviewContextChange }) {
   const uiManifest = files?.[DIGITAL_TWIN_MANIFEST_KEY]
   const analysis = useMemo(() => detectDigitalTwinScene(files, selectedSkills), [files, selectedSkills])
   const canRenderLvgl = useMemo(() => hasLvglPreviewContract(files), [files])
@@ -432,6 +432,46 @@ export default function DigitalTwinPreview({ files, selectedSkills = [], board }
   const [lvglPreviewState, setLvglPreviewState] = useState(PREVIEW_STATUS.IDLE)
   const [lvglInteraction, setLvglInteraction] = useState(null)
   const capabilities = capabilityItems(analysis.capabilities)
+
+  useEffect(() => {
+    if (!onPreviewContextChange) return
+    onPreviewContextChange({
+      scene: analysis.scene,
+      capabilities: analysis.capabilities,
+      hasLvgl: analysis.hasLvgl,
+      hasSource: analysis.hasSource,
+      canRenderLvgl,
+      previewState: lvglPreviewState,
+      preview: lvglPreview ? {
+        status: lvglPreview.status,
+        renderer: lvglPreview.renderer,
+        summary: lvglPreview.summary,
+        category: lvglPreview.category,
+        error: lvglPreview.error,
+        hasFramebuffer: Boolean(lvglPreview.screenshotPng),
+        viewport: lvglPreview.viewport || LVGL_VIEWPORT,
+      } : null,
+      uiManifest: uiManifest ? {
+        title: uiManifest.title,
+        screen: uiManifest.screen,
+        widgets: uiManifest.widgets,
+      } : null,
+      logs: logs.slice(0, 5),
+      selectedSkills,
+    })
+  }, [
+    analysis.capabilities,
+    analysis.hasLvgl,
+    analysis.hasSource,
+    analysis.scene,
+    canRenderLvgl,
+    logs,
+    lvglPreview,
+    lvglPreviewState,
+    onPreviewContextChange,
+    selectedSkills,
+    uiManifest,
+  ])
 
   const renderLvgl = useCallback(async (interactions = []) => {
     setLvglPreviewState(PREVIEW_STATUS.RENDERING)

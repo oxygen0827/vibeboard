@@ -35,6 +35,27 @@ This level is useful for:
 
 It is not proof that C/LVGL code compiles or behaves exactly like LVGL.
 
+### Preview Feedback Repair Loop
+
+Status: implemented for current-project preview feedback.
+
+When the user has an editable project open, the AI assistant can treat feedback
+such as unclear sliders, blocked labels, small buttons, misplaced widgets, or
+unresponsive taps as a repair request against the current project instead of a
+new generation request. The repair prompt receives the current application
+source files, latest Program Manifest, semantic/LVGL preview context, active
+file, and recent digital twin logs.
+
+The repair loop still preserves the write boundary:
+
+- AI patches Application Source under `main/`.
+- VibeBoard keeps system-owned project files under product control.
+- UI repairs should update `main/app_ui.c` / `main/app_ui.h` when LVGL code is
+  involved.
+- Visual repairs may also return an updated `uiManifest` so the semantic
+  preview refreshes immediately while real LVGL preview or firmware validation
+  remains the stronger evidence.
+
 ### L2: Real LVGL Runtime Preview
 
 Target: next major step.
