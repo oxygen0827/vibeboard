@@ -2,6 +2,7 @@ const GLOBAL_HEADERS = new Set([
   'esp32_s3_szp.h',
   'esp_log.h',
   'esp_err.h',
+  'esp_check.h',
   'esp_timer.h',
   'esp_system.h',
   'esp_event.h',
@@ -552,6 +553,9 @@ export function normalizeGeneratedSource(content, path = '') {
   }
   if (/\bESP_ERROR_CHECK\s*\(/.test(next)) {
     next = ensureSystemInclude(next, 'esp_err.h')
+  }
+  if (/\bESP_(RETURN|GOTO)_ON_(ERROR|FALSE)\s*\(/.test(next)) {
+    next = ensureSystemInclude(next, 'esp_check.h')
   }
 
   return next

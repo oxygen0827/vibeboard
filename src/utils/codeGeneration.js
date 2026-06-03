@@ -36,10 +36,45 @@ export function extractJsonObject(text) {
 function isStructuredGenerationJson(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   return Array.isArray(value.files) ||
+    value.scopeStatus !== undefined ||
     value.schemaVersion !== undefined ||
     value.boardId !== undefined ||
     value.entry !== undefined ||
     value.allowedWriteSurface !== undefined
+}
+
+export function parseScopeClarificationResponse(text) {
+  const jsonText = extractJsonObject(text)
+  if (!jsonText) return { ok: false, status: 'needs_clarification', questions: [], summary: '', errors: ['missing-json'] }
+
+  let parsed
+  try {
+    parsed = JSON.parse(jsonText)
+  } catch {
+    return { ok: false, status: 'needs_clarification', questions: [], summary: '', errors: ['invalid-json'] }
+  }
+
+  const status = parsed.scopeStatus === 'ready' ? 'ready' : 'needs_clarification'
+  const questions = Array.isArray(parsed.questions)
+    ? parsed.questions
+        .map(question => String(question || '').trim())
+        .filter(Boolean)
+        .slice(0, 3)
+    : []
+  const selectedSkillIds = Array.isArray(parsed.selectedSkillIds)
+    ? parsed.selectedSkillIds.map(skillId => String(skillId || '').trim()).filter(Boolean)
+    : []
+
+  return {
+    ok: true,
+    status,
+    summary: String(parsed.scopeSummary || '').trim(),
+    questions,
+    selectedSkillIds,
+    constraints: Array.isArray(parsed.constraints)
+      ? parsed.constraints.map(item => String(item || '').trim()).filter(Boolean)
+      : [],
+  }
 }
 
 export function parseGeneratedFilesResponse(text, board) {
@@ -324,6 +359,91 @@ export function parseProgramManifestResponse(text, board) {
     errors: result.errors.map(error => error.category || error.message),
     details: result.errors,
   }
+}
+
+function boardCapabilitySummary(board) {
+  const skills = (board?.skills || [])
+    .map(skill => `${skill.id}: ${skill.label}`)
+    .join('\n') || 'none'
+  const contracts = (board?.driverContracts || [])
+    .map(contract => `${contract.id}: ${contract.label}; skill=${contract.skillId}; init=${(contract.requiredInit || []).join(' -> ') || 'none'}; allowed=${(contract.allowedApis || []).join(', ') || 'none'}; forbidden=${(contract.forbiddenApis || []).join(', ') || 'none'}`)
+    .join('\n') || 'none'
+
+  return `## Board Capability Boundary
+Board: ${board?.name || board?.id || 'unknown'}
+Hardware described by board prompt only:
+- 320x240 ST7789 LCD with FT6336 touch through BSP/LVGL
+- ES8311 speaker playback, ES7210 microphone input through I2S/audio BSP
+- GC0308 DVP camera
+- QMI8658 IMU
+- microSD over SDMMC
+- WiFi STA and BLE on ESP32-S3
+- BOOT button GPIO0 and safe general GPIO only when pins are not reserved
+- Platform-owned USB serial + WiFi WebSocket log transport
+
+Available skill IDs:
+${skills}
+
+Driver/API contracts:
+${contracts}
+
+Official example boundary:
+${SZPI_OFFICIAL_EXAMPLES.map(example => `- ${example.id}: ${example.request}; skills=${example.skills.join('+')}`).join('\n')}`
+}
+
+export function buildScopeClarificationMessages({ board, selectedSkills = [], userRequest, existingFiles = {} }) {
+  const existingFileList = Object.keys(existingFiles).filter(path => !path.startsWith('__')).join(', ') || 'none'
+  const selectedSkillList = selectedSkills.join(', ') || 'none'
+
+  return [
+    {
+      role: 'system',
+      content: `For this VibeBoard scope step, return ONLY the JSON object requested below. No markdown, no prose.
+
+You are NOT brainstorming arbitrary product ideas. You are narrowing a firmware request to what this exact board, its BSP, selected skills, driver contracts, and official examples can implement.
+
+${boardCapabilitySummary(board)}
+
+Allowed output schema:
+{
+  "scopeStatus": "ready",
+  "scopeSummary": "one sentence describing the bounded firmware",
+  "selectedSkillIds": ["lvgl"],
+  "constraints": ["uses ST7789 LCD via bsp_lvgl_start", "no unsupported cloud dependency"],
+  "questions": []
+}
+
+Or, if the request is too ambiguous to implement safely:
+{
+  "scopeStatus": "needs_clarification",
+  "scopeSummary": "what is known from the request",
+  "selectedSkillIds": ["lvgl"],
+  "constraints": ["only use supported board peripherals"],
+  "questions": ["Which board-supported output should be used: LCD display, speaker playback, WiFi log, or BLE HID?"]
+}
+
+Rules:
+- Ask clarification only when it changes hardware capability, driver choice, data path, or first-version acceptance checks.
+- Ask 1 to 3 short questions maximum.
+- Every question MUST offer choices that are implementable on this board with available skills/BSP APIs.
+- Do NOT ask about unsupported peripherals or vague future product ideas.
+- Do NOT propose GPS, cellular, external cloud camera, external sensors, HDMI, battery charging, motor control, or other hardware unless the current board prompt/skills explicitly support it.
+- If the request can be implemented as a small first version using existing board capabilities, return scopeStatus "ready".
+- Prefer a minimal first version over a large feature set.
+- selectedSkillIds must use only available skill IDs.
+- constraints should name the relevant board capability or BSP boundary.
+- Return ONLY valid JSON.`,
+    },
+    {
+      role: 'user',
+      content: `User request: ${userRequest}
+
+Currently selected skills: ${selectedSkillList}
+Existing editable files: ${existingFileList}
+
+Decide whether to continue to code generation or ask board-bounded clarification questions.`,
+    },
+  ]
 }
 
 export function buildProgramManifestMessages({ board, selectedSkills = [], userRequest, existingFiles = {} }) {

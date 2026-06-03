@@ -13,6 +13,7 @@ export const AGENT_EDITIONS = {
 }
 
 export const AGENT_TASK_TYPES = {
+  SCOPE_CLARIFICATION: 'scope-clarification',
   PROGRAM_MANIFEST: 'program-manifest',
   GENERATE_CODE: 'generate-code',
   REPAIR_BUILD: 'repair-build',

@@ -18,6 +18,8 @@
 #include "esp_spiffs.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/queue.h"
+#include "esp_camera.h"
 
 /* Optional managed-component headers — compiled only when present */
 #if __has_include("esp_lvgl_port.h")
@@ -50,6 +52,8 @@ static i2c_master_bus_handle_t  s_i2c_bus      = NULL;
 static i2c_master_dev_handle_t  s_pca9557_dev  = NULL;
 static esp_lcd_panel_io_handle_t s_lcd_io      = NULL;
 static esp_lcd_panel_handle_t    s_lcd_panel   = NULL;
+static QueueHandle_t             s_camera_lcd_queue = NULL;
+static bool                      s_camera_lcd_started = false;
 
 /* PCA9557 output register shadow (P0=LCD_CS, P1=PA_EN, P2=DVP_PWDN) */
 static uint8_t s_pca_out = 0x05;  /* LCD_CS=1(desel), PA_EN=0, DVP_PWDN=1(off) */
@@ -412,20 +416,149 @@ esp_err_t bsp_codec_init(void)
     return ESP_OK;
 }
 
-esp_err_t bsp_codec_set_fs(uint32_t rate, uint32_t bits, uint32_t ch)
+esp_err_t bsp_codec_set_fs(uint32_t rate, uint32_t bits_cfg, i2s_slot_mode_t ch)
 {
-    ESP_LOGI(TAG, "bsp_codec_set_fs: rate=%lu bits=%lu ch=%lu (stub)", rate, bits, ch);
+    ESP_LOGI(TAG, "bsp_codec_set_fs: rate=%lu bits=%lu ch=%d (stub)",
+             (unsigned long)rate, (unsigned long)bits_cfg, (int)ch);
+    return ESP_OK;
+}
+
+esp_err_t bsp_i2s_write(void *audio_buffer, size_t len, size_t *bytes_written, uint32_t timeout_ms)
+{
+    (void)audio_buffer;
+    (void)timeout_ms;
+    if (bytes_written) *bytes_written = len;
+    return ESP_OK;
+}
+
+esp_err_t bsp_codec_mute_set(bool enable)
+{
+    ESP_LOGI(TAG, "bsp_codec_mute_set: %s (stub)", enable ? "mute" : "unmute");
+    return ESP_OK;
+}
+
+esp_err_t bsp_codec_volume_set(int volume, int *volume_set)
+{
+    int clamped = volume;
+    if (clamped < 0) clamped = 0;
+    if (clamped > 100) clamped = 100;
+    if (volume_set) *volume_set = clamped;
+    ESP_LOGI(TAG, "bsp_codec_volume_set: %d (stub)", clamped);
     return ESP_OK;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- *  Camera stub
- *  Full implementation requires esp_camera managed component.
+ *  Camera (GC0308 DVP, RGB565 QVGA)
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 esp_err_t bsp_camera_init(void)
 {
-    ESP_LOGW(TAG, "bsp_camera_init(): add esp_camera managed component for full implementation");
+    if (!s_i2c_bus) {
+        ESP_LOGE(TAG, "bsp_i2c_init() must be called before bsp_camera_init()");
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (!s_pca9557_dev) {
+        ESP_LOGE(TAG, "pca9557_init() must be called before bsp_camera_init()");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    dvp_pwdn(0);
+    vTaskDelay(pdMS_TO_TICKS(20));
+
+    camera_config_t config = {
+        .ledc_channel = LEDC_CHANNEL_1,
+        .ledc_timer = LEDC_TIMER_0,
+        .pin_d0 = CAMERA_PIN_D0,
+        .pin_d1 = CAMERA_PIN_D1,
+        .pin_d2 = CAMERA_PIN_D2,
+        .pin_d3 = CAMERA_PIN_D3,
+        .pin_d4 = CAMERA_PIN_D4,
+        .pin_d5 = CAMERA_PIN_D5,
+        .pin_d6 = CAMERA_PIN_D6,
+        .pin_d7 = CAMERA_PIN_D7,
+        .pin_xclk = CAMERA_PIN_XCLK,
+        .pin_pclk = CAMERA_PIN_PCLK,
+        .pin_vsync = CAMERA_PIN_VSYNC,
+        .pin_href = CAMERA_PIN_HREF,
+        .pin_sccb_sda = -1,          /* Reuse already initialized BSP_I2C_NUM. */
+        .pin_sccb_scl = CAMERA_PIN_SIOC,
+        .sccb_i2c_port = BSP_I2C_NUM,
+        .pin_pwdn = CAMERA_PIN_PWDN,
+        .pin_reset = CAMERA_PIN_RESET,
+        .xclk_freq_hz = XCLK_FREQ_HZ,
+        .pixel_format = PIXFORMAT_RGB565,
+        .frame_size = FRAMESIZE_QVGA,
+        .jpeg_quality = 12,
+        .fb_count = 2,
+        .fb_location = CAMERA_FB_IN_PSRAM,
+        .grab_mode = CAMERA_GRAB_WHEN_EMPTY,
+    };
+
+    esp_err_t err = esp_camera_init(&config);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Camera init failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    sensor_t *sensor = esp_camera_sensor_get();
+    if (sensor && sensor->id.PID == GC0308_PID) {
+        sensor->set_hmirror(sensor, 1);
+    }
+
+    ESP_LOGI(TAG, "Camera init OK (GC0308 RGB565 QVGA)");
+    return ESP_OK;
+}
+
+static void task_process_camera(void *arg)
+{
+    (void)arg;
+    while (true) {
+        camera_fb_t *frame = esp_camera_fb_get();
+        if (frame) {
+            xQueueSend(s_camera_lcd_queue, &frame, portMAX_DELAY);
+        }
+    }
+}
+
+static void task_process_lcd(void *arg)
+{
+    (void)arg;
+    camera_fb_t *frame = NULL;
+    while (true) {
+        if (xQueueReceive(s_camera_lcd_queue, &frame, portMAX_DELAY)) {
+            lcd_draw_bitmap(0, 0, frame->width, frame->height, (uint16_t *)frame->buf);
+            esp_camera_fb_return(frame);
+        }
+    }
+}
+
+esp_err_t app_camera_lcd(void)
+{
+    if (!s_lcd_panel) {
+        ESP_LOGE(TAG, "bsp_lcd_init() must be called before app_camera_lcd()");
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (s_camera_lcd_started) {
+        return ESP_OK;
+    }
+
+    s_camera_lcd_queue = xQueueCreate(2, sizeof(camera_fb_t *));
+    if (!s_camera_lcd_queue) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    BaseType_t ok = xTaskCreatePinnedToCore(task_process_camera, "task_process_camera",
+                                            3 * 1024, NULL, 5, NULL, 1);
+    if (ok != pdPASS) {
+        return ESP_ERR_NO_MEM;
+    }
+    ok = xTaskCreatePinnedToCore(task_process_lcd, "task_process_lcd",
+                                 4 * 1024, NULL, 5, NULL, 0);
+    if (ok != pdPASS) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    s_camera_lcd_started = true;
     return ESP_OK;
 }
 

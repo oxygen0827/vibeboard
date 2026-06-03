@@ -84,14 +84,21 @@ export const szpiEsp32s3DriverContracts = [
     ],
     allowedApis: [
       'bsp_camera_init',
+      'app_camera_lcd',
       'esp_camera_fb_get',
       'esp_camera_fb_return',
       'lcd_draw_bitmap',
+      'xQueueCreate',
+      'xTaskCreatePinnedToCore',
     ],
     forbiddenApis: [
       'dvp_pwdn',
       'gpio_set_level(GPIO46, 1)',
       'manual camera pin map',
+      'pin_sccb_sda GPIO1',
+      'PIXFORMAT_JPEG for LCD preview',
+      'FRAMESIZE larger than QVGA for live LCD preview',
+      'CAMERA_FB_IN_DRAM',
     ],
     requiredComponents: [
       'espressif/esp32-camera',
@@ -100,11 +107,14 @@ export const szpiEsp32s3DriverContracts = [
       'camera init happens after LCD stabilize delay',
       'every esp_camera_fb_get frame is returned',
       'frame buffers live in PSRAM-compatible configuration',
+      'GC0308 uses RGB565 QVGA and horizontal mirror enabled',
+      'SCCB reuses BSP_I2C_NUM with pin_sccb_sda=-1',
     ],
     commonFailures: [
       'missing 500ms delay after LCD init',
       'manual DVP PWDN handling fights BSP',
       'GPIO46 is driven high during boot',
+      'AI initializes a second SCCB/I2C bus instead of reusing BSP_I2C_NUM',
     ],
   },
   {
@@ -170,6 +180,7 @@ export const szpiEsp32s3DriverContracts = [
       'NVS initializes before WiFi',
       'network failures emit ESP_LOG messages',
       'WiFi app uses generated large partition table',
+      'LVGL WiFi UI updates are wrapped with lvgl_port_lock/unlock',
     ],
     commonFailures: [
       'NVS not initialized before WiFi',
@@ -193,6 +204,9 @@ export const szpiEsp32s3DriverContracts = [
       'bsp_audio_init',
       'bsp_codec_init',
       'bsp_codec_set_fs',
+      'bsp_i2s_write',
+      'bsp_codec_mute_set',
+      'bsp_codec_volume_set',
       'bsp_spiffs_mount',
       'audio_player_*',
       'pa_en',
@@ -201,6 +215,9 @@ export const szpiEsp32s3DriverContracts = [
       'pa_en(1) outside audio PLAYING callback',
       'hard-coded ES8311 address other than 0x18',
       'change I2S pins manually',
+      'audio_player_mute_fn',
+      'audio_player_write_fn',
+      'audio_player_std_clock',
     ],
     requiredComponents: [
       'chmorgan/esp-audio-player',
@@ -238,6 +255,8 @@ export const szpiEsp32s3DriverContracts = [
     forbiddenApis: [
       'hard-coded ES7210 address 0x40',
       'change I2S pins manually',
+      'ES7210 TDM slot mask beyond SLOT0|SLOT1 for voice recording',
+      'second I2C bus for onboard audio codec',
     ],
     requiredComponents: [],
     acceptanceChecks: [
@@ -246,6 +265,7 @@ export const szpiEsp32s3DriverContracts = [
     ],
     commonFailures: [
       'ES7210 address is 0x41 because AD0 is wired high',
+      'tutorial voice recording uses MIC1/MIC2 only, not all four TDM slots',
       'buffer length does not match feed channel count',
     ],
   },
@@ -329,6 +349,7 @@ export const szpiEsp32s3DriverContracts = [
       'esp_ble_*',
       'esp_hidd_*',
       'app_hid_ctrl',
+      'esp_hidd_send_consumer_value',
     ],
     forbiddenApis: [
       'Bluetooth Classic',
@@ -340,6 +361,7 @@ export const szpiEsp32s3DriverContracts = [
       'BLE initializes after NVS',
       'device advertises as HID',
       'connection state is logged',
+      'BLE 5 features are disabled for the BLE 4.2 HID tutorial baseline',
     ],
     commonFailures: [
       'NVS missing before BT stack',

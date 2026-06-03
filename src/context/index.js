@@ -160,7 +160,6 @@ static esp_err_t debug_log_ws_handler(httpd_req_t *req)
     if (req->method == HTTP_GET) {
         int fd = httpd_req_to_sockfd(req);
         debug_add_ws_client(fd);
-        ESP_LOGI(TAG, "WiFi log client connected: fd=%d", fd);
         return ESP_OK;
     }
 

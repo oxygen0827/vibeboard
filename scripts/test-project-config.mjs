@@ -37,14 +37,24 @@ const modules = [
   'src/context/boards/index.js',
   'src/context/index.js',
   'src/utils/filePlacement.js',
+  'src/utils/codeGeneration.js',
   'src/utils/projectValidation.js',
   'src/domain/compilePackage/compilePackage.js',
   'src/utils/projectAssembly.js',
+  'src/domain/digitalTwin/uiManifest.js',
+  'src/domain/program/intent.js',
+  'src/domain/program/manifestSchema.js',
+  'src/domain/program/validateManifest.js',
+  'src/domain/workflow/failureCategories.js',
 ]
 for (const rel of modules) await copyModule(rel)
 
 const { buildProjectFiles } = await import(pathToFileURL(join(tmp, 'src/context/index.js')).href)
 const { assembleCompileFiles } = await import(pathToFileURL(join(tmp, 'src/utils/projectAssembly.js')).href)
+const {
+  buildScopeClarificationMessages,
+  parseScopeClarificationResponse,
+} = await import(pathToFileURL(join(tmp, 'src/utils/codeGeneration.js')).href)
 
 function files(skills = []) {
   return buildProjectFiles('szpi_esp32s3', 'vibe_app', skills)
@@ -59,12 +69,38 @@ assert.match(base['main/CMakeLists.txt'], /REQUIRES[\s\S]*nvs_flash/)
 assert.match(base['main/vibeboard_debug.c'], /vibeboard_debug_start/)
 assert.match(base['main/vibeboard_debug.c'], /VIBEBOARD_DEBUG_WIFI_SSID "1-306"/)
 assert.match(base['main/vibeboard_debug.c'], /httpd_ws_send_frame_async/)
+assert.doesNotMatch(base['main/vibeboard_debug.c'], /WiFi log client connected/)
 assert.doesNotMatch(base['main/vibeboard_debug.c'], /config\.(max_req_hdr_len|max_uri_len)/)
 assert.match(base['main/vibeboard_debug.h'], /esp_err_t vibeboard_debug_start/)
 assert.match(base['sdkconfig.defaults'], /CONFIG_HTTPD_MAX_REQ_HDR_LEN=4096/)
 assert.match(base['sdkconfig.defaults'], /CONFIG_HTTPD_MAX_URI_LEN=1024/)
 assert.equal(base['main/idf_component.yml'], undefined)
 assert.match(base['partitions.csv'], /factory,\s+app,\s+factory,\s+,\s+7M/)
+
+const boardModule = await import(pathToFileURL(join(tmp, 'src/context/boards/index.js')).href)
+const board = boardModule.getBoard('szpi_esp32s3')
+const scopeMessages = buildScopeClarificationMessages({
+  board,
+  selectedSkills: [],
+  userRequest: '做一个语音助手',
+})
+const scopeSystemPrompt = scopeMessages[0].content
+assert.match(scopeSystemPrompt, /Board Capability Boundary/)
+assert.match(scopeSystemPrompt, /GC0308 DVP camera/)
+assert.match(scopeSystemPrompt, /QMI8658 IMU/)
+assert.match(scopeSystemPrompt, /Official example boundary/)
+assert.match(scopeSystemPrompt, /Do NOT propose GPS, cellular, external cloud camera, external sensors, HDMI, battery charging, motor control/)
+const scopeParsed = parseScopeClarificationResponse(JSON.stringify({
+  scopeStatus: 'needs_clarification',
+  scopeSummary: '语音助手可使用板载麦克风、扬声器和 LCD',
+  selectedSkillIds: ['speech', 'audio', 'lvgl'],
+  constraints: ['only use ES7210 microphone and ES8311 speaker through BSP'],
+  questions: ['第一版输出用 LCD 显示文字，还是用 ES8311 扬声器播放提示音？'],
+}))
+assert.equal(scopeParsed.ok, true)
+assert.equal(scopeParsed.status, 'needs_clarification')
+assert.deepEqual(scopeParsed.selectedSkillIds, ['speech', 'audio', 'lvgl'])
+assert.equal(scopeParsed.questions.length, 1)
 
 const lvgl = files(['lvgl'])
 assert.match(lvgl['main/CMakeLists.txt'], /REQUIRES[\s\S]*esp32_s3_szp/)
@@ -90,9 +126,11 @@ const bspHeader = await readFile(new URL('../backend/compiler-service/template/c
 assert.match(bspCmake, /REQUIRES[\s\S]*lvgl/)
 assert.match(bspCmake, /REQUIRES[\s\S]*esp_lvgl_port/)
 assert.match(bspCmake, /REQUIRES[\s\S]*esp_lcd_touch_ft5x06/)
+assert.match(bspCmake, /REQUIRES[\s\S]*esp32-camera/)
 assert.match(bspManifest, /lvgl\/lvgl/)
 assert.match(bspManifest, /espressif\/esp_lvgl_port/)
 assert.match(bspManifest, /espressif\/esp_lcd_touch_ft5x06/)
+assert.match(bspManifest, /espressif\/esp32-camera/)
 assert.match(bspSource, /ESP_ERROR_CHECK\(lvgl_port_init/)
 assert.match(bspSource, /\.buffer_size\s*=\s*BSP_LCD_H_RES \* 50/)
 assert.match(bspSource, /\.double_buffer\s*=\s*true/)
@@ -103,7 +141,29 @@ assert.match(bspSource, /\.y_max\s*=\s*BSP_LCD_H_RES/)
 assert.match(bspSource, /tp_io_cfg\.scl_speed_hz\s*=\s*400000/)
 assert.match(bspSource, /Touch IO init failed, continuing without touch/)
 assert.match(bspSource, /Touch init failed, continuing without touch/)
+assert.match(bspSource, /esp_err_t bsp_i2s_write\(void \*audio_buffer, size_t len, size_t \*bytes_written, uint32_t timeout_ms\)/)
+assert.match(bspSource, /esp_err_t bsp_codec_mute_set\(bool enable\)/)
+assert.match(bspSource, /esp_err_t bsp_codec_volume_set\(int volume, int \*volume_set\)/)
+assert.match(bspSource, /#include "esp_camera\.h"/)
+assert.match(bspSource, /\.pin_sccb_sda\s*=\s*-1/)
+assert.match(bspSource, /\.sccb_i2c_port\s*=\s*BSP_I2C_NUM/)
+assert.match(bspSource, /\.pixel_format\s*=\s*PIXFORMAT_RGB565/)
+assert.match(bspSource, /\.frame_size\s*=\s*FRAMESIZE_QVGA/)
+assert.match(bspSource, /\.fb_count\s*=\s*2/)
+assert.match(bspSource, /\.fb_location\s*=\s*CAMERA_FB_IN_PSRAM/)
+assert.match(bspSource, /\.grab_mode\s*=\s*CAMERA_GRAB_WHEN_EMPTY/)
+assert.match(bspSource, /sensor->id\.PID == GC0308_PID/)
+assert.match(bspSource, /sensor->set_hmirror\(sensor, 1\)/)
+assert.match(bspSource, /esp_err_t app_camera_lcd\(void\)/)
+assert.match(bspSource, /xQueueCreate\(2, sizeof\(camera_fb_t \*\)\)/)
+assert.match(bspSource, /xTaskCreatePinnedToCore\(task_process_camera,[\s\S]*,\s*1\)/)
+assert.match(bspSource, /xTaskCreatePinnedToCore\(task_process_lcd,[\s\S]*,\s*0\)/)
 assert.match(bspHeader, /#define BSP_I2C_NUM\s+I2C_NUM_0/)
+assert.match(bspHeader, /#include "driver\/i2s_std\.h"/)
+assert.match(bspHeader, /esp_err_t bsp_i2s_write\(void \*audio_buffer, size_t len, size_t \*bytes_written, uint32_t timeout_ms\);/)
+assert.match(bspHeader, /#define CAMERA_PIN_XCLK\s+BSP_CAM_XCLK/)
+assert.match(bspHeader, /#define XCLK_FREQ_HZ\s+24000000/)
+assert.match(bspHeader, /esp_err_t app_camera_lcd\(void\);/)
 
 const vision = files(['vision'])
 assert.equal(vision.__mainFile, 'main.cpp')
@@ -123,6 +183,12 @@ assert.match(combined['partitions.csv'], /storage,\s+data,\s+spiffs/)
 const wifiOnly = files(['wifi'])
 assert.match(wifiOnly['main/idf_component.yml'], /lvgl\/lvgl/)
 assert.match(wifiOnly['main/CMakeLists.txt'], /REQUIRES[\s\S]*lvgl/)
+
+const bleOnly = files(['ble'])
+assert.match(bleOnly['sdkconfig.defaults'], /CONFIG_BT_ENABLED=y/)
+assert.match(bleOnly['sdkconfig.defaults'], /# CONFIG_BT_BLE_50_FEATURES_SUPPORTED is not set/)
+assert.match(bleOnly['sdkconfig.defaults'], /CONFIG_BT_BLE_42_FEATURES_SUPPORTED=y/)
+assert.match(bleOnly['partitions.csv'], /factory,\s+app,\s+factory,\s+,\s+7M/)
 
 const speechOnly = files(['speech'])
 assert.match(speechOnly['main/idf_component.yml'], /esp-sr/)

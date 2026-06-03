@@ -17,6 +17,7 @@ export const bleSkill = {
       'CONFIG_LV_MEM_CUSTOM=y',
       'CONFIG_LV_FONT_MONTSERRAT_20=y',
       'CONFIG_BT_ENABLED=y',
+      '# CONFIG_BT_BLE_50_FEATURES_SUPPORTED is not set',
       'CONFIG_BT_BLE_42_FEATURES_SUPPORTED=y',
       'CONFIG_PARTITION_TABLE_CUSTOM=y',
     ],
@@ -25,7 +26,7 @@ export const bleSkill = {
       '# Name,   Type, SubType, Offset,  Size, Flags',
       'nvs,      data, nvs,     0x9000,  0x6000,',
       'phy_init, data, phy,     ,        0x1000,',
-      'factory,  app,  factory, ,        3M,',
+      'factory,  app,  factory, ,        7M,',
     ],
     compileOptions: ['-Wno-unused-const-variable'],
     spiffs: false,
@@ -47,6 +48,15 @@ CONFIG_BT_BLE_42_FEATURES_SUPPORTED=y
 
 ### Extra source files needed
 ble_hidd_demo.c, esp_hidd_prf_api.c, hid_dev.c, hid_device_le_prf.c
+
+### HID volume UI
+- Device name should be "HID" unless the user asks otherwise.
+- Create two 80x80 LVGL buttons centered at x=-50 and x=50.
+- Labels: \`LV_SYMBOL_VOLUME_MID\` for volume down, \`LV_SYMBOL_VOLUME_MAX\` for volume up.
+- On \`LV_EVENT_PRESSING\`: send \`esp_hidd_send_consumer_value(..., HID_CONSUMER_VOLUME_UP/DOWN, true)\`.
+- On \`LV_EVENT_RELEASED\`: send the same key with \`false\`.
+- Only send HID reports when \`sec_conn\` is true.
+- Remove the official demo's automatic volume-up/down task; touch events drive HID.
 
 ### Pitfalls
 - nvs_flash_init() before BT stack init

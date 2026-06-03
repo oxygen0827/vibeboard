@@ -41,6 +41,11 @@ const board = {
       skillId: 'camera',
       forbiddenApis: ['dvp_pwdn', 'GPIO46'],
     },
+    {
+      id: 'audio.codec-playback',
+      skillId: 'audio',
+      forbiddenApis: ['audio_player_mute_fn', 'audio_player_write_fn', 'audio_player_std_clock'],
+    },
   ],
 }
 
@@ -85,6 +90,12 @@ const debugInjectedProjectValidation = validateProjectIncludes({
   'main/main.c': debugInjected,
 }, [])
 assert.equal(debugInjectedProjectValidation.ok, true)
+
+const espCheckInjected = normalizeGeneratedSource(
+  '#include "esp32_s3_szp.h"\nvoid app_main(void) { ESP_RETURN_ON_ERROR(bsp_codec_init(), "app", "codec"); }\n',
+  'main/main.c',
+)
+assert.match(espCheckInjected, /#include "esp_check\.h"/)
 
 const normalized = normalizeGeneratedSourceFiles({
   'main/main.c': broken,
@@ -156,6 +167,12 @@ const cameraContractViolation = validateProjectIncludes({
 }, ['camera'], board)
 assert.equal(cameraContractViolation.ok, false)
 assert.match(cameraContractViolation.message, /camera\.capture forbids dvp_pwdn/)
+
+const audioCallbackNameViolation = validateProjectIncludes({
+  'main/main.c': '#include "esp32_s3_szp.h"\n#include "audio_player.h"\nstatic esp_err_t audio_player_write_fn(void *audio_buffer, size_t len, size_t *bytes_written, uint32_t timeout_ms) { return bsp_i2s_write(audio_buffer, len, bytes_written, timeout_ms); }\nvoid app_main(void) {}\n',
+}, ['audio'], board)
+assert.equal(audioCallbackNameViolation.ok, false)
+assert.match(audioCallbackNameViolation.message, /audio\.codec-playback forbids audio_player_write_fn/)
 
 const previewContractOk = validateLvglPreviewContract({
   'main/app_ui.h': '#pragma once\n#include "lvgl.h"\nvoid app_ui_create(lv_obj_t *root);\nvoid app_ui_start(void);\n',

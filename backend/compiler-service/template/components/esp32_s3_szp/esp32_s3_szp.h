@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
+#include "driver/i2s_std.h"
 #include "esp_err.h"
 
 #ifdef __cplusplus
@@ -55,6 +56,25 @@ extern "C" {
 #define BSP_CAM_D5          GPIO_NUM_6
 #define BSP_CAM_D6          GPIO_NUM_4
 #define BSP_CAM_D7          GPIO_NUM_9
+
+/* Camera aliases used by the official GC0308 tutorial examples */
+#define CAMERA_PIN_PWDN     (-1)
+#define CAMERA_PIN_RESET    (-1)
+#define CAMERA_PIN_XCLK     BSP_CAM_XCLK
+#define CAMERA_PIN_SIOD     BSP_I2C_SDA
+#define CAMERA_PIN_SIOC     BSP_I2C_SCL
+#define CAMERA_PIN_D7       BSP_CAM_D7
+#define CAMERA_PIN_D6       BSP_CAM_D6
+#define CAMERA_PIN_D5       BSP_CAM_D5
+#define CAMERA_PIN_D4       BSP_CAM_D4
+#define CAMERA_PIN_D3       BSP_CAM_D3
+#define CAMERA_PIN_D2       BSP_CAM_D2
+#define CAMERA_PIN_D1       BSP_CAM_D1
+#define CAMERA_PIN_D0       BSP_CAM_D0
+#define CAMERA_PIN_VSYNC    BSP_CAM_VSYNC
+#define CAMERA_PIN_HREF     BSP_CAM_HREF
+#define CAMERA_PIN_PCLK     BSP_CAM_PCLK
+#define XCLK_FREQ_HZ        24000000
 
 /* Boot button */
 #define BSP_BOOT_BTN        GPIO_NUM_0
@@ -110,6 +130,9 @@ esp_err_t bsp_display_brightness_set(int percent);
 /** Init camera (DVP, 24 MHz XCLK). Requires esp_camera managed component. */
 esp_err_t bsp_camera_init(void);
 
+/** Start the tutorial camera-to-LCD loop using two FreeRTOS tasks. */
+esp_err_t app_camera_lcd(void);
+
 /** Init I2S bus for audio (I2S_NUM_1). */
 esp_err_t bsp_audio_init(void);
 
@@ -117,7 +140,16 @@ esp_err_t bsp_audio_init(void);
 esp_err_t bsp_codec_init(void);
 
 /** Change codec sample rate / bit-width / channel count at runtime. */
-esp_err_t bsp_codec_set_fs(uint32_t rate, uint32_t bits, uint32_t ch);
+esp_err_t bsp_codec_set_fs(uint32_t rate, uint32_t bits_cfg, i2s_slot_mode_t ch);
+
+/** Write decoded PCM bytes to the speaker output path. */
+esp_err_t bsp_i2s_write(void *audio_buffer, size_t len, size_t *bytes_written, uint32_t timeout_ms);
+
+/** Mute/unmute speaker output. */
+esp_err_t bsp_codec_mute_set(bool enable);
+
+/** Set speaker volume, 0-100. */
+esp_err_t bsp_codec_volume_set(int volume, int *volume_set);
 
 /** Mount SPIFFS partition at /spiffs. */
 esp_err_t bsp_spiffs_mount(void);

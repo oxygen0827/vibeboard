@@ -12,10 +12,12 @@ import {
   buildManifestCodeGenerationMessages,
   buildPreviewRepairMessages,
   buildProgramManifestMessages,
+  buildScopeClarificationMessages,
   buildSourceContractRepairMessages,
   inferSkillsFromRequest,
   parseGeneratedFilesResponseWithOptions,
   parseProgramManifestResponse,
+  parseScopeClarificationResponse,
 } from '../utils/codeGeneration'
 import {
   normalizeGeneratedSourceFiles,
@@ -315,22 +317,72 @@ export default function ChatPanel({
     setGenerating(true)
     setKnowledgeCard(null)
     setGenerationWorkflow(updateGenerationWorkflow(createGenerationWorkflow(), 'intent', WORKFLOW_STEP_STATUS.ACTIVE, '解析用户需求和技能'))
-    setMessages(prev => [...prev, { role: 'user', content: text }, { role: 'assistant', content: '正在生成工程文件...' }])
+    setMessages(prev => [...prev, { role: 'user', content: text }, { role: 'assistant', content: '正在结合板级能力界定功能范围...' }])
     try {
       const inferredSkills = inferSkillsFromRequest(board, text, selectedSkills)
       if (inferredSkills.join(',') !== selectedSkills.join(',')) {
         onSkillsChange?.(inferredSkills)
       }
 
+      setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'scope', WORKFLOW_STEP_STATUS.ACTIVE, '按当前板子外设/BSP/官方例程界定功能'))
+      const scopeContent = await runVibeBoardAgentTask(
+        AGENT_TASK_TYPES.SCOPE_CLARIFICATION,
+        buildScopeClarificationMessages({
+          board,
+          selectedSkills: inferredSkills,
+          userRequest: text,
+          existingFiles: projectFiles,
+        }),
+        { userRequest: text, inferredSkills },
+      )
+      const scopeResult = parseScopeClarificationResponse(scopeContent)
+      if (!scopeResult.ok) {
+        setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'scope', WORKFLOW_STEP_STATUS.FAILED, scopeResult.errors.join(', ')))
+        setMessages(prev => {
+          const next = [...prev]
+          next[next.length - 1] = {
+            role: 'assistant',
+            content: `功能范围界定失败：${scopeResult.errors.join(', ')}`,
+            error: true,
+          }
+          return next
+        })
+        return
+      }
+      const scopedSkills = scopeResult.selectedSkillIds.length > 0 ? scopeResult.selectedSkillIds : inferredSkills
+      if (scopedSkills.join(',') !== inferredSkills.join(',')) {
+        onSkillsChange?.(scopedSkills)
+      }
+      if (scopeResult.status === 'needs_clarification') {
+        setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'scope', WORKFLOW_STEP_STATUS.FAILED, '等待用户确认功能边界'))
+        setMessages(prev => {
+          const next = [...prev]
+          const questions = scopeResult.questions.length > 0
+            ? scopeResult.questions.map((question, index) => `${index + 1}. ${question}`).join('\n')
+            : '请补充这个功能要使用板子上的哪些外设和第一版验收目标。'
+          const constraints = scopeResult.constraints.length > 0
+            ? `\n\n板级约束：\n${scopeResult.constraints.map(item => `- ${item}`).join('\n')}`
+            : ''
+          next[next.length - 1] = {
+            role: 'assistant',
+            content: `先确认功能边界，再生成代码。\n\n${scopeResult.summary ? `已知范围：${scopeResult.summary}\n\n` : ''}${questions}${constraints}`,
+          }
+          return next
+        })
+        return
+      }
+      setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'scope', WORKFLOW_STEP_STATUS.DONE, scopeResult.summary || '功能范围已限定到板级能力'))
+
       setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'manifest', WORKFLOW_STEP_STATUS.ACTIVE, '生成 Program Manifest'))
       const content = await runVibeBoardAgentTask(
         AGENT_TASK_TYPES.PROGRAM_MANIFEST,
         buildProgramManifestMessages({
           board,
-          selectedSkills: inferredSkills,
+          selectedSkills: scopedSkills,
           userRequest: text,
+          existingFiles: projectFiles,
         }),
-        { userRequest: text, inferredSkills }
+        { userRequest: text, inferredSkills: scopedSkills, scope: scopeResult }
       )
       setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'validate-manifest', WORKFLOW_STEP_STATUS.ACTIVE, '校验 Manifest'))
       const manifestResult = parseProgramManifestResponse(content, board)

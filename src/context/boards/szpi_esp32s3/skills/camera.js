@@ -28,15 +28,30 @@ export const cameraSkill = {
   },
   systemPrompt: `## Camera — GC0308 DVP
 
+### Hardware facts
+- Onboard camera is GC0308 DVP.
+- XCLK=GPIO5 at 24MHz.
+- D0-D7={16,18,8,17,15,6,4,9}, VSYNC=GPIO3, HREF=GPIO46, PCLK=GPIO7.
+- SCCB/I2C reuses BSP_I2C_NUM: pin_sccb_sda=-1, pin_sccb_scl=GPIO2, sccb_i2c_port=0.
+- Live LCD preview uses PIXFORMAT_RGB565 + FRAMESIZE_QVGA + CAMERA_FB_IN_PSRAM.
+
 ### Init (CRITICAL order)
 \`\`\`c
-bsp_i2c_init(); pca9557_init();
-bsp_lcd_init();
+ESP_ERROR_CHECK(bsp_i2c_init());
+ESP_ERROR_CHECK(pca9557_init());
+ESP_ERROR_CHECK(bsp_lcd_init());
 vTaskDelay(500 / portTICK_PERIOD_MS); // LCD must stabilize first
-bsp_camera_init();
+ESP_ERROR_CHECK(bsp_camera_init());
+ESP_ERROR_CHECK(app_camera_lcd());
 \`\`\`
 
 ### Camera → LCD loop
+Prefer BSP helper:
+\`\`\`c
+ESP_ERROR_CHECK(app_camera_lcd());
+\`\`\`
+
+Manual loop only when explicitly requested:
 \`\`\`c
 camera_fb_t *fb = esp_camera_fb_get();
 if (fb) {
@@ -54,5 +69,6 @@ idf_component_register(SRCS "who_human_face_detection.cpp" "esp32_s3_szp.c" "mai
 ### Pitfalls
 - 500ms delay between bsp_lcd_init() and bsp_camera_init() required
 - dvp_pwdn(0) is inside bsp_camera_init() — don't call manually
-- GPIO46 has pull-down — don't drive HIGH at boot`,
+- GPIO46 has pull-down — don't drive HIGH at boot
+- Do not hand-write camera_config_t unless the user asks for low-level camera code; BSP already encodes pin_sccb_sda=-1, RGB565, QVGA, PSRAM fb_count=2, and GC0308 hmirror=1`,
 }

@@ -83,9 +83,13 @@ bsp_lcd_init()
 bsp_lvgl_start()      // lcd + touch + backlight
 bsp_display_brightness_set(int pct)
 bsp_camera_init()
+app_camera_lcd()       // GC0308 RGB565 QVGA → LCD two-task loop
 bsp_audio_init()
 bsp_codec_init()
 bsp_codec_set_fs(rate, bits, ch)
+bsp_i2s_write(buffer, len, bytes_written, timeout_ms)
+bsp_codec_mute_set(enable)
+bsp_codec_volume_set(volume, volume_set)
 bsp_spiffs_mount()
 bsp_sdcard_mount()
 lcd_draw_bitmap(x, y, xe, ye, data)
@@ -107,6 +111,8 @@ esp_get_feed_data(raw, buf, len)
 11. NVS required for WiFi/BLE — always init nvs_flash_init() first
 12. Use ESP_ERROR_CHECK(...), not BSP_ERROR_CHECK(...)
 13. If using ESP_LOGI/ESP_LOGE/ESP_LOGW, include "esp_log.h" in that file
+14. If using ESP_RETURN_ON_ERROR/ESP_GOTO_ON_ERROR/ESP_RETURN_ON_FALSE, include "esp_check.h"
+15. MP3 player callback functions must use unique static names; do not define audio_player_mute_fn/audio_player_write_fn/audio_player_std_clock
 
 ## LVGL Display Contract
 - For LVGL apps call only \`bsp_i2c_init(); pca9557_init(); bsp_lvgl_start();\` before creating UI.
@@ -117,6 +123,33 @@ esp_get_feed_data(raw, buf, len)
 - FT6336 touch is FT5x06-compatible: \`x_max=240\`, \`y_max=320\`, reset/int GPIO = NC.
 - \`CONFIG_LV_COLOR_16_SWAP=y\` is required for correct 16-bit colors.
 - Official demos require \`#include "demos/lv_demos.h"\` and only one \`lv_demo_*\` should run at a time.
+
+## GC0308 Camera Contract
+- Init order for camera-to-LCD apps: \`bsp_i2c_init(); pca9557_init(); bsp_lcd_init(); vTaskDelay(500ms); bsp_camera_init(); app_camera_lcd();\`.
+- The onboard camera is GC0308 on DVP. Use RGB565 + \`FRAMESIZE_QVGA\`; it matches the ST7789 LCD path.
+- The BSP owns the camera pin map: XCLK=GPIO5, D0-D7={16,18,8,17,15,6,4,9}, VSYNC=GPIO3, HREF=GPIO46, PCLK=GPIO7.
+- SCCB must reuse the existing I2C bus: \`pin_sccb_sda=-1\`, \`pin_sccb_scl=GPIO2\`, \`sccb_i2c_port=0\`. Do not initialize another I2C/SCCB bus.
+- Camera frame buffers must be in PSRAM: \`fb_count=2\`, \`fb_location=CAMERA_FB_IN_PSRAM\`, \`grab_mode=CAMERA_GRAB_WHEN_EMPTY\`.
+- For GC0308 set horizontal mirror: \`sensor->set_hmirror(sensor, 1)\`.
+- Prefer \`app_camera_lcd()\` for live preview; it creates the tutorial queue and two pinned tasks.
+
+## WiFi LVGL Contract
+- WiFi and BLE require NVS first. If the platform debug transport is enabled, it may already own WiFi STA init; do not duplicate one-time WiFi init unless explicitly replacing it.
+- For LVGL WiFi scan/connect UIs, every LVGL mutation outside the LVGL task must be wrapped by \`lvgl_port_lock(0)\` / \`lvgl_port_unlock()\`.
+- 320x240 password entry should use compact controls such as rollers for digits/lowercase/uppercase.
+- Chinese WiFi SSIDs require a generated C font such as \`font_alipuhui20.c\` plus \`LV_FONT_DECLARE(font_alipuhui20)\`; do not invent a giant font file unless provided.
+- WiFi/LVGL apps use a custom partition table with factory >= 7M.
+
+## BLE HID Contract
+- BLE HID examples use Bluedroid BLE 4.2 on ESP32-S3; Classic Bluetooth is not supported.
+- Required config: \`CONFIG_BT_ENABLED=y\`, \`CONFIG_BT_BLE_42_FEATURES_SUPPORTED=y\`, and \`# CONFIG_BT_BLE_50_FEATURES_SUPPORTED is not set\`.
+- HID volume UI uses two 80x80 LVGL buttons and sends \`HID_CONSUMER_VOLUME_UP/DOWN\` on PRESSING/RELEASED only after secure connection.
+- Remove official demo auto-volume tasks; user actions should drive HID reports.
+
+## MP3 / Audio Contract
+- MP3 player init order: \`bsp_i2c_init(); pca9557_init(); bsp_lvgl_start(); bsp_spiffs_mount(); bsp_codec_init(); mp3_player_init();\`.
+- SPIFFS MP3 filenames should be ASCII. SPIFFS examples use \`CONFIG_SPIFFS_OBJ_NAME_LEN=128\` and a \`storage\` partition.
+- Use \`bsp_i2s_write()\`, \`bsp_codec_set_fs()\`, \`bsp_codec_mute_set()\`, and \`bsp_codec_volume_set()\`; do not invent raw codec helpers in app code.
 
 ## Always-On Debug Transport
 Every VibeBoard ESP-IDF project includes platform-owned \`vibeboard_debug.c/.h\`.

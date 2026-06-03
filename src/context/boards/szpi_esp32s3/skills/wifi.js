@@ -49,7 +49,14 @@ ESP_ERROR_CHECK(bsp_i2c_init()); ESP_ERROR_CHECK(pca9557_init()); ESP_ERROR_CHEC
 factory, app, factory, , 7M
 \`\`\`
 
+### LVGL WiFi scan/connect UI
+- Wrap every LVGL mutation with \`lvgl_port_lock(0)\` / \`lvgl_port_unlock()\` when it is not running inside the LVGL task.
+- For a 320x240 password page, prefer compact rollers for digits/lowercase/uppercase plus OK/delete/back buttons.
+- Scan list examples should cap visible SSIDs at 10 unless the user asks for pagination.
+- Chinese SSIDs require a generated C font such as \`font_alipuhui20.c\` and \`LV_FONT_DECLARE(font_alipuhui20)\`. Do not invent or inline a huge font file; if no font asset is provided, use Montserrat and keep the UI ASCII-safe.
+
 ### Pitfalls
 - nvs_flash_init() before esp_netif_init() or any WiFi/BLE
-- WiFi partition must be at least 7M (default 3M is too small)`,
+- WiFi partition must be at least 7M (default 3M is too small)
+- Avoid duplicating platform debug WiFi init; if WiFi is already started, reuse it or clearly stop/reconfigure it`,
 }

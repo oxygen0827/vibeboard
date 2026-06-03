@@ -1,5 +1,6 @@
 export const GENERATION_WORKFLOW_STEPS = [
   { id: 'intent', label: 'Intent' },
+  { id: 'scope', label: 'Scope' },
   { id: 'manifest', label: 'Manifest' },
   { id: 'validate-manifest', label: 'Validate Manifest' },
   { id: 'generate-files', label: 'Generate Files' },
