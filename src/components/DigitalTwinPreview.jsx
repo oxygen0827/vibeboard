@@ -267,7 +267,8 @@ function ManifestWidget({ widget, interactionState, setInteractionState, setLogs
       <button
         className="dt-manifest-widget dt-manifest-button"
         style={style}
-        onClick={() => {
+        onClick={event => {
+          event.stopPropagation()
           setInteractionState(state => applyManifestWidgetAction(state, widget))
           setLogs(logs => addLog(logs, widget.action || `${widget.id} clicked`))
         }}
@@ -285,7 +286,10 @@ function ManifestWidget({ widget, interactionState, setInteractionState, setLogs
         max="100"
         value={resolveManifestWidgetValue(widget, interactionState)}
         style={style}
+        onClick={event => event.stopPropagation()}
+        onPointerDown={event => event.stopPropagation()}
         onChange={event => {
+          event.stopPropagation()
           setInteractionState(state => updateManifestSliderValue(state, event.target.value))
           setLogs(logs => addLog(logs, `slider ${event.target.value}`))
         }}
@@ -294,19 +298,41 @@ function ManifestWidget({ widget, interactionState, setInteractionState, setLogs
   }
   if (widget.type === 'dropdown') {
     return (
-      <select className="dt-manifest-widget dt-manifest-select" style={style} defaultValue={widget.options[0] || ''}>
+      <select
+        className="dt-manifest-widget dt-manifest-select"
+        style={style}
+        defaultValue={widget.options[0] || ''}
+        onClick={event => event.stopPropagation()}
+      >
         {(widget.options.length ? widget.options : [text]).map(option => <option key={option}>{option}</option>)}
       </select>
     )
   }
   if (widget.type === 'textarea') {
-    return <input className="dt-manifest-widget dt-manifest-input" style={style} placeholder={text} />
+    return (
+      <input
+        className="dt-manifest-widget dt-manifest-input"
+        style={style}
+        placeholder={text}
+        onClick={event => event.stopPropagation()}
+      />
+    )
   }
   if (widget.type === 'list') {
     const items = widget.options.length ? widget.options : [text]
     return (
       <div className="dt-manifest-widget dt-manifest-list" style={style}>
-        {items.map(item => <button key={item} onClick={() => setLogs(logs => addLog(logs, `${widget.id}: ${item}`))}>{item}</button>)}
+        {items.map(item => (
+          <button
+            key={item}
+            onClick={event => {
+              event.stopPropagation()
+              setLogs(logs => addLog(logs, `${widget.id}: ${item}`))
+            }}
+          >
+            {item}
+          </button>
+        ))}
       </div>
     )
   }
@@ -343,6 +369,7 @@ function ManifestScreen({ manifest, setLogs }) {
 
 function LvglFramebufferScreen({ preview, previewState, interaction, fallback, onTap }) {
   const imageUrl = previewDataUrl(preview)
+  const hasFramebuffer = Boolean(imageUrl)
   const rendererLabel = preview?.renderer === 'real-lvgl-8.3-headless' ? 'LVGL' : 'Preview'
   const badgeClass = previewState === PREVIEW_STATUS.SUCCESS
     ? 'ok'
@@ -370,7 +397,7 @@ function LvglFramebufferScreen({ preview, previewState, interaction, fallback, o
       ) : (
         <div className="dt-lvgl-fallback">{fallback}</div>
       )}
-      {interaction && (
+      {hasFramebuffer && interaction && (
         <span
           className="dt-lvgl-touch-dot"
           style={{
@@ -379,7 +406,7 @@ function LvglFramebufferScreen({ preview, previewState, interaction, fallback, o
           }}
         />
       )}
-      {previewState !== PREVIEW_STATUS.IDLE && (
+      {hasFramebuffer && previewState !== PREVIEW_STATUS.IDLE && (
         <span className={`dt-lvgl-badge ${badgeClass}`}>
           {previewState === PREVIEW_STATUS.RENDERING ? 'Rendering' : rendererLabel}
         </span>
