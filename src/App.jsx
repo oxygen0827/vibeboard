@@ -99,6 +99,11 @@ function loadSettings() {
 }
 function saveSettings(s) { localStorage.setItem(STORAGE_KEY, JSON.stringify(withDefaultSettings(s))) }
 
+function newCompileSessionId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
+  return `project-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
 export default function App() {
   const [settings, setSettings] = useState(loadSettings)
   const [showSettings, setShowSettings] = useState(false)
@@ -106,10 +111,7 @@ export default function App() {
   const [rightTab, setRightTab] = useState('chat')
   const [pendingLogAnalysis, setPendingLogAnalysis] = useState(null)
   const [pendingBuildRepair, setPendingBuildRepair] = useState(null)
-  const [compileSessionId, setCompileSessionId] = useState(() => {
-    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
-    return `project-${Date.now()}-${Math.random().toString(16).slice(2)}`
-  })
+  const [compileSessionId, setCompileSessionId] = useState(newCompileSessionId)
   const [boardId, setBoardId] = useState(loadInitialBoardId)
   const [selectedSkills, setSelectedSkills] = useState([])
   const board = BOARDS[boardId]
@@ -128,8 +130,18 @@ export default function App() {
   }
   function handleBoardChange(id) {
     setBoardId(id)
-    setCompileSessionId(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `project-${Date.now()}-${Math.random().toString(16).slice(2)}`)
+    setCompileSessionId(newCompileSessionId())
     localStorage.setItem(BOARD_STORAGE_KEY, id)
+  }
+
+  function resetProjectState() {
+    const files = getDefaultFiles(boardId)
+    setProjectFiles(files)
+    setSelectedSkills([])
+    setActiveFile(Object.keys(files)[0] || '')
+    setPendingLogAnalysis(null)
+    setPendingBuildRepair(null)
+    setCompileSessionId(newCompileSessionId())
   }
 
   useEffect(() => {
@@ -236,6 +248,7 @@ export default function App() {
                 onConsumeRepairRequest={() => setPendingBuildRepair(null)}
                 selectedSkills={selectedSkills}
                 onSkillsChange={setSelectedSkills}
+                onResetProject={resetProjectState}
               />
             </div>
             <div className={`right-tab-panel ${rightTab === 'log' ? 'active' : ''}`}>

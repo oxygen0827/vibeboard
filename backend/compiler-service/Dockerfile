@@ -9,6 +9,8 @@ WORKDIR /compiler
 
 # Copy project template with the vendored BSP component
 COPY template/ ./template/
+COPY examples/ ./examples/
+COPY ota_receiver/ ./ota_receiver/
 
 # Pre-warm the cmake/component cache so first user build is faster.
 RUN cd /tmp && \

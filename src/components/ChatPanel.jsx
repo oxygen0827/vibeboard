@@ -79,7 +79,7 @@ function savePatches(patches) {
   localStorage.setItem('skillPatches', JSON.stringify(patches))
 }
 
-export default function ChatPanel({ settings, board, boardId, onInsertCode, initialPrompt, onConsumePrompt, repairRequest, onConsumeRepairRequest, selectedSkills = [], onSkillsChange }) {
+export default function ChatPanel({ settings, board, boardId, onInsertCode, initialPrompt, onConsumePrompt, repairRequest, onConsumeRepairRequest, selectedSkills = [], onSkillsChange, onResetProject }) {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
@@ -361,9 +361,14 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
   }
 
   function clearChat() {
+    abortRef.current?.abort()
     setMessages([])
     setKnowledgeCard(null)
     setGenerationWorkflow(createGenerationWorkflow())
+    setInput('')
+    setStreaming(false)
+    setGenerating(false)
+    onResetProject?.()
   }
 
   function acceptKnowledge() {
@@ -460,7 +465,7 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
         </div>
         <div className="chat-header-actions">
           {messages.length > 0 && (
-            <button className="icon-btn" onClick={clearChat} title="清空对话">🗑</button>
+            <button className="icon-btn" onClick={clearChat} title="清空对话并重置工程">🗑</button>
           )}
           <div className={`status-dot ${hasConfig ? 'online' : 'offline'}`} title={hasConfig ? settings.model : '未配置 API'} />
         </div>
