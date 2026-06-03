@@ -30,6 +30,10 @@ export const wifiSkill = {
   },
   systemPrompt: `## WiFi
 
+### Platform debug transport
+VibeBoard projects already include \`vibeboard_debug_start()\`, which initializes NVS/WiFi STA enough for USB + WebSocket log streaming.
+For app networking, reuse the existing station runtime where possible. Do not duplicate \`esp_netif_init()\`, \`esp_event_loop_create_default()\`, or \`esp_wifi_init()\` unless the user explicitly asks to replace the debug WiFi runtime.
+
 ### NVS init (REQUIRED — always first)
 \`\`\`c
 esp_err_t ret = nvs_flash_init();

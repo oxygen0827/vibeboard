@@ -100,6 +100,11 @@ const DEFAULT_LVGL_FONT = 'lv_font_montserrat_20'
 const ENABLED_LVGL_FONTS = new Set([DEFAULT_LVGL_FONT])
 const APP_UI_CONTRACT_SOURCE = 'main/app_ui.c'
 const APP_UI_CONTRACT_HEADER = 'main/app_ui.h'
+const VIBEBOARD_DEBUG_HEADER = 'vibeboard_debug.h'
+const VIBEBOARD_DEBUG_SOURCE_PATHS = new Set([
+  'main/vibeboard_debug.c',
+  'main/vibeboard_debug.h',
+])
 
 const APP_UI_FORBIDDEN_INCLUDES = [
   'esp32_s3_szp.h',
@@ -298,6 +303,7 @@ function validateDriverContractUsage(projectFiles, selectedSkills = [], board = 
 
   for (const [path, content] of Object.entries(projectFiles || {})) {
     if (!/\.(c|cc|cpp|cxx|h|hpp)$/.test(path)) continue
+    if (VIBEBOARD_DEBUG_SOURCE_PATHS.has(path)) continue
     const source = String(content || '')
 
     for (const contract of contracts) {
@@ -443,6 +449,7 @@ function validateSkillApiUsage(projectFiles, selectedSkills = []) {
 
   for (const [path, content] of Object.entries(projectFiles || {})) {
     if (!/\.(c|cc|cpp|cxx|h|hpp)$/.test(path)) continue
+    if (VIBEBOARD_DEBUG_SOURCE_PATHS.has(path)) continue
     const source = String(content || '')
 
     for (const rule of SKILL_API_RULES) {
@@ -479,7 +486,7 @@ export function normalizeGeneratedSourceFiles(projectFiles) {
       updates[path] = content
       continue
     }
-    const next = normalizeGeneratedSource(String(content || ''))
+    const next = normalizeGeneratedSource(String(content || ''), path)
     updates[path] = next
     if (next !== content) changed = true
   }
@@ -487,7 +494,7 @@ export function normalizeGeneratedSourceFiles(projectFiles) {
   return { files: updates, changed }
 }
 
-export function normalizeGeneratedSource(content) {
+export function normalizeGeneratedSource(content, path = '') {
   let next = String(content || '')
 
   next = next.replace(/\bBSP_ERROR_CHECK\s*\(/g, 'ESP_ERROR_CHECK(')
@@ -499,14 +506,39 @@ export function normalizeGeneratedSource(content) {
     }
   }
 
-  if (/\bESP_ERROR_CHECK\s*\(/.test(next)) {
-    next = ensureSystemInclude(next, 'esp_err.h')
-  }
   if (/\bESP_LOG[A-Z]\s*\(/.test(next)) {
     next = ensureSystemInclude(next, 'esp_log.h')
   }
+  if (isMainEntrypointPath(path)) {
+    next = ensureVibeBoardDebugStart(next)
+  }
+  if (/\bESP_ERROR_CHECK\s*\(/.test(next)) {
+    next = ensureSystemInclude(next, 'esp_err.h')
+  }
 
   return next
+}
+
+function isMainEntrypointPath(path) {
+  return path === 'main/main.c' || path === 'main/main.cpp' || path === 'main.c' || path === 'main.cpp'
+}
+
+function ensureVibeBoardDebugStart(content) {
+  if (!/\bapp_main\s*\(/.test(content)) return content
+
+  let next = content
+  next = ensureSystemInclude(next, VIBEBOARD_DEBUG_HEADER)
+
+  if (/\bvibeboard_debug_start\s*\(/.test(next)) {
+    return next
+  }
+
+  const appMainPattern = /((?:extern\s+"C"\s+)?void\s+app_main\s*\(\s*void\s*\)\s*)\{/
+  if (!appMainPattern.test(next)) {
+    return next
+  }
+
+  return next.replace(appMainPattern, `$1{\n    ESP_ERROR_CHECK(vibeboard_debug_start());`)
 }
 
 function ensureSystemInclude(content, header) {

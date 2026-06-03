@@ -108,6 +108,16 @@ esp_get_feed_data(raw, buf, len)
 12. Use ESP_ERROR_CHECK(...), not BSP_ERROR_CHECK(...)
 13. If using ESP_LOGI/ESP_LOGE/ESP_LOGW, include "esp_log.h" in that file
 
+## Always-On Debug Transport
+Every VibeBoard ESP-IDF project includes platform-owned \`vibeboard_debug.c/.h\`.
+The app entrypoint is auto-normalized to call:
+\`\`\`c
+ESP_ERROR_CHECK(vibeboard_debug_start());
+\`\`\`
+This keeps USB serial logging active and also starts WiFi STA + WebSocket logs at \`ws://<device-ip>:3232/log\`.
+Do not generate or overwrite \`main/vibeboard_debug.c\`, \`main/vibeboard_debug.h\`, CMake, sdkconfig, or partitions.
+If writing app WiFi features, assume the platform may already own NVS, \`esp_netif_init()\`, default event loop, and \`esp_wifi_init()\`; do not duplicate one-time WiFi initialization unless explicitly requested.
+
 ## Required sdkconfig.defaults
 \`\`\`
 CONFIG_IDF_TARGET="esp32s3"

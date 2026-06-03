@@ -62,9 +62,10 @@ export default function ProjectEditor({ files, generatedFiles = {}, referenceFil
   const activeIsGenerated = activeFile ? generatedFiles[activeFile] !== undefined && files[activeFile] === undefined : false
   const activeContent = activeIsReference ? referenceFiles[activeFile] : displayFiles[activeFile]
   const srcFiles = allFiles.filter(f => !isConfigPath(f))
+  const sourceFilePaths = displayFilePaths.filter(f => !isConfigPath(f))
   const cfgFiles = displayFilePaths.filter(f => isConfigPath(f) || f.startsWith('__'))
   const mainFile = srcFiles.find(f => /(^|\/)main\.(c|cpp)$/.test(f)) || srcFiles[0]
-  const sourceTree = buildTree(srcFiles)
+  const sourceTree = buildTree(sourceFilePaths)
   const configTree = buildTree(cfgFiles)
   const referenceTree = buildTree(referencePaths)
 
@@ -145,6 +146,7 @@ export default function ProjectEditor({ files, generatedFiles = {}, referenceFil
   }
 
   const activeIsConfig = activeFile ? isConfigPath(activeFile) : false
+  const activeReadOnly = activeIsReference || (activeIsGenerated && !activeIsConfig)
 
   return (
     <div className="project-editor">
@@ -189,6 +191,10 @@ export default function ProjectEditor({ files, generatedFiles = {}, referenceFil
             <div className="pe-config-notice reference">
               板级库只读 · 编译时由后台模板自动加入
             </div>
+          ) : activeReadOnly ? (
+            <div className="pe-config-notice">
+              自动生成系统源码 · 编译时由平台加入
+            </div>
           ) : activeIsConfig && (
             <div className="pe-config-notice">
               {activeIsGenerated ? '⚙ 自动生成配置 · 编辑后会作为覆盖版本保存' : '⚙ 已编辑配置 · 系统关键 CMake 仍会在编译时优先使用自动生成版本'}
@@ -203,7 +209,7 @@ export default function ProjectEditor({ files, generatedFiles = {}, referenceFil
                 theme="vs-dark"
                 value={activeContent}
                 onChange={val => {
-                  if (!activeIsReference) onFileChange({ ...files, [activeFile]: val || '' }, activeFile)
+                  if (!activeReadOnly) onFileChange({ ...files, [activeFile]: val || '' }, activeFile)
                 }}
                 options={{
                   fontSize: 13,
@@ -218,8 +224,8 @@ export default function ProjectEditor({ files, generatedFiles = {}, referenceFil
                   padding: { top: 12, bottom: 12 },
                   smoothScrolling: true,
                   cursorSmoothCaretAnimation: 'on',
-                  readOnly: activeIsReference,
-                  domReadOnly: activeIsReference,
+                  readOnly: activeReadOnly,
+                  domReadOnly: activeReadOnly,
                 }}
               />
             ) : (

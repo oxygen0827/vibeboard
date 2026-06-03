@@ -1,12 +1,15 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import {
   createWsLogStream, createSerialLogStream,
+  describeSerialPort, getPairedSerialDebugPorts, isWebSerialSupported,
   parseLine, LEVEL_COLOR,
 } from '../utils/logStream'
 import { loadOtaIp } from '../utils/ota'
 import './LogPanel.css'
 
 const MAX_LINES = 1000
+const SERIAL_AUTO_CONNECT_KEY = 'vibeboard-log-serial-auto-connect'
+const SERIAL_AUTO_POLL_MS = 2000
 
 export default function LogPanel({ onAnalyze }) {
   const [lines,      setLines]      = useState([])
@@ -16,10 +19,14 @@ export default function LogPanel({ onAnalyze }) {
   const [wifiIp,     setWifiIp]     = useState(loadOtaIp)
   const [connStatus, setConnStatus] = useState('idle') // idle|connecting|connected|disconnected|error
   const [autoScroll, setAutoScroll] = useState(true)
+  const [serialHint, setSerialHint] = useState('')
 
   const streamRef  = useRef(null)
   const bottomRef  = useRef(null)
   const listRef    = useRef(null)
+  const sourceRef  = useRef(source)
+  const statusRef  = useRef(connStatus)
+  const autoSerialBlockedRef = useRef(localStorage.getItem(SERIAL_AUTO_CONNECT_KEY) === 'blocked')
 
   /* Auto-scroll */
   useEffect(() => {
@@ -41,7 +48,33 @@ export default function LogPanel({ onAnalyze }) {
     })
   }, [])
 
-  function updateStatus(s) { setConnStatus(s) }
+  useEffect(() => { sourceRef.current = source }, [source])
+  useEffect(() => { statusRef.current = connStatus }, [connStatus])
+
+  function updateStatus(s) {
+    if (s === 'disconnected') {
+      streamRef.current = null
+    }
+    setConnStatus(s)
+  }
+
+  const connectSerialPort = useCallback(async (port, { automatic = false } = {}) => {
+    streamRef.current?.stop()
+    setSource('serial')
+    setLines(prev => automatic ? prev : [])
+    setConnStatus('connecting')
+    setSerialHint(`${automatic ? '自动连接' : '连接'} ${describeSerialPort(port)}`)
+
+    try {
+      streamRef.current = await createSerialLogStream(addLine, updateStatus, { port })
+      autoSerialBlockedRef.current = false
+      localStorage.removeItem(SERIAL_AUTO_CONNECT_KEY)
+    } catch (e) {
+      streamRef.current = null
+      setConnStatus('error')
+      addLine(`[错误] ${e.message}`, 'serial')
+    }
+  }, [addLine])
 
   async function connect() {
     streamRef.current?.stop()
@@ -52,6 +85,9 @@ export default function LogPanel({ onAnalyze }) {
       if (source === 'wifi') {
         streamRef.current = createWsLogStream(wifiIp, addLine, updateStatus)
       } else {
+        autoSerialBlockedRef.current = false
+        localStorage.removeItem(SERIAL_AUTO_CONNECT_KEY)
+        setSerialHint('')
         streamRef.current = await createSerialLogStream(addLine, updateStatus)
       }
     } catch (e) {
@@ -63,8 +99,44 @@ export default function LogPanel({ onAnalyze }) {
   function disconnect() {
     streamRef.current?.stop()
     streamRef.current = null
+    if (sourceRef.current === 'serial') {
+      autoSerialBlockedRef.current = true
+      localStorage.setItem(SERIAL_AUTO_CONNECT_KEY, 'blocked')
+      setSerialHint('已手动断开 USB 串口自动连接')
+    }
     setConnStatus('idle')
   }
+
+  useEffect(() => {
+    if (!isWebSerialSupported()) return undefined
+
+    let cancelled = false
+    let probing = false
+
+    async function probe() {
+      if (cancelled || probing || autoSerialBlockedRef.current) return
+      if (streamRef.current || ['connecting', 'connected'].includes(statusRef.current)) return
+
+      probing = true
+      try {
+        const ports = await getPairedSerialDebugPorts()
+        if (!cancelled && ports.length > 0 && !autoSerialBlockedRef.current && !streamRef.current) {
+          await connectSerialPort(ports[0], { automatic: true })
+        }
+      } catch {
+        /* WebSerial can reject while permissions are changing; try again later. */
+      } finally {
+        probing = false
+      }
+    }
+
+    probe()
+    const id = window.setInterval(probe, SERIAL_AUTO_POLL_MS)
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+    }
+  }, [connectSerialPort])
 
   /* Cleanup on unmount */
   useEffect(() => () => streamRef.current?.stop(), [])
@@ -122,6 +194,10 @@ export default function LogPanel({ onAnalyze }) {
           <input className="log-ip-input" value={wifiIp}
             onChange={e => setWifiIp(e.target.value)}
             placeholder="192.168.1.88" />
+        )}
+
+        {source === 'serial' && serialHint && (
+          <span className="serial-hint" title={serialHint}>{serialHint}</span>
         )}
 
         <div className={`conn-dot ${statusDot}`} title={connStatus} />

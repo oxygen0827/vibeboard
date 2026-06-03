@@ -69,6 +69,18 @@ assert.match(fixed, /ESP_ERROR_CHECK\(bsp_lvgl_start\(\)\)/)
 assert.doesNotMatch(fixed, /lv_font_montserrat_24/)
 assert.match(fixed, /lv_font_montserrat_20/)
 
+const debugInjected = normalizeGeneratedSource(
+  '#include <stdio.h>\n\nvoid app_main(void)\n{\n    printf("hello\\n");\n}\n',
+  'main/main.c',
+)
+assert.match(debugInjected, /#include "vibeboard_debug\.h"/)
+assert.match(debugInjected, /#include "esp_err\.h"/)
+assert.match(debugInjected, /void app_main\(void\)\n\{\n    ESP_ERROR_CHECK\(vibeboard_debug_start\(\)\);/)
+assert.equal((debugInjected.match(/vibeboard_debug_start/g) || []).length, 1)
+
+const debugInjectedAgain = normalizeGeneratedSource(debugInjected, 'main/main.c')
+assert.equal((debugInjectedAgain.match(/vibeboard_debug_start/g) || []).length, 1)
+
 const normalized = normalizeGeneratedSourceFiles({
   'main/main.c': broken,
   'main/app_ui.h': '#pragma once\nvoid app_ui_start(void);\n',
@@ -102,6 +114,13 @@ const wifiWithoutSkill = validateProjectIncludes({
 }, ['lvgl'])
 assert.equal(wifiWithoutSkill.ok, false)
 assert.match(wifiWithoutSkill.message, /WiFi\/network needs skill "wifi"/)
+
+const systemDebugWithoutWifiSkill = validateProjectIncludes({
+  'main/main.c': '#include "vibeboard_debug.h"\n#include "esp_err.h"\nvoid app_main(void) { ESP_ERROR_CHECK(vibeboard_debug_start()); }\n',
+  'main/vibeboard_debug.h': '#pragma once\n#include "esp_err.h"\nesp_err_t vibeboard_debug_start(void);\n',
+  'main/vibeboard_debug.c': '#include "esp_wifi.h"\n#include "esp_http_server.h"\nesp_err_t vibeboard_debug_start(void) { esp_wifi_start(); return ESP_OK; }\n',
+}, [])
+assert.equal(systemDebugWithoutWifiSkill.ok, true)
 
 const speechCoversAudioAndLvgl = validateProjectIncludes({
   'main/main.c': '#include "esp32_s3_szp.h"\n#include "esp_err.h"\n#include "lvgl.h"\n#include "audio_player.h"\n#include "app_ui.h"\nvoid app_main(void) { ESP_ERROR_CHECK(bsp_i2c_init()); ESP_ERROR_CHECK(pca9557_init()); ESP_ERROR_CHECK(bsp_lvgl_start()); app_ui_start(); bsp_codec_init(); app_sr_init(); }\n',

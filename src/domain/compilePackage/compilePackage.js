@@ -8,6 +8,8 @@ export const SYSTEM_CONFIG_FILES = new Set([
   'sdkconfig.defaults',
   'main/idf_component.yml',
   'partitions.csv',
+  'main/vibeboard_debug.c',
+  'main/vibeboard_debug.h',
 ])
 
 export const COMPILE_PACKAGE_FILE_KIND = {

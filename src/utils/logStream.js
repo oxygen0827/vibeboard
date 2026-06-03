@@ -34,20 +34,56 @@ export function createWsLogStream(ip, onLine, onStatus) {
 }
 
 /* ── WebSerial ─────────────────────────────────────────────── */
-export async function createSerialLogStream(onLine, onStatus) {
+export const SERIAL_DEBUG_FILTERS = [
+  { usbVendorId: 0x303a }, // Espressif USB JTAG/serial debug unit
+  { usbVendorId: 0x10c4 }, // Silicon Labs USB-UART bridges
+  { usbVendorId: 0x1a86 }, // CH34x USB-UART bridges
+]
+
+export function isWebSerialSupported() {
+  return typeof navigator !== 'undefined' &&
+    typeof window !== 'undefined' &&
+    'serial' in navigator &&
+    window.isSecureContext
+}
+
+export function isLikelySerialDebugPort(port) {
+  const info = port?.getInfo?.() || {}
+  return SERIAL_DEBUG_FILTERS.some(filter => filter.usbVendorId === info.usbVendorId)
+}
+
+export async function getPairedSerialDebugPorts() {
   if (!('serial' in navigator)) {
-    throw new Error('浏览器不支持 WebSerial（请用 Chrome/Edge）')
+    return []
+  }
+  const ports = await navigator.serial.getPorts()
+  return ports.filter(isLikelySerialDebugPort)
+}
+
+export function describeSerialPort(port) {
+  const info = port?.getInfo?.() || {}
+  const vendor = info.usbVendorId ? `0x${info.usbVendorId.toString(16).padStart(4, '0')}` : 'unknown'
+  const product = info.usbProductId ? `0x${info.usbProductId.toString(16).padStart(4, '0')}` : 'unknown'
+  if (info.usbVendorId === 0x303a) return `USB JTAG/serial debug unit (${vendor}:${product})`
+  return `USB serial (${vendor}:${product})`
+}
+
+export async function createSerialLogStream(onLine, onStatus, options = {}) {
+  if (!isWebSerialSupported()) {
+    throw new Error('浏览器不支持 WebSerial（请用 Chrome/Edge，并使用 HTTPS 或 localhost）')
   }
 
-  const port = await navigator.serial.requestPort()
+  const port = options.port || await navigator.serial.requestPort({ filters: SERIAL_DEBUG_FILTERS })
+
   await port.open({ baudRate: 115200 })
   onStatus('connected')
 
   const decoder = new TextDecoderStream()
   const reader  = decoder.readable.getReader()
-  port.readable.pipeTo(decoder.writable)
+  const readableClosed = port.readable.pipeTo(decoder.writable).catch(() => {})
 
   let buffer = ''
+  let stopped = false
 
   // Read loop in background
   ;(async () => {
@@ -65,15 +101,19 @@ export async function createSerialLogStream(onLine, onStatus) {
     } catch {
       /* port closed */
     } finally {
-      onStatus('disconnected')
+      try { reader.releaseLock() } catch {}
+      if (!stopped) onStatus('disconnected')
     }
   })()
 
   return {
     async stop() {
-      reader.cancel()
-      await port.close()
+      stopped = true
+      try { await reader.cancel() } catch {}
+      try { await readableClosed } catch {}
+      try { await port.close() } catch {}
     },
+    port,
   }
 }
 

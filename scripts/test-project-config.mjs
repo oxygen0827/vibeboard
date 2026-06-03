@@ -52,8 +52,16 @@ function files(skills = []) {
 
 const base = files()
 assert.match(base['main/CMakeLists.txt'], /REQUIRES\s+esp32_s3_szp/)
+assert.match(base['main/CMakeLists.txt'], /"vibeboard_debug\.c"/)
+assert.match(base['main/CMakeLists.txt'], /REQUIRES[\s\S]*esp_http_server/)
+assert.match(base['main/CMakeLists.txt'], /REQUIRES[\s\S]*esp_wifi/)
+assert.match(base['main/CMakeLists.txt'], /REQUIRES[\s\S]*nvs_flash/)
+assert.match(base['main/vibeboard_debug.c'], /vibeboard_debug_start/)
+assert.match(base['main/vibeboard_debug.c'], /VIBEBOARD_DEBUG_WIFI_SSID "1-306"/)
+assert.match(base['main/vibeboard_debug.c'], /httpd_ws_send_frame_async/)
+assert.match(base['main/vibeboard_debug.h'], /esp_err_t vibeboard_debug_start/)
 assert.equal(base['main/idf_component.yml'], undefined)
-assert.equal(base['partitions.csv'], undefined)
+assert.match(base['partitions.csv'], /factory,\s+app,\s+factory,\s+,\s+7M/)
 
 const lvgl = files(['lvgl'])
 assert.match(lvgl['main/CMakeLists.txt'], /REQUIRES[\s\S]*esp32_s3_szp/)
