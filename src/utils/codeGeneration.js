@@ -549,6 +549,94 @@ Generate the files now.`,
   ]
 }
 
+export function buildSourceContractRepairMessages({
+  board,
+  selectedSkills = [],
+  userRequest,
+  manifest,
+  projectFiles = {},
+  diagnostics = '',
+  attempt = 1,
+}) {
+  const editableFiles = Object.fromEntries(
+    Object.entries(projectFiles || {}).filter(([path]) => !path.startsWith('__'))
+  )
+  const officialExampleGuidance = buildOfficialExampleGuidance(board)
+  const driverContractGuidance = buildDriverContractGuidance(
+    board,
+    selectedSkills,
+    manifest?.driverContracts || [],
+  )
+  const manifestFiles = (manifest?.files || []).map(file => file.path).join(', ') || 'none'
+
+  return [
+    {
+      role: 'system',
+      content: `For this VibeBoard self-repair step, return ONLY the JSON object requested below. Do not use markdown, FILE labels, code fences, explanations, or the board prompt's normal code-block output format.
+
+${board.buildSystemPrompt(selectedSkills)}
+
+${officialExampleGuidance}
+
+${driverContractGuidance}
+
+You are repairing AI-generated VibeBoard source before it is inserted into the editor, previewed, compiled, or flashed. The previous output failed VibeBoard's local source contract checks. Return ONLY valid JSON. No markdown, no prose.
+
+Allowed output schema:
+{
+  "files": [
+    { "path": "main/main.c", "content": "..." },
+    { "path": "main/app_ui.h", "content": "..." },
+    { "path": "main/app_ui.c", "content": "..." }
+  ],
+  "uiManifest": {
+    "title": "short preview title",
+    "screen": { "background": "#f6f8fa" },
+    "widgets": []
+  }
+}
+
+Rules:
+- This is repair attempt ${attempt}. Fix every diagnostic below directly.
+- Return full replacement content for the complete application file set, not a partial patch.
+- Generate exactly these manifest files unless a required matching local header is missing: ${manifestFiles}.
+- Generate Application Source only: main/main.c, main/main.cpp, main/**/*.c, main/**/*.cpp, main/**/*.h, main/**/*.hpp.
+- Do not generate CMakeLists.txt, sdkconfig.defaults, idf_component.yml, partitions.csv, components/*, BSP files, or .ino files.
+- Preserve the user's requested behavior and the Program Manifest intent.
+- Include a complete app_main in the manifest entry file.
+- If a file includes a local quoted header, generate that header too.
+- Use #include "esp32_s3_szp.h" for board APIs.
+- Do not use APIs from a skill family that is absent from selectedSkills.
+- Keep system configuration, WiFi serial debug, partitions, CMake, and BSP owned by VibeBoard.
+- For LVGL/display UI, main/main.c must initialize the real SZPI screen in this order: ESP_ERROR_CHECK(bsp_i2c_init()); ESP_ERROR_CHECK(pca9557_init()); ESP_ERROR_CHECK(bsp_lvgl_start()); then app_ui_start().
+- main/main.c must include "esp32_s3_szp.h", "esp_err.h", and "app_ui.h" when using LVGL/display.
+- main/app_ui.c must define void app_ui_create(lv_obj_t *root) and void app_ui_start(void).
+- main/app_ui.h must declare void app_ui_create(lv_obj_t *root) and void app_ui_start(void).
+- app_ui.* must be portable LVGL-only preview code: include lvgl.h/app_ui.h only, create widgets under root, and never call ESP-IDF, BSP, FreeRTOS, WiFi, audio, camera, NVS, GPIO, I2C, I2S, task, or network APIs.
+- Also include uiManifest for immediate semantic browser preview when the program has a visible screen.`,
+    },
+    {
+      role: 'user',
+      content: `User request:
+${userRequest}
+
+Selected skills:
+${selectedSkills.join(', ') || 'none'}
+
+Program Manifest:
+${JSON.stringify(manifest || {}, null, 2)}
+
+Source contract diagnostics:
+${diagnostics || 'unknown validation failure'}
+
+Current generated editable files:
+${JSON.stringify(editableFiles, null, 2)}
+
+Regenerate the complete corrected application source now.`,
+    },
+  ]
+}
+
 export function buildBuildRepairMessages({ board, selectedSkills = [], buildEvidence, buildLog = [], errorLog = '', projectFiles = {} }) {
   const editableFiles = Object.fromEntries(
     Object.entries(projectFiles || {}).filter(([path]) => !path.startsWith('__'))

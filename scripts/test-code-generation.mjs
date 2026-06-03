@@ -31,6 +31,7 @@ const {
   buildManifestCodeGenerationMessages,
   buildProgramManifestMessages,
   buildBuildRepairMessages,
+  buildSourceContractRepairMessages,
   extractFileBlocks,
   extractJsonObject,
   buildPreviewRepairMessages,
@@ -246,5 +247,25 @@ const previewRepairMessages = buildPreviewRepairMessages({
 assert.match(previewRepairMessages[0].content, /LVGL preview repair/)
 assert.match(previewRepairMessages[0].content, /app_ui_create/)
 assert.match(previewRepairMessages[1].content, /Preview Evidence/)
+
+const sourceContractRepairMessages = buildSourceContractRepairMessages({
+  board,
+  selectedSkills: ['lvgl'],
+  userRequest: 'show hello',
+  manifest: manifest.manifest,
+  diagnostics: 'main/main.c must call ESP_ERROR_CHECK(bsp_lvgl_start()) before app_ui rendering.',
+  projectFiles: {
+    'main/main.c': '#include "app_ui.h"\nvoid app_main(void) { app_ui_start(); }',
+    'main/app_ui.h': '#pragma once\nvoid app_ui_start(void);',
+    'main/app_ui.c': '#include "app_ui.h"\nvoid app_ui_start(void) {}',
+  },
+  attempt: 2,
+})
+assert.match(sourceContractRepairMessages[0].content, /self-repair step/)
+assert.match(sourceContractRepairMessages[0].content, /Return full replacement content/)
+assert.match(sourceContractRepairMessages[0].content, /ESP_ERROR_CHECK\(bsp_i2c_init\(\)\)/)
+assert.match(sourceContractRepairMessages[0].content, /void app_ui_start\(void\)/)
+assert.match(sourceContractRepairMessages[1].content, /Source contract diagnostics/)
+assert.match(sourceContractRepairMessages[1].content, /bsp_lvgl_start/)
 
 console.log('code generation tests passed')

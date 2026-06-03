@@ -179,8 +179,6 @@ static void debug_start_httpd(void)
     config.server_port = VIBEBOARD_DEBUG_WS_PORT;
     config.ctrl_port = VIBEBOARD_DEBUG_WS_PORT + 1;
     config.lru_purge_enable = true;
-    config.max_req_hdr_len = 4096;
-    config.max_uri_len = 1024;
 
     esp_err_t err = httpd_start(&s_httpd, &config);
     if (err != ESP_OK) {
