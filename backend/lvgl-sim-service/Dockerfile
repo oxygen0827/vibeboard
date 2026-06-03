@@ -1,6 +1,6 @@
-FROM emscripten/emsdk:3.1.74
+FROM python:3.12-slim
 
-RUN python3 -m pip install flask gunicorn --break-system-packages
+RUN python3 -m pip install --no-cache-dir flask gunicorn
 
 WORKDIR /sim-service
 COPY server.py .
