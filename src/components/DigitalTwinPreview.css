@@ -176,7 +176,7 @@
 }
 
 .dt-lvgl-fallback {
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .dt-lvgl-badge {
