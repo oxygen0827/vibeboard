@@ -89,6 +89,16 @@ assert.equal(normalized.changed, true)
 assert.match(normalized.files['main/main.c'], /esp_log\.h/)
 assert.equal(normalized.files['main/app_ui.h'], '#pragma once\nvoid app_ui_start(void);\n')
 
+const appUiWrapperNormalized = normalizeGeneratedSourceFiles({
+  'main/app_ui.h': '#pragma once\n#include "lvgl.h"\nvoid app_ui_create(lv_obj_t *root);\n',
+  'main/app_ui.c': '#include "app_ui.h"\nvoid app_ui_create(lv_obj_t *root) { lv_label_create(root); }\n',
+})
+assert.equal(appUiWrapperNormalized.changed, true)
+assert.match(appUiWrapperNormalized.files['main/app_ui.c'], /void app_ui_start\(void\)/)
+assert.match(appUiWrapperNormalized.files['main/app_ui.c'], /app_ui_create\(lv_scr_act\(\)\)/)
+assert.match(appUiWrapperNormalized.files['main/app_ui.h'], /void app_ui_start\(void\);/)
+assert.equal(validateLvglPreviewContract(appUiWrapperNormalized.files, ['lvgl']).ok, true)
+
 const includes = validateProjectIncludes({
   'main/main.c': '#include "esp32_s3_szp.h"\n#include "esp_err.h"\n#include "app_ui.h"\nvoid app_main(void) { ESP_ERROR_CHECK(bsp_i2c_init()); ESP_ERROR_CHECK(pca9557_init()); ESP_ERROR_CHECK(bsp_lvgl_start()); app_ui_start(); }\n',
   'main/app_ui.h': '#pragma once\n#include "lvgl.h"\nvoid app_ui_create(lv_obj_t *root);\nvoid app_ui_start(void);\n',

@@ -491,7 +491,44 @@ export function normalizeGeneratedSourceFiles(projectFiles) {
     if (next !== content) changed = true
   }
 
+  const contractNormalized = normalizeAppUiContractFiles(updates)
+  if (contractNormalized.changed) changed = true
+
   return { files: updates, changed }
+}
+
+function normalizeAppUiContractFiles(files) {
+  let changed = false
+  const appUiSource = String(files[APP_UI_CONTRACT_SOURCE] || '')
+  const appUiHeader = String(files[APP_UI_CONTRACT_HEADER] || '')
+
+  if (
+    appUiSource &&
+    /\bapp_ui_create\s*\(\s*lv_obj_t\s*\*\s*\w+\s*\)/.test(appUiSource) &&
+    !/\bapp_ui_start\s*\(\s*void\s*\)/.test(appUiSource)
+  ) {
+    files[APP_UI_CONTRACT_SOURCE] = `${appUiSource.trimEnd()}
+
+void app_ui_start(void)
+{
+    app_ui_create(lv_scr_act());
+}
+`
+    changed = true
+  }
+
+  if (
+    appUiHeader &&
+    /\bvoid\s+app_ui_create\s*\(\s*lv_obj_t\s*\*\s*\w+\s*\)\s*;/.test(appUiHeader) &&
+    !/\bvoid\s+app_ui_start\s*\(\s*void\s*\)\s*;/.test(appUiHeader)
+  ) {
+    files[APP_UI_CONTRACT_HEADER] = `${appUiHeader.trimEnd()}
+void app_ui_start(void);
+`
+    changed = true
+  }
+
+  return { changed }
 }
 
 export function normalizeGeneratedSource(content, path = '') {
