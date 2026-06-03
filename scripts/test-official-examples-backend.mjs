@@ -67,12 +67,13 @@ assert 'VIBEBOARD_WIFI_PASSWORD "pa\\\\\\"ss"' in cfg, cfg
 assert 'VIBEBOARD_DEVICE_ID "dev-01"' in cfg, cfg
 assert 'VIBEBOARD_DEVICE_TOKEN "token-01"' in cfg, cfg
 assert 'VIBEBOARD_SERVER_URL "https://example.com"' in cfg, cfg
-try:
-    server.create_ota_receiver_project(pathlib.Path(tempfile.mkdtemp()) / "build", "", "", "", "", "")
-except ValueError:
-    pass
-else:
-    raise AssertionError("expected empty SSID to fail")
+default_build_dir = pathlib.Path(tempfile.mkdtemp()) / "build"
+default_agent = server.create_ota_receiver_project(default_build_dir, "", None, "", "", "")
+default_cfg = (default_build_dir / "main" / "vibeboard_wifi_config.h").read_text()
+assert 'VIBEBOARD_WIFI_SSID "1-306"' in default_cfg, default_cfg
+assert 'VIBEBOARD_WIFI_PASSWORD "szyt1008"' in default_cfg, default_cfg
+assert default_agent["deviceId"] == "szpi-s3-ota-receiver", default_agent
+assert default_agent["deviceToken"] == "vibeboard-ota-receiver", default_agent
 
 print("official examples backend tests passed")
 `

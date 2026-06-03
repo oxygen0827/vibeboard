@@ -4,7 +4,7 @@ POST /compile - compile ESP-IDF project, streams build log via SSE
 GET  /health  - health check
 """
 
-import os, uuid, shutil, subprocess, logging, json, base64, re, time, hashlib, zlib, struct
+import os, sys, uuid, shutil, subprocess, logging, json, base64, re, time, hashlib, zlib, struct
 from io import BytesIO
 from pathlib import Path, PurePosixPath
 from flask import Flask, request, Response, jsonify, send_file
@@ -32,6 +32,7 @@ WSL_LVGL_SOURCE_DIR = os.environ.get("WSL_LVGL_SOURCE_DIR", "").strip()
 LVGL_PREVIEW_RUNNER_DIR = Path(os.environ.get("LVGL_PREVIEW_RUNNER_DIR", "/compiler/preview_runner"))
 LVGL_PREVIEW_MODE = os.environ.get("LVGL_PREVIEW_MODE", "auto").strip().lower()
 LVGL_PREVIEW_TIMEOUT_SECONDS = int(os.environ.get("LVGL_PREVIEW_TIMEOUT_SECONDS", "30"))
+PYTHON_BIN = os.environ.get("PYTHON", sys.executable or "python3")
 
 BUILD_BASE.mkdir(parents=True, exist_ok=True)
 REMOTE_OTA_DIR.mkdir(parents=True, exist_ok=True)
@@ -675,7 +676,7 @@ def run_real_lvgl_preview(project_files, viewport, interactions):
     try:
         copy_preview_runner_files(project_files, work_dir)
         build_cmd = [
-            "python",
+            PYTHON_BIN,
             str(LVGL_PREVIEW_RUNNER_DIR / "build_runner.py"),
             str(LVGL_SOURCE_DIR),
             str(LVGL_PREVIEW_RUNNER_DIR),

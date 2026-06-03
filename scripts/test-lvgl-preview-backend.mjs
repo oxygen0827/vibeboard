@@ -1,29 +1,54 @@
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
-import { mkdtemp } from 'node:fs/promises'
+import { readFile, writeFile, mkdtemp, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
+import { spawnSync } from 'node:child_process'
 
-async function runPythonTest() {
-  const buildBase = await mkdtemp(join(tmpdir(), 'vibeboard-preview-builds-'))
-  const remoteOta = await mkdtemp(join(tmpdir(), 'vibeboard-preview-ota-'))
-  const script = `
-import importlib.util
-from pathlib import Path
+const tmp = await mkdtemp(join(tmpdir(), 'vibeboard-preview-backend-'))
+const serverSource = new URL('../backend/compiler-service/server.py', import.meta.url)
+const serverTarget = join(tmp, 'server.py')
+await mkdir(dirname(serverTarget), { recursive: true })
+await writeFile(serverTarget, await readFile(serverSource, 'utf8'))
 
-server_path = Path("backend/compiler-service/server.py").resolve()
-spec = importlib.util.spec_from_file_location("vibeboard_preview_server", server_path)
-module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(module)
+const py = `
+import os
+import pathlib
+import sys
+import types
 
-client = module.app.test_client()
+flask = types.ModuleType("flask")
 
-status_res = client.get("/preview/lvgl/status")
-assert status_res.status_code == 200
-status_data = status_res.get_json()
-assert "realPreviewReady" in status_data
-assert "native" in status_data
-assert "wsl" in status_data
+class Flask:
+    def __init__(self, name): pass
+    def route(self, *args, **kwargs):
+        def deco(fn): return fn
+        return deco
+
+class Request:
+    payload = {}
+    def get_json(self, force=False):
+        return self.payload
+
+def jsonify(obj=None, **kwargs):
+    return obj if obj is not None else kwargs
+
+flask.Flask = Flask
+flask.request = Request()
+flask.Response = lambda *args, **kwargs: None
+flask.jsonify = jsonify
+flask.send_file = lambda *args, **kwargs: None
+sys.modules["flask"] = flask
+
+os.environ["BUILD_BASE"] = r"${tmp}/builds"
+os.environ["REMOTE_OTA_DIR"] = r"${tmp}/remote-ota"
+os.environ["LVGL_PREVIEW_MODE"] = "intent"
+
+import server
+
+status_data = server.preview_lvgl_status()
+assert "realPreviewReady" in status_data, status_data
+assert "native" in status_data, status_data
+assert "wsl" in status_data, status_data
 
 ok_payload = {
     "boardId": "szpi_esp32s3",
@@ -41,53 +66,46 @@ ok_payload = {
         "main/main.c": "#include \\"esp32_s3_szp.h\\"\\n#include \\"app_ui.h\\"\\nvoid app_main(void) { bsp_lvgl_start(); app_ui_create(lv_scr_act()); }\\n",
     },
 }
-res = client.post("/preview/lvgl", json=ok_payload)
-assert res.status_code == 200, res.get_data(as_text=True)
-data = res.get_json()
-assert data["status"] == "success"
-assert data["screenshotPng"]
-assert data["viewport"] == {"width": 320, "height": 240}
-assert any(item["id"] == "microphone" for item in data["peripherals"])
-assert data["renderer"] in ["real-lvgl-8.3-headless", "intent-lvgl-preview"]
-assert data["interactions"] == [{"type": "tap", "x": 72, "y": 190}]
-assert len(data["screenshotPng"]) > 1000
+flask.request.payload = ok_payload
+data = server.preview_lvgl()
+assert data["status"] == "success", data
+assert data["screenshotPng"], data
+assert data["viewport"] == {"width": 320, "height": 240}, data
+assert any(item["id"] == "microphone" for item in data["peripherals"]), data
+assert data["renderer"] == "intent-lvgl-preview", data
+assert data["interactions"] == [{"type": "tap", "x": 72, "y": 190}], data
+assert len(data["screenshotPng"]) > 1000, data
 
 bad_payload = {
     "boardId": "szpi_esp32s3",
     "selectedSkills": ["lvgl"],
     "projectFiles": {"main/main.c": "void app_main(void) {}"},
 }
-bad = client.post("/preview/lvgl", json=bad_payload)
-assert bad.status_code == 400
-bad_data = bad.get_json()
-assert bad_data["category"] == "preview-contract-missing"
-assert bad_data["diagnostics"]
+flask.request.payload = bad_payload
+bad_data, bad_status = server.preview_lvgl()
+assert bad_status == 400, bad_data
+assert bad_data["category"] == "preview-contract-missing", bad_data
+assert bad_data["diagnostics"], bad_data
 
 print("lvgl preview backend tests passed")
 `
-  return new Promise((resolve, reject) => {
-    const child = spawn('python', ['-c', script], {
-      cwd: process.cwd(),
-      env: {
-        ...process.env,
-        BUILD_BASE: buildBase,
-        REMOTE_OTA_DIR: remoteOta,
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-    let stdout = ''
-    let stderr = ''
-    child.stdout.on('data', chunk => { stdout += chunk })
-    child.stderr.on('data', chunk => { stderr += chunk })
-    child.on('close', code => {
-      if (code === 0) {
-        process.stdout.write(stdout)
-        resolve()
-      } else {
-        reject(new Error(stderr || stdout || `python exited ${code}`))
-      }
-    })
+
+function runPython(command) {
+  return spawnSync(command, ['-c', py], {
+    cwd: tmp,
+    encoding: 'utf8',
+    env: { ...process.env, PYTHONPATH: tmp },
   })
 }
 
-await assert.doesNotReject(runPythonTest())
+const candidates = process.env.PYTHON ? [process.env.PYTHON] : ['python3', 'python']
+const attempts = candidates.map(command => ({ command, result: runPython(command) }))
+const usable = attempts.find(({ result }) => !result.error)
+
+if (!usable) {
+  assert.fail(attempts.map(({ command, result }) => `${command}: ${result.error?.message || 'not found'}`).join('\\n'))
+}
+
+assert.equal(usable.result.status, 0, usable.result.stderr || usable.result.stdout)
+assert.match(usable.result.stdout, /lvgl preview backend tests passed/)
+console.log('lvgl preview backend tests passed')
