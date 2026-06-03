@@ -172,12 +172,14 @@ export function validateProjectIncludes(projectFiles, selectedSkills = [], board
   const skillMismatches = validateSkillApiUsage(projectFiles, selectedSkills)
   const contractViolations = validateDriverContractUsage(projectFiles, selectedSkills, board)
   const previewContract = validateLvglPreviewContract(projectFiles, selectedSkills)
+  const lvglDeviceEntrypoint = validateLvglDeviceEntrypoint(projectFiles, selectedSkills)
 
   if (
     missing.length === 0 &&
     skillMismatches.length === 0 &&
     contractViolations.length === 0 &&
-    previewContract.ok
+    previewContract.ok &&
+    lvglDeviceEntrypoint.ok
   ) {
     return { ok: true, message: '' }
   }
@@ -196,11 +198,87 @@ export function validateProjectIncludes(projectFiles, selectedSkills = [], board
   if (!previewContract.ok) {
     sections.push(`AI generated LVGL UI source does not satisfy the preview contract.\n${previewContract.diagnostics.map(item => `- ${item.path || 'main/app_ui.*'}: ${item.message}`).join('\n')}\n\nAsk AI to regenerate app_ui.c/app_ui.h with portable LVGL-only preview code.`)
   }
+  if (!lvglDeviceEntrypoint.ok) {
+    sections.push(`AI generated LVGL firmware may preview correctly but will not light the real display.\n${lvglDeviceEntrypoint.diagnostics.map(item => `- ${item.path || 'main/main.c'}: ${item.message}`).join('\n')}\n\nAsk AI to regenerate main/main.c with SZPI display initialization before app_ui rendering.`)
+  }
 
   return {
     ok: false,
     message: sections.join('\n\n'),
   }
+}
+
+export function validateLvglDeviceEntrypoint(projectFiles, selectedSkills = []) {
+  const hasLvglSkill = skillIsEnabled(selectedSkills, 'lvgl')
+  const hasAppUiContractFiles = Boolean(
+    projectFiles?.[APP_UI_CONTRACT_SOURCE] || projectFiles?.[APP_UI_CONTRACT_HEADER],
+  )
+  if (!hasLvglSkill && !hasAppUiContractFiles) {
+    return { ok: true, diagnostics: [], message: '' }
+  }
+
+  const entryPath = projectFiles?.['main/main.cpp'] ? 'main/main.cpp' : 'main/main.c'
+  const entry = String(projectFiles?.[entryPath] || '')
+  const diagnostics = []
+  const requiredCalls = [
+    ['bsp_i2c_init', 'main entry must call bsp_i2c_init() before starting the display.'],
+    ['pca9557_init', 'main entry must call pca9557_init() before bsp_lvgl_start().'],
+    ['bsp_lvgl_start', 'main entry must call bsp_lvgl_start() before rendering app_ui.'],
+  ]
+
+  if (!entry) {
+    diagnostics.push({
+      category: 'display-entrypoint-missing',
+      path: entryPath,
+      message: `LVGL device firmware needs ${entryPath} with display initialization.`,
+    })
+  }
+
+  for (const [call, message] of requiredCalls) {
+    if (entry && !new RegExp(`\\b${call}\\s*\\(`).test(entry)) {
+      diagnostics.push({
+        category: 'display-entrypoint-missing',
+        path: entryPath,
+        message,
+      })
+    }
+  }
+
+  const i2cIndex = entry.search(/\bbsp_i2c_init\s*\(/)
+  const pcaIndex = entry.search(/\bpca9557_init\s*\(/)
+  const lvglIndex = entry.search(/\bbsp_lvgl_start\s*\(/)
+  const appUiIndex = entry.search(/\b(app_ui_start|app_ui_create)\s*\(/)
+  if (i2cIndex !== -1 && pcaIndex !== -1 && i2cIndex > pcaIndex) {
+    diagnostics.push({
+      category: 'display-entrypoint-order',
+      path: entryPath,
+      message: 'main entry must call bsp_i2c_init() before pca9557_init().',
+    })
+  }
+  if (pcaIndex !== -1 && lvglIndex !== -1 && pcaIndex > lvglIndex) {
+    diagnostics.push({
+      category: 'display-entrypoint-order',
+      path: entryPath,
+      message: 'main entry must call pca9557_init() before bsp_lvgl_start().',
+    })
+  }
+  if (lvglIndex !== -1 && appUiIndex !== -1 && lvglIndex > appUiIndex) {
+    diagnostics.push({
+      category: 'display-entrypoint-order',
+      path: entryPath,
+      message: 'main entry must call bsp_lvgl_start() before app_ui_start() or app_ui_create().',
+    })
+  }
+
+  if (entry && !/#\s*include\s+"esp32_s3_szp\.h"/.test(entry)) {
+    diagnostics.push({
+      category: 'display-entrypoint-missing',
+      path: entryPath,
+      message: 'main entry must include "esp32_s3_szp.h" for SZPI display initialization.',
+    })
+  }
+
+  return formatPreviewContractResult(diagnostics)
 }
 
 function validateDriverContractUsage(projectFiles, selectedSkills = [], board = null) {
