@@ -55,7 +55,7 @@ export const handheldSkill = {
 ### Full init sequence
 \`\`\`c
 nvs_flash_init(); // NVS first
-bsp_i2c_init(); pca9557_init(); bsp_lvgl_start();
+ESP_ERROR_CHECK(bsp_i2c_init()); ESP_ERROR_CHECK(pca9557_init()); ESP_ERROR_CHECK(bsp_lvgl_start());
 bsp_spiffs_mount(); bsp_codec_init();
 lv_gui_start(); // boot animation
 xTaskCreatePinnedToCore(power_music_task, "music", 4*1024, NULL, 5, NULL, 1);

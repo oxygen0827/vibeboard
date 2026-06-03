@@ -43,7 +43,7 @@ export const speechSkill = {
 
 ### Init
 \`\`\`c
-bsp_i2c_init(); pca9557_init(); bsp_lvgl_start();
+ESP_ERROR_CHECK(bsp_i2c_init()); ESP_ERROR_CHECK(pca9557_init()); ESP_ERROR_CHECK(bsp_lvgl_start());
 bsp_spiffs_mount(); bsp_codec_init(); mp3_player_init();
 app_sr_init();
 \`\`\`

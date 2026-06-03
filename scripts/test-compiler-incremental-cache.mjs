@@ -50,15 +50,24 @@ assert server.prepare_cached_project(build_dir, "void app_main(void){}", files) 
 assert (build_dir / "build").exists() is False
 assert (build_dir / "main" / "helper.c").exists()
 sig = (build_dir / ".vibeboard-project-signature").read_text()
+template_sig = (build_dir / ".vibeboard-template-signature").read_text()
 
 assert server.prepare_cached_project(build_dir, "void app_main(void){}", files) == "cache-hit"
 assert (build_dir / ".vibeboard-project-signature").read_text() == sig
+assert (build_dir / ".vibeboard-template-signature").read_text() == template_sig
 
 files2 = {"__mainFile": "main.c", "main/new_helper.c": "void new_helper(void){}"}
 assert server.prepare_cached_project(build_dir, "void app_main(void){}", files2) == "cache-updated"
 assert (build_dir / "main" / "new_helper.c").exists()
 assert not (build_dir / "main" / "helper.c").exists()
 assert (build_dir / "components" / "esp32_s3_szp" / "keep.c").exists()
+updated_project_sig = (build_dir / ".vibeboard-project-signature").read_text()
+
+(root / "components" / "esp32_s3_szp" / "keep.c").write_text("void keep_updated(void){}")
+assert server.prepare_cached_project(build_dir, "void app_main(void){}", files2) == "cache-recreated-template"
+assert (build_dir / ".vibeboard-project-signature").read_text() == updated_project_sig
+assert (build_dir / ".vibeboard-template-signature").read_text() != template_sig
+assert "keep_updated" in (build_dir / "components" / "esp32_s3_szp" / "keep.c").read_text()
 
 print("compiler incremental cache tests passed")
 `

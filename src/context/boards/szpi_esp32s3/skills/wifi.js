@@ -37,7 +37,7 @@ if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
     ESP_ERROR_CHECK(nvs_flash_erase()); ret = nvs_flash_init();
 }
 ESP_ERROR_CHECK(ret);
-bsp_i2c_init(); pca9557_init(); bsp_lvgl_start();
+ESP_ERROR_CHECK(bsp_i2c_init()); ESP_ERROR_CHECK(pca9557_init()); ESP_ERROR_CHECK(bsp_lvgl_start());
 \`\`\`
 
 ### WiFi needs larger factory partition (7M) for NVS + lwip

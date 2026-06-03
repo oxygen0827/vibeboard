@@ -278,6 +278,14 @@ export function validateLvglDeviceEntrypoint(projectFiles, selectedSkills = []) 
     })
   }
 
+  if (entry && lvglIndex !== -1 && !/\bESP_ERROR_CHECK\s*\(\s*bsp_lvgl_start\s*\(\s*\)\s*\)/.test(entry)) {
+    diagnostics.push({
+      category: 'display-entrypoint-error-check',
+      path: entryPath,
+      message: 'main entry must call ESP_ERROR_CHECK(bsp_lvgl_start()) before app_ui rendering.',
+    })
+  }
+
   return formatPreviewContractResult(diagnostics)
 }
 

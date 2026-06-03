@@ -14,6 +14,7 @@ import { DIGITAL_TWIN_MANIFEST_KEY } from './domain/digitalTwin/uiManifest'
 import bspHeader from '../backend/compiler-service/template/components/esp32_s3_szp/esp32_s3_szp.h?raw'
 import bspSource from '../backend/compiler-service/template/components/esp32_s3_szp/esp32_s3_szp.c?raw'
 import bspCmake from '../backend/compiler-service/template/components/esp32_s3_szp/CMakeLists.txt?raw'
+import bspManifest from '../backend/compiler-service/template/components/esp32_s3_szp/idf_component.yml?raw'
 import './App.css'
 
 const STORAGE_KEY = 'esp32-vibe-coder-settings'
@@ -73,6 +74,7 @@ const BSP_REFERENCE_FILES = {
   'components/esp32_s3_szp/esp32_s3_szp.h': bspHeader,
   'components/esp32_s3_szp/esp32_s3_szp.c': bspSource,
   'components/esp32_s3_szp/CMakeLists.txt': bspCmake,
+  'components/esp32_s3_szp/idf_component.yml': bspManifest,
 }
 
 function chooseActiveGeneratedFile(files) {

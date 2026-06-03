@@ -232,31 +232,31 @@ const SZPI_OFFICIAL_EXAMPLES = [
     id: '08-lcd_lvgl',
     request: 'LVGL display/touch UI',
     skills: ['lvgl'],
-    init: 'bsp_i2c_init(); pca9557_init(); bsp_lvgl_start(); create LVGL objects only after the port starts',
+    init: 'ESP_ERROR_CHECK(bsp_i2c_init()); ESP_ERROR_CHECK(pca9557_init()); ESP_ERROR_CHECK(bsp_lvgl_start()); create LVGL objects only after the port starts',
   },
   {
     id: '09-wifi_scan_connect',
     request: 'WiFi scan/connect UI',
     skills: ['wifi', 'lvgl'],
-    init: 'nvs_flash_init() with erase fallback; bsp_i2c_init(); pca9557_init(); bsp_lvgl_start(); then WiFi app init/connect',
+    init: 'nvs_flash_init() with erase fallback; ESP_ERROR_CHECK(bsp_i2c_init()); ESP_ERROR_CHECK(pca9557_init()); ESP_ERROR_CHECK(bsp_lvgl_start()); then WiFi app init/connect',
   },
   {
     id: '10-ble_hid_device',
     request: 'BLE HID device UI',
     skills: ['ble', 'lvgl'],
-    init: 'nvs_flash_init() before BT stack; bsp_i2c_init(); pca9557_init(); bsp_lvgl_start(); app_hid_ctrl()',
+    init: 'nvs_flash_init() before BT stack; ESP_ERROR_CHECK(bsp_i2c_init()); ESP_ERROR_CHECK(pca9557_init()); ESP_ERROR_CHECK(bsp_lvgl_start()); app_hid_ctrl()',
   },
   {
     id: '11-mp3_player',
     request: 'touch MP3 player',
     skills: ['audio', 'lvgl'],
-    init: 'bsp_i2c_init(); pca9557_init(); bsp_lvgl_start(); bsp_spiffs_mount(); bsp_codec_init(); mp3_player_init()',
+    init: 'ESP_ERROR_CHECK(bsp_i2c_init()); ESP_ERROR_CHECK(pca9557_init()); ESP_ERROR_CHECK(bsp_lvgl_start()); bsp_spiffs_mount(); bsp_codec_init(); mp3_player_init()',
   },
   {
     id: '12-speech_recognition',
     request: 'speech recognition',
     skills: ['speech', 'audio', 'lvgl'],
-    init: 'bsp_i2c_init(); pca9557_init(); bsp_lvgl_start(); bsp_spiffs_mount(); bsp_codec_init(); mp3_player_init(); app_sr_init()',
+    init: 'ESP_ERROR_CHECK(bsp_i2c_init()); ESP_ERROR_CHECK(pca9557_init()); ESP_ERROR_CHECK(bsp_lvgl_start()); bsp_spiffs_mount(); bsp_codec_init(); mp3_player_init(); app_sr_init()',
   },
 ]
 

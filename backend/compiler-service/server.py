@@ -842,20 +842,32 @@ def create_project(build_dir: Path, code: str, project_files: dict):
 
 def prepare_cached_project(build_dir: Path, code: str, project_files: dict):
     signature = project_signature(code, project_files)
+    template_signature = directory_signature(TEMPLATE_DIR)
     stamp = build_dir / ".vibeboard-project-signature"
+    template_stamp = build_dir / ".vibeboard-template-signature"
     if not build_dir.exists():
         create_project(build_dir, code, project_files)
         stamp.write_text(signature)
+        template_stamp.write_text(template_signature)
         return "cache-created"
     if not (build_dir / "CMakeLists.txt").exists():
         shutil.rmtree(build_dir, ignore_errors=True)
         create_project(build_dir, code, project_files)
         stamp.write_text(signature)
+        template_stamp.write_text(template_signature)
         return "cache-recreated"
     previous = stamp.read_text(errors="ignore").strip() if stamp.exists() else ""
+    previous_template = template_stamp.read_text(errors="ignore").strip() if template_stamp.exists() else ""
+    if previous_template != template_signature:
+        shutil.rmtree(build_dir, ignore_errors=True)
+        create_project(build_dir, code, project_files)
+        stamp.write_text(signature)
+        template_stamp.write_text(template_signature)
+        return "cache-recreated-template"
     if previous != signature:
         sync_project_files(build_dir, code, project_files)
         stamp.write_text(signature)
+        template_stamp.write_text(template_signature)
         return "cache-updated"
     return "cache-hit"
 

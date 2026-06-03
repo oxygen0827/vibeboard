@@ -33,9 +33,9 @@ export const lvglSkill = {
 #include "lvgl.h"
 #include "esp_lvgl_port.h"
 
-bsp_i2c_init();
-pca9557_init();   // MUST before LCD
-bsp_lvgl_start(); // LCD + touch + backlight + LVGL
+ESP_ERROR_CHECK(bsp_i2c_init());
+ESP_ERROR_CHECK(pca9557_init());   // MUST before LCD
+ESP_ERROR_CHECK(bsp_lvgl_start()); // LCD + touch + backlight + LVGL
 \`\`\`
 
 ### Thread Safety — ALL LVGL calls from tasks MUST lock
@@ -57,6 +57,7 @@ Do not use \`lv_font_montserrat_24\`, \`lv_font_montserrat_28\`, or other Montse
 
 ### Pitfalls
 - pca9557_init() MUST before bsp_lvgl_start()
+- Always wrap bsp_i2c_init(), pca9557_init(), and bsp_lvgl_start() with ESP_ERROR_CHECK()
 - Use &lv_font_montserrat_20 for built-in labels
 - Touch axes swapped: x_max=240, y_max=320
 - Never call LVGL outside lvgl_port_lock/unlock from tasks

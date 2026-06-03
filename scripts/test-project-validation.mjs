@@ -78,7 +78,7 @@ assert.match(normalized.files['main/main.c'], /esp_log\.h/)
 assert.equal(normalized.files['main/app_ui.h'], '#pragma once\nvoid app_ui_start(void);\n')
 
 const includes = validateProjectIncludes({
-  'main/main.c': '#include "esp32_s3_szp.h"\n#include "app_ui.h"\nvoid app_main(void) { bsp_i2c_init(); pca9557_init(); bsp_lvgl_start(); app_ui_start(); }\n',
+  'main/main.c': '#include "esp32_s3_szp.h"\n#include "esp_err.h"\n#include "app_ui.h"\nvoid app_main(void) { ESP_ERROR_CHECK(bsp_i2c_init()); ESP_ERROR_CHECK(pca9557_init()); ESP_ERROR_CHECK(bsp_lvgl_start()); app_ui_start(); }\n',
   'main/app_ui.h': '#pragma once\n#include "lvgl.h"\nvoid app_ui_create(lv_obj_t *root);\nvoid app_ui_start(void);\n',
   'main/app_ui.c': '#include "app_ui.h"\nvoid app_ui_create(lv_obj_t *root) { lv_label_create(root); }\nvoid app_ui_start(void) { app_ui_create(lv_scr_act()); }\n',
 }, ['lvgl'])
@@ -91,7 +91,7 @@ assert.equal(audioWithoutSkill.ok, false)
 assert.match(audioWithoutSkill.message, /audio codec\/player needs skill "audio"/)
 
 const audioWithSkill = validateProjectIncludes({
-  'main/main.c': '#include "esp32_s3_szp.h"\n#include "audio_player.h"\n#include "app_ui.h"\nvoid app_main(void) { bsp_i2c_init(); pca9557_init(); bsp_lvgl_start(); app_ui_start(); bsp_codec_init(); mp3_player_init(); }\n',
+  'main/main.c': '#include "esp32_s3_szp.h"\n#include "esp_err.h"\n#include "audio_player.h"\n#include "app_ui.h"\nvoid app_main(void) { ESP_ERROR_CHECK(bsp_i2c_init()); ESP_ERROR_CHECK(pca9557_init()); ESP_ERROR_CHECK(bsp_lvgl_start()); app_ui_start(); bsp_codec_init(); mp3_player_init(); }\n',
   'main/app_ui.h': '#pragma once\n#include "lvgl.h"\nvoid app_ui_create(lv_obj_t *root);\nvoid app_ui_start(void);\n',
   'main/app_ui.c': '#include "app_ui.h"\nvoid app_ui_create(lv_obj_t *root) { lv_label_create(root); }\nvoid app_ui_start(void) { app_ui_create(lv_scr_act()); }\n',
 }, ['audio'])
@@ -104,7 +104,7 @@ assert.equal(wifiWithoutSkill.ok, false)
 assert.match(wifiWithoutSkill.message, /WiFi\/network needs skill "wifi"/)
 
 const speechCoversAudioAndLvgl = validateProjectIncludes({
-  'main/main.c': '#include "esp32_s3_szp.h"\n#include "lvgl.h"\n#include "audio_player.h"\n#include "app_ui.h"\nvoid app_main(void) { bsp_i2c_init(); pca9557_init(); bsp_lvgl_start(); app_ui_start(); bsp_codec_init(); app_sr_init(); }\n',
+  'main/main.c': '#include "esp32_s3_szp.h"\n#include "esp_err.h"\n#include "lvgl.h"\n#include "audio_player.h"\n#include "app_ui.h"\nvoid app_main(void) { ESP_ERROR_CHECK(bsp_i2c_init()); ESP_ERROR_CHECK(pca9557_init()); ESP_ERROR_CHECK(bsp_lvgl_start()); app_ui_start(); bsp_codec_init(); app_sr_init(); }\n',
   'main/app_ui.h': '#pragma once\n#include "lvgl.h"\nvoid app_ui_create(lv_obj_t *root);\nvoid app_ui_start(void);\n',
   'main/app_ui.c': '#include "app_ui.h"\nvoid app_ui_create(lv_obj_t *root) { lv_label_create(root); }\nvoid app_ui_start(void) { app_ui_create(lv_scr_act()); }\n',
 }, ['speech'])
@@ -130,11 +130,26 @@ const previewContractOk = validateLvglPreviewContract({
 assert.equal(previewContractOk.ok, true)
 
 const realDeviceEntrypointOk = validateLvglDeviceEntrypoint({
-  'main/main.c': '#include "esp32_s3_szp.h"\n#include "app_ui.h"\nvoid app_main(void) { bsp_i2c_init(); pca9557_init(); bsp_lvgl_start(); app_ui_start(); }\n',
+  'main/main.c': '#include "esp32_s3_szp.h"\n#include "esp_err.h"\n#include "app_ui.h"\nvoid app_main(void) { ESP_ERROR_CHECK(bsp_i2c_init()); ESP_ERROR_CHECK(pca9557_init()); ESP_ERROR_CHECK(bsp_lvgl_start()); app_ui_start(); }\n',
   'main/app_ui.h': '#pragma once\n#include "lvgl.h"\nvoid app_ui_create(lv_obj_t *root);\nvoid app_ui_start(void);\n',
   'main/app_ui.c': '#include "app_ui.h"\nvoid app_ui_create(lv_obj_t *root) { lv_label_create(root); }\nvoid app_ui_start(void) { app_ui_create(lv_scr_act()); }\n',
 }, ['lvgl'])
 assert.equal(realDeviceEntrypointOk.ok, true)
+
+const uncheckedLvglStart = validateLvglDeviceEntrypoint({
+  'main/main.c': '#include "esp32_s3_szp.h"\n#include "app_ui.h"\nvoid app_main(void) { bsp_i2c_init(); pca9557_init(); bsp_lvgl_start(); app_ui_start(); }\n',
+  'main/app_ui.h': '#pragma once\n#include "lvgl.h"\nvoid app_ui_create(lv_obj_t *root);\nvoid app_ui_start(void);\n',
+  'main/app_ui.c': '#include "app_ui.h"\nvoid app_ui_create(lv_obj_t *root) { lv_label_create(root); }\nvoid app_ui_start(void) { app_ui_create(lv_scr_act()); }\n',
+}, ['lvgl'])
+assert.equal(uncheckedLvglStart.ok, false)
+assert.match(uncheckedLvglStart.message, /ESP_ERROR_CHECK\(bsp_lvgl_start\(\)\)/)
+
+const checkedLvglStart = validateLvglDeviceEntrypoint({
+  'main/main.c': '#include "esp32_s3_szp.h"\n#include "esp_err.h"\n#include "app_ui.h"\nvoid app_main(void) { ESP_ERROR_CHECK(bsp_i2c_init()); ESP_ERROR_CHECK(pca9557_init()); ESP_ERROR_CHECK(bsp_lvgl_start()); app_ui_start(); }\n',
+  'main/app_ui.h': '#pragma once\n#include "lvgl.h"\nvoid app_ui_create(lv_obj_t *root);\nvoid app_ui_start(void);\n',
+  'main/app_ui.c': '#include "app_ui.h"\nvoid app_ui_create(lv_obj_t *root) { lv_label_create(root); }\nvoid app_ui_start(void) { app_ui_create(lv_scr_act()); }\n',
+}, ['lvgl'])
+assert.equal(checkedLvglStart.ok, true)
 
 const previewOnlyButDeviceDark = validateProjectIncludes({
   'main/main.c': '#include "lvgl.h"\n#include "app_ui.h"\nvoid app_main(void) { app_ui_create(lv_scr_act()); }\n',
