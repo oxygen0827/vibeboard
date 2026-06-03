@@ -15,28 +15,31 @@
 #define PREVIEW_HEIGHT 240
 #endif
 
-static uint32_t framebuffer[PREVIEW_WIDTH * PREVIEW_HEIGHT];
+static uint8_t framebuffer[PREVIEW_WIDTH * PREVIEW_HEIGHT * 4];
 static lv_color_t draw_buf_1[PREVIEW_WIDTH * 40];
 static lv_color_t draw_buf_2[PREVIEW_WIDTH * 40];
 static lv_point_t pointer_point;
 static bool pointer_pressed;
 
-static uint32_t color_to_rgba(lv_color_t color)
+static void color_to_rgba(lv_color_t color, uint8_t *rgba)
 {
 #if LV_COLOR_DEPTH == 32
     uint32_t raw = color.full;
-    uint8_t r = (raw >> 16) & 0xff;
-    uint8_t g = (raw >> 8) & 0xff;
-    uint8_t b = raw & 0xff;
-    return ((uint32_t)r << 24) | ((uint32_t)g << 16) | ((uint32_t)b << 8) | 0xff;
+    rgba[0] = (raw >> 16) & 0xff;
+    rgba[1] = (raw >> 8) & 0xff;
+    rgba[2] = raw & 0xff;
+    rgba[3] = 0xff;
 #elif LV_COLOR_DEPTH == 16
     uint16_t raw = color.full;
-    uint8_t r = ((raw >> 11) & 0x1f) * 255 / 31;
-    uint8_t g = ((raw >> 5) & 0x3f) * 255 / 63;
-    uint8_t b = (raw & 0x1f) * 255 / 31;
-    return ((uint32_t)r << 24) | ((uint32_t)g << 16) | ((uint32_t)b << 8) | 0xff;
+    rgba[0] = ((raw >> 11) & 0x1f) * 255 / 31;
+    rgba[1] = ((raw >> 5) & 0x3f) * 255 / 63;
+    rgba[2] = (raw & 0x1f) * 255 / 31;
+    rgba[3] = 0xff;
 #else
-    return 0x000000ff;
+    rgba[0] = 0x00;
+    rgba[1] = 0x00;
+    rgba[2] = 0x00;
+    rgba[3] = 0xff;
 #endif
 }
 
@@ -51,7 +54,7 @@ static void preview_flush(lv_disp_drv_t *disp_drv, const lv_area_t *area, lv_col
     for (int32_t y = y1; y <= y2; y++) {
         for (int32_t x = x1; x <= x2; x++) {
             int32_t src_index = (y - area->y1) * lv_area_get_width(area) + (x - area->x1);
-            framebuffer[y * PREVIEW_WIDTH + x] = color_to_rgba(color_p[src_index]);
+            color_to_rgba(color_p[src_index], &framebuffer[(y * PREVIEW_WIDTH + x) * 4]);
         }
     }
     lv_disp_flush_ready(disp_drv);
@@ -76,9 +79,9 @@ static bool write_rgba(const char *path)
 {
     FILE *file = fopen(path, "wb");
     if (!file) return false;
-    size_t written = fwrite(framebuffer, sizeof(framebuffer[0]), PREVIEW_WIDTH * PREVIEW_HEIGHT, file);
+    size_t written = fwrite(framebuffer, 1, sizeof(framebuffer), file);
     fclose(file);
-    return written == PREVIEW_WIDTH * PREVIEW_HEIGHT;
+    return written == sizeof(framebuffer);
 }
 
 int main(int argc, char **argv)

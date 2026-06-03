@@ -10,6 +10,12 @@ const serverTarget = join(tmp, 'server.py')
 await mkdir(dirname(serverTarget), { recursive: true })
 await writeFile(serverTarget, await readFile(serverSource, 'utf8'))
 
+const runnerSource = await readFile(new URL('../backend/compiler-service/preview_runner/runner.c', import.meta.url), 'utf8')
+assert.match(runnerSource, /static uint8_t framebuffer\[PREVIEW_WIDTH \* PREVIEW_HEIGHT \* 4\]/)
+assert.match(runnerSource, /color_to_rgba\(color_p\[src_index\], &framebuffer\[\(y \* PREVIEW_WIDTH \+ x\) \* 4\]\)/)
+assert.match(runnerSource, /fwrite\(framebuffer, 1, sizeof\(framebuffer\), file\)/)
+assert.doesNotMatch(runnerSource, /static uint32_t framebuffer\[PREVIEW_WIDTH \* PREVIEW_HEIGHT\]/)
+
 const py = `
 import os
 import pathlib
