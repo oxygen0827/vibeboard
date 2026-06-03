@@ -6,6 +6,7 @@
     "dev": "vite --host 0.0.0.0 --port 5173",
     "build": "vite build",
     "test:build-evidence": "node scripts/test-build-evidence.mjs",
+    "test:agent-adapter": "node scripts/test-agent-adapter.mjs",
     "test:code-generation": "node scripts/test-code-generation.mjs",
     "test:file-placement": "node scripts/test-file-placement.mjs",
     "test:official-examples-backend": "node scripts/test-official-examples-backend.mjs",

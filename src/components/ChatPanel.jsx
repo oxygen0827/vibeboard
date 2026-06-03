@@ -2,7 +2,8 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import { completeChat, streamChat } from '../utils/aiApi'
+import { streamChat } from '../utils/aiApi'
+import { AGENT_TASK_TYPES, createAgentTask, runAgentTask } from '../domain/agent/agentAdapter'
 import { patchSkill } from '../context/index'
 import {
   buildBuildRepairMessages,
@@ -115,6 +116,20 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
   const hasConfig = settings.apiKey && settings.baseUrl && settings.model
   const quickPrompts = useMemo(() => getQuickPrompts(board), [board])
 
+  async function runVibeBoardAgentTask(taskType, messages, context = {}) {
+    const result = await runAgentTask({
+      task: createAgentTask({
+        taskType,
+        boardId,
+        skillIds: selectedSkills,
+        context,
+        messages,
+      }),
+      settings,
+    })
+    return result.content
+  }
+
   function toggleSkill(id) {
     onSkillsChange?.(prev => prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id])
   }
@@ -197,16 +212,15 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
       }
 
       setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'manifest', WORKFLOW_STEP_STATUS.ACTIVE, '生成 Program Manifest'))
-      const content = await completeChat({
-        baseUrl: settings.baseUrl,
-        apiKey: settings.apiKey,
-        model: settings.model,
-        messages: buildProgramManifestMessages({
+      const content = await runVibeBoardAgentTask(
+        AGENT_TASK_TYPES.PROGRAM_MANIFEST,
+        buildProgramManifestMessages({
           board,
           selectedSkills: inferredSkills,
           userRequest: text,
         }),
-      })
+        { userRequest: text, inferredSkills }
+      )
       setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'validate-manifest', WORKFLOW_STEP_STATUS.ACTIVE, '校验 Manifest'))
       const manifestResult = parseProgramManifestResponse(content, board)
       if (!manifestResult.ok) {
@@ -236,16 +250,15 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
         return next
       })
 
-      const fileContent = await completeChat({
-        baseUrl: settings.baseUrl,
-        apiKey: settings.apiKey,
-        model: settings.model,
-        messages: buildManifestCodeGenerationMessages({
+      const fileContent = await runVibeBoardAgentTask(
+        AGENT_TASK_TYPES.GENERATE_CODE,
+        buildManifestCodeGenerationMessages({
           board,
           manifest: manifestResult.manifest,
           userRequest: text,
         }),
-      })
+        { userRequest: text, manifest: manifestResult.manifest }
+      )
       setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'validate-source', WORKFLOW_STEP_STATUS.ACTIVE, '校验生成文件'))
       const parsed = parseGeneratedFilesResponseWithOptions(fileContent, board, {
         manifest: manifestResult.manifest,
@@ -305,11 +318,9 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
       { role: 'assistant', content: '正在分析 Build Evidence 并生成源码补丁...' },
     ])
     try {
-      const content = await completeChat({
-        baseUrl: settings.baseUrl,
-        apiKey: settings.apiKey,
-        model: settings.model,
-        messages: buildBuildRepairMessages({
+      const content = await runVibeBoardAgentTask(
+        AGENT_TASK_TYPES.REPAIR_BUILD,
+        buildBuildRepairMessages({
           board,
           selectedSkills: request.selectedSkills || selectedSkills,
           buildEvidence: request.buildEvidence,
@@ -317,7 +328,11 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
           errorLog: request.errorLog,
           projectFiles: request.projectFiles,
         }),
-      })
+        {
+          buildEvidence: request.buildEvidence,
+          repairContext: request.buildEvidence?.repairContext || null,
+        }
+      )
       const parsed = parseGeneratedFilesResponse(content, board)
       if (!parsed.ok) {
         const message = `修复补丁未通过校验：${parsed.errors.join(', ')}`

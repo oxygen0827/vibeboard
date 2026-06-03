@@ -433,6 +433,7 @@ WASM 渲染工具链。
 - [CONTEXT.md](./CONTEXT.md)
 - [docs/architecture-natural-language-hardware-automation.md](./docs/architecture-natural-language-hardware-automation.md)
 - [docs/development-plan.md](./docs/development-plan.md)
+- [docs/agent-skill-integration.md](./docs/agent-skill-integration.md)
 
 ## 测试
 
