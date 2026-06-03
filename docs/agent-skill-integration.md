@@ -7,6 +7,37 @@ evidence workflows under VibeBoard control.
 
 ## Roles
 
+## Editions
+
+VibeBoard supports two compatible editions.
+
+### Standard Edition
+
+The standard edition is the direct web experience. It must work without a local
+developer environment, shell access, or external CLI agents.
+
+- Uses the `internal-ai` adapter.
+- Runs from the browser with the configured OpenAI-compatible / Anthropic API.
+- Uses VibeBoard's hosted compile, OTA, serial-log, and digital-twin services.
+- Keeps the simplest user experience: describe a device behavior, generate,
+  compile, flash, and inspect evidence.
+
+### Developer Edition
+
+The developer edition adds external agent integration for users who want a
+Cursor-like hardware engineering workflow.
+
+- Can use `opencode`, `codex`, or `claude-code` adapters.
+- Runs through a server-side or local agent runner, not directly in the browser.
+- Can grant controlled access to a workspace, shell, git, tests, and compiler
+  tools.
+- Still sends results back through VibeBoard validation, build, flash, and
+  evidence checks.
+
+Both editions share the same task shape, board profiles, skills, driver
+contracts, validation, build evidence, and device evidence. The adapter changes,
+but the hardware workflow stays compatible.
+
 ### VibeBoard
 
 - Owns board profiles and driver contracts.
@@ -41,6 +72,7 @@ would otherwise become hard-coded IDE behavior:
 ```json
 {
   "adapter": "internal-ai",
+  "edition": "standard",
   "taskType": "repair-build",
   "boardId": "szpi_esp32s3",
   "skillIds": ["lvgl", "wifi"],
@@ -57,11 +89,12 @@ would otherwise become hard-coded IDE behavior:
 
 ## Adapter Roadmap
 
-1. Keep `internal-ai` as the baseline adapter.
-2. Add a server-side adapter runner so CLI agents do not run in the browser.
-3. Add `opencode` as the first external adapter.
-4. Store agent task inputs and outputs as evidence for replay and debugging.
-5. Turn current board rules and repair prompts into versioned skills.
+1. Keep `internal-ai` as the standard-edition baseline adapter.
+2. Add edition-aware agent task routing.
+3. Add a server-side adapter runner so CLI agents do not run in the browser.
+4. Add `opencode` as the first developer-edition external adapter.
+5. Store agent task inputs and outputs as evidence for replay and debugging.
+6. Turn current board rules and repair prompts into versioned skills.
 
 ## Boundary
 
@@ -74,4 +107,3 @@ authority over:
 - firmware artifact selection,
 - flashing and OTA,
 - hardware evidence interpretation.
-

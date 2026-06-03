@@ -7,6 +7,11 @@ export const AGENT_ADAPTERS = {
   CLAUDE_CODE: 'claude-code',
 }
 
+export const AGENT_EDITIONS = {
+  STANDARD: 'standard',
+  DEVELOPER: 'developer',
+}
+
 export const AGENT_TASK_TYPES = {
   PROGRAM_MANIFEST: 'program-manifest',
   GENERATE_CODE: 'generate-code',
@@ -15,6 +20,7 @@ export const AGENT_TASK_TYPES = {
 
 export function createAgentTask({
   adapter = AGENT_ADAPTERS.INTERNAL_AI,
+  edition = AGENT_EDITIONS.STANDARD,
   taskType,
   boardId,
   skillIds = [],
@@ -23,6 +29,7 @@ export function createAgentTask({
 } = {}) {
   return {
     adapter,
+    edition,
     taskType,
     boardId,
     skillIds,
@@ -42,6 +49,11 @@ export async function runAgentTask({
     throw new Error('Agent task messages are required')
   }
 
+  const edition = task.edition || AGENT_EDITIONS.STANDARD
+  if (edition === AGENT_EDITIONS.STANDARD && task.adapter !== AGENT_ADAPTERS.INTERNAL_AI) {
+    throw new Error(`Standard edition only supports ${AGENT_ADAPTERS.INTERNAL_AI}`)
+  }
+
   if (task.adapter !== AGENT_ADAPTERS.INTERNAL_AI) {
     throw new Error(`Agent adapter not installed: ${task.adapter}`)
   }
@@ -55,6 +67,7 @@ export async function runAgentTask({
 
   return {
     adapter: task.adapter,
+    edition,
     taskType: task.taskType,
     content,
   }

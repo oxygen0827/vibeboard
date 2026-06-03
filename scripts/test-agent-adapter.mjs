@@ -23,6 +23,7 @@ await copyModule('src/domain/agent/agentAdapter.js')
 
 const {
   AGENT_ADAPTERS,
+  AGENT_EDITIONS,
   AGENT_TASK_TYPES,
   createAgentTask,
   runAgentTask,
@@ -37,6 +38,7 @@ const task = createAgentTask({
 })
 
 assert.equal(task.adapter, AGENT_ADAPTERS.INTERNAL_AI)
+assert.equal(task.edition, AGENT_EDITIONS.STANDARD)
 assert.equal(task.taskType, AGENT_TASK_TYPES.REPAIR_BUILD)
 assert.deepEqual(task.skillIds, ['lvgl'])
 assert.equal(task.messages.length, 1)
@@ -57,6 +59,7 @@ const result = await runAgentTask({
 })
 
 assert.equal(result.adapter, AGENT_ADAPTERS.INTERNAL_AI)
+assert.equal(result.edition, AGENT_EDITIONS.STANDARD)
 assert.equal(result.taskType, AGENT_TASK_TYPES.REPAIR_BUILD)
 assert.equal(result.content, '{"files":[]}')
 assert.equal(captured.baseUrl, 'https://example.test/v1')
@@ -67,6 +70,15 @@ assert.deepEqual(captured.messages, task.messages)
 await assert.rejects(
   () => runAgentTask({
     task: { ...task, adapter: AGENT_ADAPTERS.OPENCODE },
+    settings: {},
+    complete: async () => '',
+  }),
+  /Standard edition only supports internal-ai/,
+)
+
+await assert.rejects(
+  () => runAgentTask({
+    task: { ...task, adapter: AGENT_ADAPTERS.OPENCODE, edition: AGENT_EDITIONS.DEVELOPER },
     settings: {},
     complete: async () => '',
   }),
