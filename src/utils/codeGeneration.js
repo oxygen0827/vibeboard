@@ -75,11 +75,15 @@ export function parseGeneratedFilesResponseWithOptions(text, board, options = {}
   for (const item of rejected) errors.push(`${item.path}:${item.reason}`)
 
   const sourceEntries = Object.entries(accepted)
-  const hasMain = sourceEntries.some(([path, content]) =>
-    /^main\/main\.(c|cpp)$/.test(path) && /\bapp_main\s*\(/.test(content)
-  )
-  if (!hasMain) errors.push('missing-main-app-main')
-  errors.push(...validateGeneratedFileSet(accepted, options.manifest))
+  if (options.requireCompleteProject !== false) {
+    const hasMain = sourceEntries.some(([path, content]) =>
+      /^main\/main\.(c|cpp)$/.test(path) && /\bapp_main\s*\(/.test(content)
+    )
+    if (!hasMain) errors.push('missing-main-app-main')
+  }
+  if (options.validateManifestFiles !== false) {
+    errors.push(...validateGeneratedFileSet(accepted, options.manifest))
+  }
 
   const files = { ...accepted }
   const digitalTwinManifest = extractDigitalTwinManifest(parsed)
@@ -145,11 +149,15 @@ function parseFileBlockResponse(text, board, originalError, options = {}) {
 
   const { accepted, rejected } = normalizeProjectFiles(rawFiles, board)
   const errors = rejected.map(item => `${item.path}:${item.reason}`)
-  const hasMain = Object.entries(accepted).some(([path, content]) =>
-    /^main\/main\.(c|cpp)$/.test(path) && /\bapp_main\s*\(/.test(content)
-  )
-  if (!hasMain) errors.push('missing-main-app-main')
-  errors.push(...validateGeneratedFileSet(accepted, options.manifest))
+  if (options.requireCompleteProject !== false) {
+    const hasMain = Object.entries(accepted).some(([path, content]) =>
+      /^main\/main\.(c|cpp)$/.test(path) && /\bapp_main\s*\(/.test(content)
+    )
+    if (!hasMain) errors.push('missing-main-app-main')
+  }
+  if (options.validateManifestFiles !== false) {
+    errors.push(...validateGeneratedFileSet(accepted, options.manifest))
+  }
 
   return { ok: errors.length === 0, files: accepted, errors }
 }
@@ -363,6 +371,13 @@ Allowed output schema:
   "driverContracts": ["display.lvgl-ui"],
   "runtimeServices": ["freertos-task", "serial-log"],
   "acceptanceChecks": ["LCD shows the main screen", "serial log contains READY"],
+  "preview": {
+    "viewport": { "width": 320, "height": 240 },
+    "scene": "first_screen",
+    "peripherals": [
+      { "id": "display", "state": "active" }
+    ]
+  },
   "allowedWriteSurface": "${WRITE_SURFACES.APPLICATION_SOURCE_ONLY}"
 }
 
@@ -370,6 +385,11 @@ Rules:
 - Plan Application Source only: main/main.c, main/main.cpp, main/**/*.c, main/**/*.cpp, main/**/*.h, main/**/*.hpp.
 - Follow the official SZPI examples: keep main/main.c or main/main.cpp as a thin app_main entrypoint, and put real features in app_*.c/app_*.h modules.
 - Preferred module names: app_ui.c/h for LVGL UI, app_wifi.c/h for WiFi, app_audio.c/h for audio, app_camera.c/h for camera, app_sr.c/h for speech recognition.
+- If skillIds includes lvgl or requires.display is true, include main/app_ui.c and main/app_ui.h in files. app_ui.c must define void app_ui_create(lv_obj_t *root) and void app_ui_start(void); app_ui.h must declare both.
+- app_ui.* must be pure LVGL previewable code: include lvgl.h only, create widgets under the supplied root object, and do not call ESP-IDF, BSP, FreeRTOS, WiFi, audio, camera, NVS, GPIO, or task APIs.
+- main/main.c should do board init and then call app_ui_start() after bsp_lvgl_start().
+- preview.viewport must be 320x240 for the SZPI LCD unless the user explicitly asks for another target.
+- preview.peripherals should list hardware status chips implied by the request and selected skills, such as display, microphone, speaker, wifi, ble, camera, sdcard, imu, gpio.
 - For vision/C++ features, use main/main.cpp plus app_camera.cpp/app_camera.hpp or who_*.cpp/who_*.hpp modules.
 - For assets, use main/assets/*.c and main/assets/*.h. For BLE HID/protocol helpers, use main/bt/*.c and main/bt/*.h.
 - Do not plan CMakeLists.txt, sdkconfig.defaults, idf_component.yml, partitions.csv, components/*, BSP files, or .ino files.
@@ -437,6 +457,9 @@ Rules:
 - Generate application source files only: main/main.c, main/main.cpp, main/**/*.c, main/**/*.cpp, main/**/*.h, main/**/*.hpp.
 - Follow the official SZPI examples: main/main.c or main/main.cpp should be a thin entrypoint; put feature logic in app_*.c/app_*.h modules.
 - Preferred module names: app_ui.c/h, app_wifi.c/h, app_audio.c/h, app_camera.c/h, app_sr.c/h. Use who_*.cpp/hpp for AI vision helpers.
+- For LVGL/display projects, generate main/app_ui.c and main/app_ui.h. app_ui.c must define void app_ui_create(lv_obj_t *root), and app_ui.h must declare it.
+- app_ui.* must be portable LVGL-only preview code: include lvgl.h only, create widgets under root, and never call ESP-IDF, BSP, FreeRTOS, WiFi, audio, camera, NVS, GPIO, or task APIs.
+- main/main.c must perform board init and call app_ui_create(lv_scr_act()) after bsp_lvgl_start().
 - Use main/assets/* for generated C assets and main/bt/* for BLE helper modules when useful.
 - Do not generate CMakeLists.txt, sdkconfig.defaults, idf_component.yml, partitions.csv, components/*, or BSP files.
 - Include a complete app_main in main/main.c or main/main.cpp.
@@ -498,7 +521,9 @@ Rules:
 - Generate exactly the files listed in the manifest unless a required matching local header is missing.
 - Generate Application Source only: main/main.c, main/main.cpp, main/**/*.c, main/**/*.cpp, main/**/*.h, main/**/*.hpp.
 - Follow the official SZPI examples: keep app_main thin and move feature logic into app_*.c/app_*.h modules.
-- For LVGL/display UI, expose void app_ui_start(void) in app_ui.c/app_ui.h so VibeBoard can reuse the same UI source in the LVGL simulator.
+- For LVGL/display UI, main/app_ui.c must define void app_ui_create(lv_obj_t *root) and void app_ui_start(void); main/app_ui.h must declare both so VibeBoard can reuse the same UI source in both preview runners.
+- app_ui.* must be portable LVGL-only preview code: include lvgl.h only, create widgets under root, and never call ESP-IDF, BSP, FreeRTOS, WiFi, audio, camera, NVS, GPIO, or task APIs.
+- main/main.c must perform board init and call app_ui_start() after bsp_lvgl_start().
 - Use main/assets/* for generated C assets and main/bt/* for BLE helper modules when listed in the manifest.
 - Do not generate CMakeLists.txt, sdkconfig.defaults, idf_component.yml, partitions.csv, components/*, or BSP files.
 - Include a complete app_main in the manifest entry file.
@@ -553,6 +578,9 @@ Allowed output schema:
 Rules:
 - Patch Application Source only: main/main.c, main/main.cpp, main/**/*.c, main/**/*.cpp, main/**/*.h, main/**/*.hpp.
 - Preserve the official-example structure: keep app_main thin and repair app_*.c/app_*.h modules when possible.
+- For LVGL/display repairs, preserve or create main/app_ui.c and main/app_ui.h. app_ui.c must define void app_ui_create(lv_obj_t *root), and app_ui.h must declare it.
+- app_ui.* must be portable LVGL-only preview code: include lvgl.h only and do not call ESP-IDF, BSP, FreeRTOS, WiFi, audio, camera, NVS, GPIO, or task APIs.
+- main/main.c should own hardware init and call app_ui_create(lv_scr_act()) after bsp_lvgl_start().
 - Do not generate CMakeLists.txt, sdkconfig.defaults, idf_component.yml, partitions.csv, components/*, or BSP files.
 - Preserve the user's intended behavior; fix the compile error with the smallest complete source update.
 - Follow the Repair Context first. If it identifies a missing header, missing symbol, implicit declaration, CMake layout issue, or LVGL thread-safety issue, repair that root cause directly before making broader changes.
@@ -579,6 +607,56 @@ Current editable files:
 ${JSON.stringify(editableFiles, null, 2)}
 
 Repair the source files now.`,
+    },
+  ]
+}
+
+export function buildPreviewRepairMessages({ board, selectedSkills = [], previewEvidence, manifest, projectFiles = {} }) {
+  const editableFiles = Object.fromEntries(
+    Object.entries(projectFiles || {}).filter(([path]) => !path.startsWith('__'))
+  )
+  const officialExampleGuidance = buildOfficialExampleGuidance(board)
+  return [
+    {
+      role: 'system',
+      content: `For this VibeBoard LVGL preview repair step, return ONLY the JSON object requested below. Do not use markdown, FILE labels, code fences, explanations, or the board prompt's normal code-block output format.
+
+${board.buildSystemPrompt(selectedSkills)}
+
+${officialExampleGuidance}
+
+You are repairing a VibeBoard preview failure or visual mismatch before firmware is compiled or flashed. Return ONLY valid JSON. No markdown, no prose.
+
+Allowed output schema:
+{
+  "files": [
+    { "path": "main/main.c", "content": "..." },
+    { "path": "main/app_ui.h", "content": "..." },
+    { "path": "main/app_ui.c", "content": "..." }
+  ]
+}
+
+Rules:
+- Patch Application Source only: main/main.c, main/main.cpp, main/**/*.c, main/**/*.cpp, main/**/*.h, main/**/*.hpp.
+- For LVGL/display projects, main/app_ui.c must define void app_ui_create(lv_obj_t *root), and main/app_ui.h must declare it.
+- app_ui.* must be portable LVGL-only preview code: include lvgl.h only, create widgets under root, and never call ESP-IDF, BSP, FreeRTOS, WiFi, audio, camera, NVS, GPIO, or task APIs.
+- main/main.c should own hardware init and call app_ui_create(lv_scr_act()) after bsp_lvgl_start().
+- Preserve the user's intended behavior and fix the preview issue with the smallest complete source update.
+- Include full replacement content for every changed file.
+- Do not generate CMakeLists.txt, sdkconfig.defaults, idf_component.yml, partitions.csv, components/*, or BSP files.`,
+    },
+    {
+      role: 'user',
+      content: `Preview Evidence:
+${JSON.stringify(previewEvidence || {}, null, 2)}
+
+Program Manifest:
+${JSON.stringify(manifest || {}, null, 2)}
+
+Current editable files:
+${JSON.stringify(editableFiles, null, 2)}
+
+Repair the previewable source files now.`,
     },
   ]
 }

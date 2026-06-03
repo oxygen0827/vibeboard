@@ -67,7 +67,14 @@ function copyTextFallback(text) {
   if (!ok) throw new Error('copy failed')
 }
 
-export default function CompilePanel({ projectFiles: sourceProp, selectedSkills, boardId, projectId, onClose, onRepairBuildFailure }) {
+export default function CompilePanel({
+  projectFiles: sourceProp,
+  selectedSkills,
+  boardId,
+  projectId,
+  onClose,
+  onRepairBuildFailure,
+}) {
   const [compileMode, setCompileMode] = useState('project')
   const [officialExampleId, setOfficialExampleId] = useState(OFFICIAL_EXAMPLES[0]?.id || '')
   const [serverExamples, setServerExamples] = useState([])

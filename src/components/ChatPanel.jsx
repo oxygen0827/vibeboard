@@ -2,15 +2,15 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import { streamChat } from '../utils/aiApi'
+import { completeChat, streamChat } from '../utils/aiApi'
 import { AGENT_TASK_TYPES, createAgentTask, runAgentTask } from '../domain/agent/agentAdapter'
 import { patchSkill } from '../context/index'
 import {
   buildBuildRepairMessages,
   buildManifestCodeGenerationMessages,
+  buildPreviewRepairMessages,
   buildProgramManifestMessages,
   inferSkillsFromRequest,
-  parseGeneratedFilesResponse,
   parseGeneratedFilesResponseWithOptions,
   parseProgramManifestResponse,
 } from '../utils/codeGeneration'
@@ -80,7 +80,21 @@ function savePatches(patches) {
   localStorage.setItem('skillPatches', JSON.stringify(patches))
 }
 
-export default function ChatPanel({ settings, board, boardId, onInsertCode, initialPrompt, onConsumePrompt, repairRequest, onConsumeRepairRequest, selectedSkills = [], onSkillsChange, onResetProject }) {
+export default function ChatPanel({
+  settings,
+  board,
+  boardId,
+  onInsertCode,
+  initialPrompt,
+  onConsumePrompt,
+  repairRequest,
+  onConsumeRepairRequest,
+  previewRepairRequest,
+  onConsumePreviewRepairRequest,
+  selectedSkills = [],
+  onSkillsChange,
+  onResetProject,
+}) {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
@@ -112,6 +126,13 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
       onConsumeRepairRequest?.()
     }
   }, [repairRequest]) // eslint-disable-line
+
+  useEffect(() => {
+    if (previewRepairRequest) {
+      repairPreviewFailure(previewRepairRequest)
+      onConsumePreviewRepairRequest?.()
+    }
+  }, [previewRepairRequest]) // eslint-disable-line
 
   const hasConfig = settings.apiKey && settings.baseUrl && settings.model
   const quickPrompts = useMemo(() => getQuickPrompts(board), [board])
@@ -284,7 +305,11 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
       }
       setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'validate-source', WORKFLOW_STEP_STATUS.DONE, '源码结构已通过校验'))
       setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'apply-source', WORKFLOW_STEP_STATUS.ACTIVE, '写入编辑器'))
-      onInsertCode?.(parsed.files)
+      onInsertCode?.(parsed.files, {
+        manifest: manifestResult.manifest,
+        selectedSkills: manifestResult.manifest.skillIds,
+        autoPreview: true,
+      })
       setInput('')
       setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'apply-source', WORKFLOW_STEP_STATUS.DONE, `${Object.keys(parsed.files).length} 个文件已写入`))
       setMessages(prev => {
@@ -333,7 +358,10 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
           repairContext: request.buildEvidence?.repairContext || null,
         }
       )
-      const parsed = parseGeneratedFilesResponse(content, board)
+      const parsed = parseGeneratedFilesResponseWithOptions(content, board, {
+        requireCompleteProject: false,
+        validateManifestFiles: false,
+      })
       if (!parsed.ok) {
         const message = `修复补丁未通过校验：${parsed.errors.join(', ')}`
         setMessages(prev => {
@@ -356,6 +384,65 @@ export default function ChatPanel({ settings, board, boardId, onInsertCode, init
       setMessages(prev => {
         const next = [...prev]
         next[next.length - 1] = { role: 'assistant', content: `修复失败：${err.message}`, error: true }
+        return next
+      })
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  async function repairPreviewFailure(request) {
+    if (generating || streaming || !hasConfig) return
+    setGenerating(true)
+    setKnowledgeCard(null)
+    setMessages(prev => [
+      ...prev,
+      { role: 'user', content: '请根据 LVGL 预览结果自动修复当前应用源码。' },
+      { role: 'assistant', content: '正在分析 Preview Evidence 并生成预览修复补丁...' },
+    ])
+    try {
+      const content = await completeChat({
+        baseUrl: settings.baseUrl,
+        apiKey: settings.apiKey,
+        model: settings.model,
+        messages: buildPreviewRepairMessages({
+          board,
+          selectedSkills: request.selectedSkills || selectedSkills,
+          previewEvidence: request.previewEvidence,
+          manifest: request.manifest,
+          projectFiles: request.projectFiles,
+        }),
+      })
+      const parsed = parseGeneratedFilesResponseWithOptions(content, board, {
+        requireCompleteProject: false,
+        validateManifestFiles: false,
+      })
+      if (!parsed.ok) {
+        const message = `预览修复补丁未通过校验：${parsed.errors.join(', ')}`
+        setMessages(prev => {
+          const next = [...prev]
+          next[next.length - 1] = { role: 'assistant', content: message, error: true }
+          return next
+        })
+        return
+      }
+      onInsertCode?.(parsed.files, {
+        manifest: request.manifest,
+        selectedSkills: request.selectedSkills || selectedSkills,
+        autoPreview: true,
+      })
+      setMessages(prev => {
+        const next = [...prev]
+        next[next.length - 1] = {
+          role: 'assistant',
+          content: `已应用 ${Object.keys(parsed.files).length} 个预览修复文件：\n\n${Object.keys(parsed.files).map(path => `- ${path}`).join('\n')}\n\n正在重新生成预览。`,
+        }
+        return next
+      })
+    } catch (err) {
+      setMessages(prev => {
+        const next = [...prev]
+        next[next.length - 1] = { role: 'assistant', content: `预览修复失败：${err.message}`, error: true }
         return next
       })
     } finally {

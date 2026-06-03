@@ -9,6 +9,7 @@
     "test:agent-adapter": "node scripts/test-agent-adapter.mjs",
     "test:code-generation": "node scripts/test-code-generation.mjs",
     "test:file-placement": "node scripts/test-file-placement.mjs",
+    "test:lvgl-preview-backend": "node scripts/test-lvgl-preview-backend.mjs",
     "test:official-examples-backend": "node scripts/test-official-examples-backend.mjs",
     "test:compiler-incremental-cache": "node scripts/test-compiler-incremental-cache.mjs",
     "test:remote-ota-backend": "node scripts/test-remote-ota-backend.mjs",

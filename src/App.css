@@ -178,6 +178,11 @@
   overflow: hidden;
 }
 
+.editor-pane > .project-editor {
+  flex: 1;
+  min-height: 260px;
+}
+
 /* Editor toolbar */
 .editor-toolbar {
   display: flex;

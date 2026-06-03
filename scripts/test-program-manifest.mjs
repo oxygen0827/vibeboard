@@ -62,6 +62,11 @@ const valid = validateProgramManifest({
   driverContracts: ['display.lvgl-ui', 'network.wifi-sta', 'network.wifi-sta'],
   runtimeServices: ['lvgl', 'wifi', 'serial-log', 'serial-log'],
   acceptanceChecks: ['LCD shows status', 'WiFi connects'],
+  preview: {
+    viewport: { width: 320, height: 240 },
+    scene: 'first_screen',
+    peripherals: [{ id: 'display', state: 'active' }],
+  },
   allowedWriteSurface: WRITE_SURFACES.APPLICATION_SOURCE_ONLY,
 }, { board })
 
@@ -71,6 +76,8 @@ assert.deepEqual(valid.manifest.skillIds, ['lvgl', 'wifi'])
 assert.deepEqual(valid.manifest.driverContracts, ['display.lvgl-ui', 'network.wifi-sta'])
 assert.deepEqual(valid.manifest.runtimeServices, ['lvgl', 'wifi', 'serial-log'])
 assert.deepEqual(valid.manifest.acceptanceChecks, ['LCD shows status', 'WiFi connects'])
+assert.deepEqual(valid.manifest.preview.viewport, { width: 320, height: 240 })
+assert.deepEqual(valid.manifest.preview.peripherals, [{ id: 'display', state: 'active' }])
 assert.deepEqual(valid.manifest.files.map(file => file.path).sort(), [
   'main/assets/font_alipuhui20.c',
   'main/assets/font_alipuhui20.h',
@@ -165,6 +172,19 @@ const audioSpiffsStorage = validateProgramManifest({
   allowedWriteSurface: WRITE_SURFACES.APPLICATION_SOURCE_ONLY,
 }, { board })
 assert.equal(audioSpiffsStorage.ok, true)
+
+const badPreview = validateProgramManifest({
+  schemaVersion: 1,
+  boardId: 'szpi_esp32s3',
+  skillIds: ['lvgl'],
+  entry: 'main/main.c',
+  files: [{ path: 'main/main.c', role: 'entry' }],
+  requires: { display: true },
+  preview: { viewport: { width: 80, height: 240 } },
+  allowedWriteSurface: WRITE_SURFACES.APPLICATION_SOURCE_ONLY,
+}, { board })
+assert.equal(badPreview.ok, false)
+assert.match(badPreview.errors.map(e => e.message).join(','), /preview\.viewport/)
 
 const duplicateEntry = validateProgramManifest({
   schemaVersion: 1,

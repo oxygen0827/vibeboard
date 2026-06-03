@@ -114,6 +114,7 @@ export default function App() {
   const [compileSessionId, setCompileSessionId] = useState(newCompileSessionId)
   const [boardId, setBoardId] = useState(loadInitialBoardId)
   const [selectedSkills, setSelectedSkills] = useState([])
+  const [latestManifest, setLatestManifest] = useState(null)
   const board = BOARDS[boardId]
   const generatedFiles = buildGeneratedConfig(boardId, selectedSkills)
 
@@ -134,10 +135,18 @@ export default function App() {
     localStorage.setItem(BOARD_STORAGE_KEY, id)
   }
 
+  function handleSkillsChange(nextOrUpdater) {
+    setSelectedSkills(prev => {
+      const next = typeof nextOrUpdater === 'function' ? nextOrUpdater(prev) : nextOrUpdater
+      return next || []
+    })
+  }
+
   function resetProjectState() {
     const files = getDefaultFiles(boardId)
     setProjectFiles(files)
     setSelectedSkills([])
+    setLatestManifest(null)
     setActiveFile(Object.keys(files)[0] || '')
     setPendingLogAnalysis(null)
     setPendingBuildRepair(null)
@@ -148,30 +157,33 @@ export default function App() {
     const files = getDefaultFiles(boardId)
     setProjectFiles(files)
     setSelectedSkills([])
+    setLatestManifest(null)
     setActiveFile(Object.keys(files)[0] || '')
   }, [boardId])
 
-  const handleInsertCode = useCallback((codeOrFiles) => {
+  const handleInsertCode = useCallback((codeOrFiles, options = {}) => {
+    const manifest = options.manifest === undefined ? latestManifest : options.manifest
+    let nextFiles = projectFiles
     if (typeof codeOrFiles === 'string') {
       const target = isSourcePath(activeFile) ? activeFile : getMainSourcePath()
       const normalized = normalizeGeneratedSourceFiles({ [target]: codeOrFiles }).files
-      setProjectFiles(prev => ({ ...prev, ...normalized }))
+      nextFiles = { ...projectFiles, ...normalized }
+      setProjectFiles(nextFiles)
       setActiveFile(target)
     } else {
       const digitalTwinManifest = codeOrFiles?.[DIGITAL_TWIN_MANIFEST_KEY]
       const { files: applicationFiles } = normalizeApplicationFiles(codeOrFiles, board)
       const normalized = normalizeGeneratedSourceFiles(applicationFiles).files
       const nextActive = chooseActiveGeneratedFile(normalized)
-      setProjectFiles(prev => {
-        const next = { ...prev, ...normalized }
-        if (digitalTwinManifest) next[DIGITAL_TWIN_MANIFEST_KEY] = digitalTwinManifest
-        if (normalized['main/main.cpp']) delete next['main/main.c']
-        if (normalized['main/main.c']) delete next['main/main.cpp']
-        return next
-      })
+      nextFiles = { ...projectFiles, ...normalized }
+      if (digitalTwinManifest) nextFiles[DIGITAL_TWIN_MANIFEST_KEY] = digitalTwinManifest
+      if (normalized['main/main.cpp']) delete nextFiles['main/main.c']
+      if (normalized['main/main.c']) delete nextFiles['main/main.cpp']
+      setProjectFiles(nextFiles)
       if (nextActive) setActiveFile(nextActive)
     }
-  }, [activeFile, board])
+    setLatestManifest(manifest || null)
+  }, [activeFile, board, latestManifest, projectFiles])
 
   const hasConfig = settings.apiKey && settings.baseUrl && settings.model
 
@@ -247,7 +259,7 @@ export default function App() {
                 repairRequest={pendingBuildRepair}
                 onConsumeRepairRequest={() => setPendingBuildRepair(null)}
                 selectedSkills={selectedSkills}
-                onSkillsChange={setSelectedSkills}
+                onSkillsChange={handleSkillsChange}
                 onResetProject={resetProjectState}
               />
             </div>

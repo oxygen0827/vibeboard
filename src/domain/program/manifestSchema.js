@@ -25,6 +25,11 @@ export const RUNTIME_SERVICES = new Set([
   'serial-log',
 ])
 
+export const DEFAULT_PREVIEW_VIEWPORT = {
+  width: 320,
+  height: 240,
+}
+
 export { FAILURE_CATEGORIES }
 
 export function createEmptyProgramManifest({ boardId, skillIds = [], programName = 'vibe_app' } = {}) {
@@ -41,6 +46,11 @@ export function createEmptyProgramManifest({ boardId, skillIds = [], programName
     driverContracts: [],
     runtimeServices: [],
     acceptanceChecks: [],
+    preview: {
+      viewport: { ...DEFAULT_PREVIEW_VIEWPORT },
+      scene: 'default',
+      peripherals: [],
+    },
     allowedWriteSurface: WRITE_SURFACES.APPLICATION_SOURCE_ONLY,
   }
 }

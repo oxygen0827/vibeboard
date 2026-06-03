@@ -24,6 +24,7 @@ await copyModule('src/utils/projectValidation.js')
 const {
   normalizeGeneratedSource,
   normalizeGeneratedSourceFiles,
+  validateLvglPreviewContract,
   validateProjectIncludes,
 } = await import(pathToFileURL(join(tmp, 'src/utils/projectValidation.js')).href)
 
@@ -77,6 +78,8 @@ assert.equal(normalized.files['main/app_ui.h'], '#pragma once\nvoid app_ui_start
 
 const includes = validateProjectIncludes({
   'main/main.c': fixed,
+  'main/app_ui.h': '#pragma once\n#include "lvgl.h"\nvoid app_ui_create(lv_obj_t *root);\nvoid app_ui_start(void);\n',
+  'main/app_ui.c': '#include "app_ui.h"\nvoid app_ui_create(lv_obj_t *root) { lv_label_create(root); }\nvoid app_ui_start(void) { app_ui_create(lv_scr_act()); }\n',
 }, ['lvgl'])
 assert.equal(includes.ok, true)
 
@@ -114,5 +117,24 @@ const cameraContractViolation = validateProjectIncludes({
 }, ['camera'], board)
 assert.equal(cameraContractViolation.ok, false)
 assert.match(cameraContractViolation.message, /camera\.capture forbids dvp_pwdn/)
+
+const previewContractOk = validateLvglPreviewContract({
+  'main/app_ui.h': '#pragma once\n#include "lvgl.h"\nvoid app_ui_create(lv_obj_t *root);\nvoid app_ui_start(void);\n',
+  'main/app_ui.c': '#include "app_ui.h"\nvoid app_ui_create(lv_obj_t *root) { lv_label_create(root); }\nvoid app_ui_start(void) { app_ui_create(lv_scr_act()); }\n',
+}, ['lvgl'])
+assert.equal(previewContractOk.ok, true)
+
+const previewContractMissing = validateLvglPreviewContract({
+  'main/main.c': 'void app_main(void) {}',
+}, ['lvgl'])
+assert.equal(previewContractMissing.ok, false)
+assert.match(previewContractMissing.message, /main\/app_ui\.c/)
+
+const previewContractHardware = validateLvglPreviewContract({
+  'main/app_ui.h': '#pragma once\n#include "lvgl.h"\nvoid app_ui_create(lv_obj_t *root);\nvoid app_ui_start(void);\n',
+  'main/app_ui.c': '#include "esp32_s3_szp.h"\n#include "app_ui.h"\nvoid app_ui_create(lv_obj_t *root) { bsp_lvgl_start(); }\nvoid app_ui_start(void) { app_ui_create(lv_scr_act()); }\n',
+}, ['lvgl'])
+assert.equal(previewContractHardware.ok, false)
+assert.match(previewContractHardware.message, /portable LVGL-only|must not call hardware/)
 
 console.log('project validation tests passed')

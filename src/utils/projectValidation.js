@@ -98,6 +98,41 @@ const SKILL_API_RULES = [
 
 const DEFAULT_LVGL_FONT = 'lv_font_montserrat_20'
 const ENABLED_LVGL_FONTS = new Set([DEFAULT_LVGL_FONT])
+const APP_UI_CONTRACT_SOURCE = 'main/app_ui.c'
+const APP_UI_CONTRACT_HEADER = 'main/app_ui.h'
+
+const APP_UI_FORBIDDEN_INCLUDES = [
+  'esp32_s3_szp.h',
+  'esp_wifi.h',
+  'esp_event.h',
+  'esp_netif.h',
+  'esp_http_server.h',
+  'esp_ota_ops.h',
+  'nvs_flash.h',
+  'driver/gpio.h',
+  'driver/i2c_master.h',
+  'driver/spi_master.h',
+  'driver/i2s_std.h',
+  'driver/i2s_tdm.h',
+  'esp_camera.h',
+  'audio_player.h',
+  'esp_codec_dev.h',
+  'freertos/FreeRTOS.h',
+  'freertos/task.h',
+  'freertos/queue.h',
+  'freertos/event_groups.h',
+]
+
+const APP_UI_FORBIDDEN_PATTERNS = [
+  /\bbsp_[a-zA-Z0-9_]*\s*\(/,
+  /\bpca9557_init\s*\(/,
+  /\besp_[a-zA-Z0-9_]*\s*\(/,
+  /\bnvs_flash_[a-zA-Z0-9_]*\s*\(/,
+  /\bxTaskCreate[a-zA-Z0-9_]*\s*\(/,
+  /\bgpio_[a-zA-Z0-9_]*\s*\(/,
+  /\bi2c_[a-zA-Z0-9_]*\s*\(/,
+  /\bi2s_[a-zA-Z0-9_]*\s*\(/,
+]
 
 function basename(path) {
   return path.split('/').pop()
@@ -136,8 +171,14 @@ export function validateProjectIncludes(projectFiles, selectedSkills = [], board
 
   const skillMismatches = validateSkillApiUsage(projectFiles, selectedSkills)
   const contractViolations = validateDriverContractUsage(projectFiles, selectedSkills, board)
+  const previewContract = validateLvglPreviewContract(projectFiles, selectedSkills)
 
-  if (missing.length === 0 && skillMismatches.length === 0 && contractViolations.length === 0) {
+  if (
+    missing.length === 0 &&
+    skillMismatches.length === 0 &&
+    contractViolations.length === 0 &&
+    previewContract.ok
+  ) {
     return { ok: true, message: '' }
   }
 
@@ -151,6 +192,9 @@ export function validateProjectIncludes(projectFiles, selectedSkills = [], board
   }
   if (contractViolations.length > 0) {
     sections.push(`AI generated source that violates selected Driver Contracts, so compile was stopped before upload.\n${contractViolations.map(item => `- ${item.source}: ${item.contractId} forbids ${item.forbidden}`).join('\n')}\n\nAsk AI to regenerate within the Driver Contract boundary.`)
+  }
+  if (!previewContract.ok) {
+    sections.push(`AI generated LVGL UI source does not satisfy the preview contract.\n${previewContract.diagnostics.map(item => `- ${item.path || 'main/app_ui.*'}: ${item.message}`).join('\n')}\n\nAsk AI to regenerate app_ui.c/app_ui.h with portable LVGL-only preview code.`)
   }
 
   return {
@@ -186,6 +230,87 @@ function validateDriverContractUsage(projectFiles, selectedSkills = [], board = 
   return violations
 }
 
+export function validateLvglPreviewContract(projectFiles, selectedSkills = []) {
+  const hasAppUiContractFiles = Boolean(
+    projectFiles?.[APP_UI_CONTRACT_SOURCE] || projectFiles?.[APP_UI_CONTRACT_HEADER],
+  )
+  if (!new Set(selectedSkills || []).has('lvgl') && !hasAppUiContractFiles) {
+    return { ok: true, diagnostics: [], message: '' }
+  }
+
+  const diagnostics = []
+  const appUiSource = String(projectFiles?.[APP_UI_CONTRACT_SOURCE] || '')
+  const appUiHeader = String(projectFiles?.[APP_UI_CONTRACT_HEADER] || '')
+
+  if (!appUiSource || !appUiHeader) {
+    diagnostics.push({
+      category: 'preview-contract-missing',
+      message: 'LVGL preview needs main/app_ui.c and main/app_ui.h.',
+    })
+  }
+
+  if (appUiSource && !/\bapp_ui_create\s*\(\s*lv_obj_t\s*\*\s*\w+\s*\)/.test(appUiSource)) {
+    diagnostics.push({
+      category: 'preview-contract-missing',
+      path: APP_UI_CONTRACT_SOURCE,
+      message: 'main/app_ui.c must define void app_ui_create(lv_obj_t *root).',
+    })
+  }
+
+  if (appUiHeader && !/\bvoid\s+app_ui_create\s*\(\s*lv_obj_t\s*\*\s*\w+\s*\)\s*;/.test(appUiHeader)) {
+    diagnostics.push({
+      category: 'preview-contract-missing',
+      path: APP_UI_CONTRACT_HEADER,
+      message: 'main/app_ui.h must declare void app_ui_create(lv_obj_t *root).',
+    })
+  }
+
+  if (appUiSource && !/\bapp_ui_start\s*\(\s*void\s*\)/.test(appUiSource)) {
+    diagnostics.push({
+      category: 'preview-contract-missing',
+      path: APP_UI_CONTRACT_SOURCE,
+      message: 'main/app_ui.c must define void app_ui_start(void).',
+    })
+  }
+
+  if (appUiHeader && !/\bvoid\s+app_ui_start\s*\(\s*void\s*\)\s*;/.test(appUiHeader)) {
+    diagnostics.push({
+      category: 'preview-contract-missing',
+      path: APP_UI_CONTRACT_HEADER,
+      message: 'main/app_ui.h must declare void app_ui_start(void).',
+    })
+  }
+
+  for (const path of [APP_UI_CONTRACT_SOURCE, APP_UI_CONTRACT_HEADER]) {
+    const content = String(projectFiles?.[path] || '')
+    if (!content) continue
+
+    for (const header of APP_UI_FORBIDDEN_INCLUDES) {
+      const includePattern = new RegExp(`#\\s*include\\s+[<"]${escapeRegex(header)}[>"]`)
+      if (includePattern.test(content)) {
+        diagnostics.push({
+          category: 'preview-contract-missing',
+          path,
+          message: `${path} must stay portable LVGL-only and cannot include ${header}.`,
+        })
+      }
+    }
+
+    for (const pattern of APP_UI_FORBIDDEN_PATTERNS) {
+      if (pattern.test(content)) {
+        diagnostics.push({
+          category: 'preview-contract-missing',
+          path,
+          message: `${path} must not call hardware, ESP-IDF, BSP, FreeRTOS, WiFi, audio, or camera APIs.`,
+        })
+        break
+      }
+    }
+  }
+
+  return formatPreviewContractResult(diagnostics)
+}
+
 function selectedDriverContractsForBoard(board, selectedSkills = []) {
   const selected = new Set(selectedSkills || [])
   return (board?.driverContracts || []).filter(contract => skillIsEnabled([...selected], contract.skillId))
@@ -216,6 +341,14 @@ function forbiddenPattern(forbidden) {
   }
 
   return null
+}
+
+function formatPreviewContractResult(diagnostics) {
+  return {
+    ok: diagnostics.length === 0,
+    diagnostics,
+    message: diagnostics.map(item => item.message).join('\n'),
+  }
 }
 
 function validateSkillApiUsage(projectFiles, selectedSkills = []) {

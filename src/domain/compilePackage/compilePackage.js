@@ -1,6 +1,6 @@
 import { buildProjectFiles } from '../../context/index'
 import { normalizeProjectFiles } from '../../utils/filePlacement'
-import { validateProjectIncludes } from '../../utils/projectValidation'
+import { validateLvglPreviewContract, validateProjectIncludes } from '../../utils/projectValidation'
 
 export const SYSTEM_CONFIG_FILES = new Set([
   'CMakeLists.txt',
@@ -160,6 +160,15 @@ export function validateCompilePackage({
     diagnostics.push({
       category: 'source-validation-failed',
       message: sourceValidation.message,
+    })
+  }
+
+  const previewContract = validateLvglPreviewContract(applicationFiles, selectedSkills)
+  if (!previewContract.ok) {
+    diagnostics.push({
+      category: 'preview-contract-missing',
+      message: previewContract.message,
+      diagnostics: previewContract.diagnostics,
     })
   }
 

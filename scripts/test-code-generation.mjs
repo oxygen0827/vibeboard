@@ -33,6 +33,7 @@ const {
   buildBuildRepairMessages,
   extractFileBlocks,
   extractJsonObject,
+  buildPreviewRepairMessages,
   inferSkillsFromRequest,
   parseProgramManifestResponse,
   parseGeneratedFilesResponse,
@@ -110,6 +111,15 @@ const missingMain = parseGeneratedFilesResponse(JSON.stringify({
 assert.equal(missingMain.ok, false)
 assert.match(missingMain.errors.join(','), /missing-main-app-main/)
 
+const partialRepairPatch = parseGeneratedFilesResponseWithOptions(JSON.stringify({
+  files: [{ path: 'main/app_ui.c', content: '#include "app_ui.h"\nvoid app_ui_create(lv_obj_t *root) {}' }],
+}), null, {
+  requireCompleteProject: false,
+  validateManifestFiles: false,
+})
+assert.equal(partialRepairPatch.ok, true)
+assert.deepEqual(Object.keys(partialRepairPatch.files), ['main/app_ui.c'])
+
 const board = {
   id: 'szpi_esp32s3',
   skills: [
@@ -149,14 +159,15 @@ const manifest = parseProgramManifestResponse(JSON.stringify({
   entry: 'main.c',
   files: [
     { path: 'main.c', role: 'entry' },
-    { path: 'screen.h', role: 'header' },
+    { path: 'app_ui.h', role: 'header' },
+    { path: 'app_ui.c', role: 'module' },
   ],
   requires: { display: true },
   allowedWriteSurface: 'application-source-only',
 }), board)
 assert.equal(manifest.ok, true)
 assert.equal(manifest.manifest.entry, 'main/main.c')
-assert.deepEqual(manifest.manifest.files.map(file => file.path).sort(), ['main/main.c', 'main/screen.h'])
+assert.deepEqual(manifest.manifest.files.map(file => file.path).sort(), ['main/app_ui.c', 'main/app_ui.h', 'main/main.c'])
 
 const badManifest = parseProgramManifestResponse(JSON.stringify({
   schemaVersion: 1,
@@ -178,12 +189,20 @@ assert.match(
   /Official SZPI ESP32-S3 Example Rules[\s\S]*12-speech_recognition/,
 )
 assert.match(
+  buildProgramManifestMessages({ board, selectedSkills: ['lvgl'], userRequest: 'show hello' })[0].content,
+  /app_ui_create\(lv_obj_t \*root\)/,
+)
+assert.match(
   buildManifestCodeGenerationMessages({ board, manifest: manifest.manifest, userRequest: 'show hello' })[1].content,
   /Validated Program Manifest/,
 )
 assert.match(
   buildManifestCodeGenerationMessages({ board, manifest: manifest.manifest, userRequest: 'show hello' })[0].content,
   /Do not use APIs from a skill family/,
+)
+assert.match(
+  buildManifestCodeGenerationMessages({ board, manifest: manifest.manifest, userRequest: 'show hello' })[0].content,
+  /portable LVGL-only preview code/,
 )
 
 const generatedAgainstManifest = parseGeneratedFilesResponseWithOptions(JSON.stringify({
@@ -216,5 +235,16 @@ assert.match(repairMessages[0].content, /Patch Application Source only/)
 assert.match(repairMessages[0].content, /Do not generate CMakeLists\.txt/)
 assert.match(repairMessages[1].content, /Build Evidence/)
 assert.match(repairMessages[1].content, /helper\.h/)
+
+const previewRepairMessages = buildPreviewRepairMessages({
+  board,
+  selectedSkills: ['lvgl'],
+  previewEvidence: { category: 'preview-contract-missing' },
+  manifest: manifest.manifest,
+  projectFiles: { 'main/main.c': 'void app_main(void) {}' },
+})
+assert.match(previewRepairMessages[0].content, /LVGL preview repair/)
+assert.match(previewRepairMessages[0].content, /app_ui_create/)
+assert.match(previewRepairMessages[1].content, /Preview Evidence/)
 
 console.log('code generation tests passed')

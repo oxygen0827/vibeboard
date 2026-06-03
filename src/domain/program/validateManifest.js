@@ -1,4 +1,5 @@
 import {
+  DEFAULT_PREVIEW_VIEWPORT,
   FAILURE_CATEGORIES,
   FILE_ROLES,
   PROGRAM_MANIFEST_SCHEMA_VERSION,
@@ -43,6 +44,28 @@ const REQUIRE_SKILL_OPTIONS = {
   ble: ['ble', 'handheld'],
 }
 
+function normalizePreview(rawPreview) {
+  const preview = isPlainObject(rawPreview) ? rawPreview : {}
+  const viewport = isPlainObject(preview.viewport) ? preview.viewport : {}
+  return {
+    viewport: {
+      width: Number.isFinite(Number(viewport.width)) ? Number(viewport.width) : DEFAULT_PREVIEW_VIEWPORT.width,
+      height: Number.isFinite(Number(viewport.height)) ? Number(viewport.height) : DEFAULT_PREVIEW_VIEWPORT.height,
+    },
+    scene: typeof preview.scene === 'string' && preview.scene.trim()
+      ? preview.scene.trim()
+      : 'default',
+    peripherals: Array.isArray(preview.peripherals)
+      ? preview.peripherals
+          .filter(item => isPlainObject(item) && typeof item.id === 'string' && item.id.trim())
+          .map(item => ({
+            id: item.id.trim(),
+            state: typeof item.state === 'string' && item.state.trim() ? item.state.trim() : 'idle',
+          }))
+      : [],
+  }
+}
+
 export function normalizeManifest(rawManifest) {
   const manifest = isPlainObject(rawManifest) ? rawManifest : {}
   const skillIds = normalizeSkillIds(manifest.skillIds)
@@ -61,6 +84,7 @@ export function normalizeManifest(rawManifest) {
     driverContracts: normalizeStringArray(manifest.driverContracts),
     runtimeServices: normalizeStringArray(manifest.runtimeServices),
     acceptanceChecks: normalizeStringArray(manifest.acceptanceChecks),
+    preview: normalizePreview(manifest.preview),
     allowedWriteSurface: manifest.allowedWriteSurface || WRITE_SURFACES.APPLICATION_SOURCE_ONLY,
   }
 }
@@ -149,6 +173,18 @@ export function validateProgramManifest(rawManifest, { board } = {}) {
 
   if (!Array.isArray(rawManifest?.files) || rawManifest.files.length === 0) {
     addError(errors, FAILURE_CATEGORIES.MANIFEST_INVALID, 'files must contain at least one file', { field: 'files' })
+  }
+
+  if (rawManifest?.preview !== undefined && !isPlainObject(rawManifest.preview)) {
+    addError(errors, FAILURE_CATEGORIES.MANIFEST_INVALID, 'preview must be an object', { field: 'preview' })
+  }
+
+  const { width, height } = manifest.preview.viewport
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 120 || width > 1024 || height < 120 || height > 1024) {
+    addError(errors, FAILURE_CATEGORIES.MANIFEST_INVALID, 'preview.viewport must be an integer size between 120 and 1024', {
+      field: 'preview.viewport',
+      viewport: manifest.preview.viewport,
+    })
   }
 
   const normalizedFiles = []

@@ -4,9 +4,15 @@ POST /compile - compile ESP-IDF project, streams build log via SSE
 GET  /health  - health check
 """
 
-import os, uuid, shutil, subprocess, logging, json, base64, re, time, hashlib
+import os, uuid, shutil, subprocess, logging, json, base64, re, time, hashlib, zlib, struct
+from io import BytesIO
 from pathlib import Path, PurePosixPath
 from flask import Flask, request, Response, jsonify, send_file
+
+try:
+    from PIL import Image, ImageDraw, ImageFont
+except Exception:
+    Image = ImageDraw = ImageFont = None
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -15,12 +21,17 @@ log = logging.getLogger(__name__)
 TEMPLATE_DIR = Path(os.environ.get("TEMPLATE_DIR", "/compiler/template"))
 EXAMPLES_DIR = Path(os.environ.get("EXAMPLES_DIR", "/compiler/examples"))
 OTA_RECEIVER_DIR = Path(os.environ.get("OTA_RECEIVER_DIR", "/compiler/ota_receiver"))
-BUILD_BASE   = Path("/tmp/builds")
+BUILD_BASE   = Path(os.environ.get("BUILD_BASE", "/tmp/builds"))
 REMOTE_OTA_DIR = Path(os.environ.get("REMOTE_OTA_DIR", "/tmp/vibeboard-remote-ota"))
 IDF_PATH     = Path(os.environ.get("IDF_PATH", "/opt/esp/idf"))
 BUILD_TIMEOUT_SECONDS = int(os.environ.get("BUILD_TIMEOUT_SECONDS", "300"))
 DEFAULT_OTA_WIFI_SSID = os.environ.get("DEFAULT_OTA_WIFI_SSID", "1-306")
 DEFAULT_OTA_WIFI_PASSWORD = os.environ.get("DEFAULT_OTA_WIFI_PASSWORD", "szyt1008")
+LVGL_SOURCE_DIR = Path(os.environ.get("LVGL_SOURCE_DIR", "/compiler/lvgl-8.3"))
+WSL_LVGL_SOURCE_DIR = os.environ.get("WSL_LVGL_SOURCE_DIR", "").strip()
+LVGL_PREVIEW_RUNNER_DIR = Path(os.environ.get("LVGL_PREVIEW_RUNNER_DIR", "/compiler/preview_runner"))
+LVGL_PREVIEW_MODE = os.environ.get("LVGL_PREVIEW_MODE", "auto").strip().lower()
+LVGL_PREVIEW_TIMEOUT_SECONDS = int(os.environ.get("LVGL_PREVIEW_TIMEOUT_SECONDS", "30"))
 
 BUILD_BASE.mkdir(parents=True, exist_ok=True)
 REMOTE_OTA_DIR.mkdir(parents=True, exist_ok=True)
@@ -33,6 +44,36 @@ EXAMPLE_ID_RE = re.compile(r"^[0-9]{2}-[A-Za-z0-9_-]+$")
 DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_.:-]{0,96}$")
 PROJECT_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,96}$")
+PREVIEW_VIEWPORT_MIN = 120
+PREVIEW_VIEWPORT_MAX = 1024
+PREVIEW_DEFAULT_WIDTH = 320
+PREVIEW_DEFAULT_HEIGHT = 240
+PREVIEW_FORBIDDEN_INCLUDES = {
+    "esp32_s3_szp.h",
+    "esp_wifi.h",
+    "esp_event.h",
+    "esp_netif.h",
+    "esp_http_server.h",
+    "esp_ota_ops.h",
+    "nvs_flash.h",
+    "driver/gpio.h",
+    "driver/i2c_master.h",
+    "driver/spi_master.h",
+    "driver/i2s_std.h",
+    "driver/i2s_tdm.h",
+    "esp_camera.h",
+    "audio_player.h",
+    "esp_codec_dev.h",
+    "freertos/FreeRTOS.h",
+    "freertos/task.h",
+    "freertos/queue.h",
+    "freertos/event_groups.h",
+}
+PREVIEW_FORBIDDEN_CALL_RE = re.compile(
+    r"\b(bsp_[A-Za-z0-9_]*|pca9557_init|esp_[A-Za-z0-9_]*|nvs_flash_[A-Za-z0-9_]*|"
+    r"xTaskCreate[A-Za-z0-9_]*|gpio_[A-Za-z0-9_]*|i2c_[A-Za-z0-9_]*|i2s_[A-Za-z0-9_]*)\s*\("
+)
+PREVIEW_RUNNER_ALLOWED_FILES = {"main/app_ui.c": "app_ui.c", "main/app_ui.h": "app_ui.h"}
 
 
 def now_ms():
@@ -118,6 +159,582 @@ def secure_firmware_filename(filename: str):
     name = Path(str(filename or "firmware.bin")).name
     name = re.sub(r"[^A-Za-z0-9_.-]+", "_", name)
     return name if name.endswith(".bin") else f"{name}.bin"
+
+
+def normalize_viewport(raw):
+    viewport = raw if isinstance(raw, dict) else {}
+    try:
+        width = int(viewport.get("width", PREVIEW_DEFAULT_WIDTH))
+        height = int(viewport.get("height", PREVIEW_DEFAULT_HEIGHT))
+    except Exception:
+        width, height = PREVIEW_DEFAULT_WIDTH, PREVIEW_DEFAULT_HEIGHT
+    if width < PREVIEW_VIEWPORT_MIN or width > PREVIEW_VIEWPORT_MAX:
+        width = PREVIEW_DEFAULT_WIDTH
+    if height < PREVIEW_VIEWPORT_MIN or height > PREVIEW_VIEWPORT_MAX:
+        height = PREVIEW_DEFAULT_HEIGHT
+    return {"width": width, "height": height}
+
+
+def preview_peripherals(selected_skills, manifest):
+    selected = set(selected_skills or [])
+    ids = []
+
+    def add(item):
+        if item not in ids:
+            ids.append(item)
+
+    if "lvgl" in selected:
+        add("display")
+    if "audio" in selected:
+        add("microphone")
+        add("speaker")
+    if "speech" in selected:
+        add("microphone")
+    if "wifi" in selected:
+        add("wifi")
+    if "ble" in selected:
+        add("ble")
+    if "camera" in selected or "vision" in selected:
+        add("camera")
+    if "sdcard" in selected:
+        add("sdcard")
+    if "imu" in selected:
+        add("imu")
+    if "gpio" in selected:
+        add("gpio")
+    if "handheld" in selected:
+        for item in ["display", "microphone", "speaker", "wifi", "ble", "camera", "sdcard", "imu"]:
+            add(item)
+
+    for item in ((manifest or {}).get("preview") or {}).get("peripherals") or []:
+        if isinstance(item, dict) and item.get("id"):
+            add(str(item["id"]))
+
+    return [{"id": item, "state": preview_default_peripheral_state(item, manifest)} for item in ids]
+
+
+def preview_default_peripheral_state(item, manifest):
+    for configured in ((manifest or {}).get("preview") or {}).get("peripherals") or []:
+        if isinstance(configured, dict) and configured.get("id") == item and configured.get("state"):
+            return str(configured["state"])
+    if item == "display":
+        return "active"
+    if item in {"wifi", "ble", "speaker"}:
+        return "ready"
+    return "idle"
+
+
+def validate_lvgl_preview_contract(project_files):
+    diagnostics = []
+    app_ui_c = str((project_files or {}).get("main/app_ui.c", ""))
+    app_ui_h = str((project_files or {}).get("main/app_ui.h", ""))
+    if not app_ui_c or not app_ui_h:
+        diagnostics.append({"message": "LVGL preview needs main/app_ui.c and main/app_ui.h."})
+    if app_ui_c and not re.search(r"\bapp_ui_create\s*\(\s*lv_obj_t\s*\*\s*\w+\s*\)", app_ui_c):
+        diagnostics.append({"path": "main/app_ui.c", "message": "main/app_ui.c must define void app_ui_create(lv_obj_t *root)."})
+    if app_ui_h and not re.search(r"\bvoid\s+app_ui_create\s*\(\s*lv_obj_t\s*\*\s*\w+\s*\)\s*;", app_ui_h):
+        diagnostics.append({"path": "main/app_ui.h", "message": "main/app_ui.h must declare void app_ui_create(lv_obj_t *root)."})
+
+    for rel_path in ["main/app_ui.c", "main/app_ui.h"]:
+        content = str((project_files or {}).get(rel_path, ""))
+        if not content:
+            continue
+        for header in PREVIEW_FORBIDDEN_INCLUDES:
+            if re.search(rf'#\s*include\s+[<"]{re.escape(header)}[>"]', content):
+                diagnostics.append({"path": rel_path, "message": f"{rel_path} must stay portable LVGL-only and cannot include {header}."})
+        if PREVIEW_FORBIDDEN_CALL_RE.search(content):
+            diagnostics.append({"path": rel_path, "message": f"{rel_path} must not call hardware, ESP-IDF, BSP, FreeRTOS, WiFi, audio, camera, NVS, GPIO, or task APIs."})
+    return diagnostics
+
+
+def png_chunk(kind, data):
+    payload = kind + data
+    return struct.pack(">I", len(data)) + payload + struct.pack(">I", zlib.crc32(payload) & 0xffffffff)
+
+
+def make_png(width, height, pixels):
+    raw = bytearray()
+    for y in range(height):
+        raw.append(0)
+        start = y * width * 3
+        raw.extend(pixels[start:start + width * 3])
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + png_chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+        + png_chunk(b"IDAT", zlib.compress(bytes(raw), 9))
+        + png_chunk(b"IEND", b"")
+    )
+
+
+def fill_rect(pixels, width, height, x, y, w, h, color):
+    r, g, b = color
+    x0 = max(0, int(x))
+    y0 = max(0, int(y))
+    x1 = min(width, int(x + w))
+    y1 = min(height, int(y + h))
+    for yy in range(y0, y1):
+        row = yy * width * 3
+        for xx in range(x0, x1):
+            idx = row + xx * 3
+            pixels[idx:idx + 3] = bytes((r, g, b))
+
+
+def draw_frame(pixels, width, height, x, y, w, h, color):
+    fill_rect(pixels, width, height, x, y, w, 1, color)
+    fill_rect(pixels, width, height, x, y + h - 1, w, 1, color)
+    fill_rect(pixels, width, height, x, y, 1, h, color)
+    fill_rect(pixels, width, height, x + w - 1, y, 1, h, color)
+
+
+def c_string_literal_value(raw):
+    try:
+        return bytes(str(raw), "utf-8").decode("unicode_escape")
+    except Exception:
+        return str(raw)
+
+
+def extract_lvgl_texts(source):
+    texts = []
+    for match in re.finditer(r'lv_(?:label|btnmatrix|textarea|dropdown)_set_text(?:_static)?\s*\([^,]+,\s*"((?:\\.|[^"\\])*)"', source):
+        text = c_string_literal_value(match.group(1)).strip()
+        if text and text not in texts:
+            texts.append(text)
+    for match in re.finditer(r'lv_label_set_text_fmt\s*\([^,]+,\s*"((?:\\.|[^"\\])*)"', source):
+        text = c_string_literal_value(match.group(1)).strip()
+        if text and text not in texts:
+            texts.append(text)
+    for match in re.finditer(r'"((?:\\.|[^"\\]){2,40})"', source):
+        text = c_string_literal_value(match.group(1)).strip()
+        if not text or text in texts:
+            continue
+        if re.search(r"[A-Za-z0-9\u4e00-\u9fff]", text) and not text.endswith((".h", ".c")):
+            texts.append(text)
+        if len(texts) >= 8:
+            break
+    return texts[:8]
+
+
+def infer_preview_intent(source, selected_skills, manifest):
+    text_source = source.lower()
+    manifest_text = json.dumps(manifest or {}, ensure_ascii=False).lower()
+    all_text = f"{text_source}\n{manifest_text}"
+    selected = set(selected_skills or [])
+    intent = {
+        "audio": "audio" in selected or any(word in all_text for word in ["mic", "microphone", "record", "audio", "speaker", "录音", "麦克风", "音频", "音量"]),
+        "wifi": "wifi" in selected or "wifi" in all_text or "wi-fi" in all_text,
+        "camera": "camera" in selected or "camera" in all_text or "摄像" in all_text,
+        "ble": "ble" in selected or "ble" in all_text,
+        "slider": "lv_slider" in source or "lv_bar" in source or any(word in all_text for word in ["volume", "音量", "progress"]),
+        "button": "lv_btn" in source or "button" in all_text or "按钮" in all_text,
+        "switch": "lv_switch" in source,
+        "list": "lv_list" in source or "lv_dropdown" in source or "lv_table" in source,
+    }
+    return intent
+
+
+def first_font(size):
+    if ImageFont is None:
+        return None
+    candidates = [
+        os.environ.get("PREVIEW_FONT", ""),
+        "C:/Windows/Fonts/msyh.ttc",
+        "C:/Windows/Fonts/simhei.ttf",
+        "C:/Windows/Fonts/arial.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    ]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        try:
+            if Path(candidate).exists():
+                return ImageFont.truetype(candidate, size)
+        except Exception:
+            continue
+    try:
+        return ImageFont.load_default()
+    except Exception:
+        return None
+
+
+def rounded_rect(draw, box, radius, fill, outline=None, width=1):
+    if hasattr(draw, "rounded_rectangle"):
+        draw.rounded_rectangle(box, radius=radius, fill=fill, outline=outline, width=width)
+    else:
+        draw.rectangle(box, fill=fill, outline=outline, width=width)
+
+
+def text_width(draw, text, font):
+    try:
+        box = draw.textbbox((0, 0), text, font=font)
+        return box[2] - box[0]
+    except Exception:
+        return len(str(text)) * 7
+
+
+def fit_text(draw, text, font, max_width):
+    value = str(text or "")
+    if text_width(draw, value, font) <= max_width:
+        return value
+    ellipsis = "..."
+    while value and text_width(draw, value + ellipsis, font) > max_width:
+        value = value[:-1]
+    return value + ellipsis if value else ellipsis
+
+
+def draw_text(draw, xy, text, font, fill, max_width=None):
+    value = fit_text(draw, text, font, max_width) if max_width else str(text)
+    draw.text(xy, value, font=font, fill=fill)
+
+
+def peripheral_label(item_id):
+    return {
+        "display": "LCD",
+        "microphone": "MIC",
+        "speaker": "SPK",
+        "wifi": "WiFi",
+        "ble": "BLE",
+        "camera": "CAM",
+        "sdcard": "SD",
+        "imu": "IMU",
+        "gpio": "GPIO",
+    }.get(item_id, str(item_id).upper())
+
+
+def render_preview_png_pillow(project_files, selected_skills, manifest, viewport):
+    width, height = viewport["width"], viewport["height"]
+    source = "\n".join(str(project_files.get(path, "")) for path in ["main/app_ui.c", "main/app_ui.h", "main/main.c"])
+    texts = extract_lvgl_texts(source)
+    intent = infer_preview_intent(source, selected_skills, manifest)
+    peripherals = preview_peripherals(selected_skills, manifest)
+
+    image = Image.new("RGB", (width, height), (14, 18, 24))
+    draw = ImageDraw.Draw(image)
+    font_title = first_font(18)
+    font_body = first_font(12)
+    font_small = first_font(10)
+    font_chip = first_font(9)
+
+    bg = (18, 23, 31)
+    panel = (28, 36, 47)
+    panel2 = (35, 45, 58)
+    border = (70, 86, 105)
+    accent = (53, 211, 139)
+    blue = (77, 156, 255)
+    text = (232, 238, 244)
+    muted = (145, 158, 174)
+    warn = (247, 180, 72)
+
+    draw.rectangle((0, 0, width, height), fill=bg)
+    rounded_rect(draw, (5, 5, width - 6, height - 6), 5, fill=(22, 28, 36), outline=border)
+    draw.rectangle((6, 6, width - 7, 36), fill=(27, 80, 111))
+
+    title = texts[0] if texts else ((manifest or {}).get("programName") or "LVGL Preview")
+    draw_text(draw, (16, 13), title, font_title, text, width - 96)
+    draw_text(draw, (width - 68, 16), f"{width}x{height}", font_small, (186, 214, 226), 58)
+
+    y = 48
+    status_parts = []
+    if intent["audio"]:
+        status_parts.append("Mic idle")
+        status_parts.append("SPK ready")
+    if intent["wifi"]:
+        status_parts.append("WiFi ready")
+    if intent["camera"]:
+        status_parts.append("CAM ready")
+    if intent["ble"]:
+        status_parts.append("BLE ready")
+    if not status_parts:
+        status_parts.append("UI ready")
+
+    chip_x = 16
+    for part in status_parts[:3]:
+        chip_w = min(max(text_width(draw, part, font_small) + 16, 62), width - chip_x - 16)
+        rounded_rect(draw, (chip_x, y, chip_x + chip_w, y + 20), 4, fill=(31, 48, 57), outline=(46, 79, 83))
+        draw_text(draw, (chip_x + 8, y + 5), part, font_small, accent if "ready" in part.lower() else muted, chip_w - 16)
+        chip_x += chip_w + 7
+        if chip_x > width - 70:
+            break
+
+    y += 31
+    card_h = 58 if intent["slider"] else 48
+    rounded_rect(draw, (16, y, width - 16, y + card_h), 6, fill=panel, outline=(52, 63, 76))
+    subtitle = texts[1] if len(texts) > 1 else ("Recording console" if intent["audio"] else "Main screen")
+    draw_text(draw, (28, y + 11), subtitle, font_body, text, width - 56)
+    detail = texts[2] if len(texts) > 2 else ("Waiting for input" if intent["audio"] else "Preview generated from app_ui_create")
+    draw_text(draw, (28, y + 30), detail, font_small, muted, width - 56)
+
+    if intent["slider"]:
+        bar_y = y + card_h - 14
+        draw.rectangle((28, bar_y, width - 62, bar_y + 6), fill=(66, 78, 93))
+        draw.rectangle((28, bar_y, int(28 + (width - 90) * 0.62), bar_y + 6), fill=accent)
+        draw.ellipse((int(28 + (width - 90) * 0.62) - 4, bar_y - 3, int(28 + (width - 90) * 0.62) + 5, bar_y + 9), fill=(235, 249, 243))
+
+    y += card_h + 11
+    if intent["list"]:
+        for index, label in enumerate((texts[3:] or ["Input", "Network", "Output"])[:3]):
+            row_y = y + index * 23
+            rounded_rect(draw, (16, row_y, width - 16, row_y + 18), 3, fill=(30 + index * 7, 39 + index * 7, 50 + index * 7), outline=None)
+            draw_text(draw, (28, row_y + 4), label, font_small, text if index == 0 else muted, width - 56)
+        y += 73
+
+    if intent["button"] or intent["audio"]:
+        button_y = min(height - 58, max(y, 150))
+        left_label = "Record" if intent["audio"] else (texts[3] if len(texts) > 3 else "Start")
+        right_label = "Stop" if intent["audio"] else (texts[4] if len(texts) > 4 else "OK")
+        rounded_rect(draw, (24, button_y, 132, button_y + 34), 6, fill=accent, outline=(95, 233, 171))
+        draw_text(draw, (48, button_y + 9), left_label, font_body, (8, 27, 20), 68)
+        rounded_rect(draw, (width - 132, button_y, width - 24, button_y + 34), 6, fill=blue, outline=(122, 184, 255))
+        draw_text(draw, (width - 104, button_y + 9), right_label, font_body, (4, 18, 38), 72)
+
+    if intent["switch"]:
+        sx = width - 72
+        sy = 82
+        rounded_rect(draw, (sx, sy, sx + 44, sy + 22), 11, fill=(37, 148, 99), outline=(83, 222, 158))
+        draw.ellipse((sx + 23, sy + 3, sx + 39, sy + 19), fill=(236, 255, 247))
+
+    if peripherals:
+        footer_h = 20
+        draw.rectangle((6, height - footer_h - 6, width - 7, height - 7), fill=(17, 22, 28))
+        px = 14
+        for item in peripherals[:6]:
+            label = peripheral_label(item["id"])
+            active = item.get("state") in {"active", "ready"}
+            color = accent if active else muted
+            draw.rectangle((px, height - 20, px + 5, height - 15), fill=color)
+            draw_text(draw, (px + 8, height - 23), label, font_chip, color, 38)
+            px += 48
+            if px > width - 45:
+                break
+
+    if not texts and not any(intent.values()):
+        draw_text(draw, (28, 94), "No LVGL widgets detected", font_body, warn, width - 56)
+        draw_text(draw, (28, 114), "Add labels, buttons, sliders, or bars in app_ui.c", font_small, muted, width - 56)
+
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def render_preview_png_basic(project_files, selected_skills, manifest, viewport):
+    width, height = viewport["width"], viewport["height"]
+    pixels = bytearray([12, 16, 20] * width * height)
+    fill_rect(pixels, width, height, 0, 0, width, height, (12, 16, 20))
+    fill_rect(pixels, width, height, 6, 6, width - 12, height - 12, (25, 31, 38))
+    draw_frame(pixels, width, height, 6, 6, width - 12, height - 12, (72, 91, 108))
+
+    source = "\n".join(str(project_files.get(path, "")) for path in ["main/app_ui.c", "main/app_ui.h", "main/main.c"])
+    has_label = "lv_label" in source
+    has_button = "lv_btn" in source
+    has_slider = "lv_slider" in source
+    has_list = "lv_list" in source or "lv_dropdown" in source
+
+    fill_rect(pixels, width, height, 18, 18, width - 36, 26, (34, 81, 112))
+    fill_rect(pixels, width, height, 28, 55, width - 56, 32, (44, 54, 64) if has_label else (32, 39, 47))
+    if has_label:
+        fill_rect(pixels, width, height, 42, 66, width - 84, 5, (218, 231, 235))
+    if has_button:
+        fill_rect(pixels, width, height, 34, height - 62, 92, 34, (60, 214, 142))
+        fill_rect(pixels, width, height, width - 126, height - 62, 92, 34, (80, 160, 255))
+    if has_slider:
+        fill_rect(pixels, width, height, 34, height - 86, width - 68, 8, (73, 84, 96))
+        fill_rect(pixels, width, height, 34, height - 86, int((width - 68) * 0.58), 8, (60, 214, 142))
+    if has_list:
+        for i in range(3):
+            fill_rect(pixels, width, height, 36, 98 + i * 24, width - 72, 16, (38 + i * 10, 47 + i * 8, 56 + i * 6))
+
+    peripherals = preview_peripherals(selected_skills, manifest)
+    for index, item in enumerate(peripherals[:8]):
+        x = 16 + index * 36
+        y = height - 18
+        fill_rect(pixels, width, height, x, y, 18, 5, (60, 214, 142) if item["state"] in {"active", "ready"} else (110, 118, 128))
+
+    return make_png(width, height, pixels)
+
+
+def render_preview_png(project_files, selected_skills, manifest, viewport):
+    if Image is not None and ImageDraw is not None:
+        return render_preview_png_pillow(project_files, selected_skills, manifest, viewport)
+    return render_preview_png_basic(project_files, selected_skills, manifest, viewport)
+
+
+def preview_interaction_point(interactions):
+    if not isinstance(interactions, list):
+        return None
+    for item in reversed(interactions):
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") not in {"tap", "click", "touch"}:
+            continue
+        try:
+            return {"x": int(item.get("x")), "y": int(item.get("y"))}
+        except Exception:
+            return None
+    return None
+
+
+def rgba_to_png(rgba_path, viewport):
+    if Image is None:
+        raise RuntimeError("Pillow is required to encode the LVGL preview framebuffer.")
+    width, height = viewport["width"], viewport["height"]
+    raw = rgba_path.read_bytes()
+    expected = width * height * 4
+    if len(raw) != expected:
+        raise RuntimeError(f"LVGL preview framebuffer has {len(raw)} bytes, expected {expected}.")
+    image = Image.frombytes("RGBA", (width, height), raw)
+    buffer = BytesIO()
+    image.convert("RGB").save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def copy_preview_runner_files(project_files, work_dir):
+    for source_path, target_name in PREVIEW_RUNNER_ALLOWED_FILES.items():
+        content = str((project_files or {}).get(source_path, ""))
+        target = work_dir / target_name
+        target.write_text(content, encoding="utf-8")
+
+
+def windows_path_to_wsl(path):
+    resolved = Path(path).resolve()
+    drive = resolved.drive.rstrip(":").lower()
+    parts = [part for part in resolved.parts[1:]]
+    return f"/mnt/{drive}/" + "/".join(parts)
+
+
+def can_use_wsl_preview():
+    if os.name != "nt":
+        return False
+    if shutil.which("wsl.exe") is None:
+        return False
+    source = WSL_LVGL_SOURCE_DIR or windows_path_to_wsl(LVGL_SOURCE_DIR)
+    try:
+        proc = subprocess.run(
+            ["wsl.exe", "-d", "Ubuntu", "--", "bash", "-lc", f"test -f '{source}/lvgl.h' && command -v gcc >/dev/null"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=8,
+        )
+        return proc.returncode == 0
+    except Exception:
+        return False
+
+
+def run_wsl_lvgl_preview(project_files, viewport, interactions):
+    if not can_use_wsl_preview():
+        raise RuntimeError("WSL LVGL 8.3 preview is unavailable. Set WSL_LVGL_SOURCE_DIR to an LVGL 8.3 checkout and ensure gcc is installed in WSL Ubuntu.")
+
+    work_dir = BUILD_BASE / f"lvgl-preview-{uuid.uuid4().hex[:10]}"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    output_rgba = work_dir / "preview.rgba"
+    tap = preview_interaction_point(interactions)
+    try:
+        copy_preview_runner_files(project_files, work_dir)
+        wsl_work = windows_path_to_wsl(work_dir)
+        wsl_runner_dir = windows_path_to_wsl(LVGL_PREVIEW_RUNNER_DIR)
+        wsl_lvgl = WSL_LVGL_SOURCE_DIR or windows_path_to_wsl(LVGL_SOURCE_DIR)
+        tap_args = ""
+        if tap:
+            tap_args = f" '{tap['x']}' '{tap['y']}'"
+        command = (
+            "set -e; "
+            f"python3 '{wsl_runner_dir}/build_runner.py' '{wsl_lvgl}' '{wsl_runner_dir}' '{wsl_work}' "
+            f"'{viewport['width']}' '{viewport['height']}' '{wsl_work}/preview_runner'; "
+            f"'{wsl_work}/preview_runner' '{wsl_work}/preview.rgba'{tap_args}"
+        )
+        proc = subprocess.run(
+            ["wsl.exe", "-d", "Ubuntu", "--", "bash", "-lc", command],
+            cwd=str(work_dir),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=LVGL_PREVIEW_TIMEOUT_SECONDS * 2,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError("WSL LVGL preview failed:\n" + proc.stdout[-4000:])
+        return rgba_to_png(output_rgba, viewport)
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+def run_real_lvgl_preview(project_files, viewport, interactions):
+    if LVGL_PREVIEW_MODE in {"off", "intent", "fallback"}:
+        raise RuntimeError("real LVGL preview is disabled by LVGL_PREVIEW_MODE.")
+    if os.name == "nt":
+        return run_wsl_lvgl_preview(project_files, viewport, interactions)
+    if not (LVGL_SOURCE_DIR / "lvgl.h").exists():
+        raise RuntimeError(f"LVGL 8.3 source is not available at {LVGL_SOURCE_DIR}.")
+    if not (LVGL_PREVIEW_RUNNER_DIR / "build_runner.py").exists():
+        raise RuntimeError(f"LVGL preview runner is not available at {LVGL_PREVIEW_RUNNER_DIR}.")
+
+    work_dir = BUILD_BASE / f"lvgl-preview-{uuid.uuid4().hex[:10]}"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    output_exe = work_dir / "preview_runner"
+    output_rgba = work_dir / "preview.rgba"
+    tap = preview_interaction_point(interactions)
+    try:
+        copy_preview_runner_files(project_files, work_dir)
+        build_cmd = [
+            "python",
+            str(LVGL_PREVIEW_RUNNER_DIR / "build_runner.py"),
+            str(LVGL_SOURCE_DIR),
+            str(LVGL_PREVIEW_RUNNER_DIR),
+            str(work_dir),
+            str(viewport["width"]),
+            str(viewport["height"]),
+            str(output_exe),
+        ]
+        build_proc = subprocess.run(
+            build_cmd,
+            cwd=str(work_dir),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=LVGL_PREVIEW_TIMEOUT_SECONDS,
+        )
+        if build_proc.returncode != 0:
+            raise RuntimeError("LVGL preview build failed:\n" + build_proc.stdout[-4000:])
+
+        run_cmd = [str(output_exe), str(output_rgba)]
+        if tap:
+            run_cmd.extend([str(tap["x"]), str(tap["y"])])
+        run_proc = subprocess.run(
+            run_cmd,
+            cwd=str(work_dir),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=LVGL_PREVIEW_TIMEOUT_SECONDS,
+        )
+        if run_proc.returncode != 0:
+            raise RuntimeError("LVGL preview render failed:\n" + run_proc.stdout[-4000:])
+        return rgba_to_png(output_rgba, viewport)
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+def render_lvgl_preview_with_fallback(project_files, selected_skills, manifest, viewport, interactions):
+    diagnostics = []
+    if LVGL_PREVIEW_MODE != "intent":
+        try:
+            png = run_real_lvgl_preview(project_files, viewport, interactions)
+            diagnostics.append({
+                "message": "Rendered by real LVGL 8.3 headless simulator. Tap/click interactions are replayed before screenshot capture.",
+            })
+            return png, "real-lvgl-8.3-headless", diagnostics
+        except Exception as exc:
+            diagnostics.append({
+                "category": "preview-build-failed",
+                "message": str(exc),
+            })
+            if LVGL_PREVIEW_MODE in {"real", "strict"}:
+                raise
+
+    png = render_preview_png(project_files, selected_skills, manifest, viewport)
+    diagnostics.append({
+        "message": "Real LVGL 8.3 simulator is unavailable; using intent preview fallback.",
+    })
+    return png, "intent-lvgl-preview", diagnostics
 
 
 def validate_project_path(build_dir: Path, rel_path: str) -> Path:
@@ -555,9 +1172,96 @@ def health():
     return jsonify({"status": "ok", "idf": str(IDF_PATH)})
 
 
+@app.route("/preview/lvgl/status")
+def preview_lvgl_status():
+    native_lvgl = (LVGL_SOURCE_DIR / "lvgl.h").exists()
+    native_runner = (LVGL_PREVIEW_RUNNER_DIR / "build_runner.py").exists()
+    native_gcc = shutil.which(os.environ.get("CC", "gcc")) is not None
+    wsl_available = os.name == "nt" and shutil.which("wsl.exe") is not None
+    wsl_source = WSL_LVGL_SOURCE_DIR or (windows_path_to_wsl(LVGL_SOURCE_DIR) if os.name == "nt" else "")
+    wsl_ready = can_use_wsl_preview() if wsl_available else False
+    return jsonify({
+        "mode": LVGL_PREVIEW_MODE,
+        "realPreviewReady": (native_lvgl and native_runner and native_gcc) or wsl_ready,
+        "native": {
+            "lvglSourceDir": str(LVGL_SOURCE_DIR),
+            "lvglSourceFound": native_lvgl,
+            "runnerDir": str(LVGL_PREVIEW_RUNNER_DIR),
+            "runnerFound": native_runner,
+            "gccFound": native_gcc,
+        },
+        "wsl": {
+            "available": wsl_available,
+            "sourceDir": wsl_source,
+            "ready": wsl_ready,
+        },
+        "renderers": ["real-lvgl-8.3-headless", "intent-lvgl-preview"],
+    })
+
+
 @app.route("/examples")
 def examples():
     return jsonify({"examples": list_official_examples()})
+
+
+@app.route("/preview/lvgl", methods=["POST"])
+def preview_lvgl():
+    data = request.get_json(force=True)
+    project_files = data.get("projectFiles", {})
+    if not isinstance(project_files, dict):
+        return jsonify({
+            "status": "failure",
+            "category": "preview-contract-missing",
+            "summary": "projectFiles must be an object.",
+            "diagnostics": [{"message": "projectFiles must be an object."}],
+            "peripherals": [],
+        }), 400
+
+    selected_skills = data.get("selectedSkills") or []
+    manifest = data.get("manifest") or {}
+    viewport = normalize_viewport((data.get("viewport") or ((manifest.get("preview") or {}).get("viewport"))))
+    interactions = data.get("interactions") or []
+    peripherals = preview_peripherals(selected_skills, manifest)
+    diagnostics = validate_lvgl_preview_contract(project_files)
+    if diagnostics:
+        return jsonify({
+            "status": "failure",
+            "category": "preview-contract-missing",
+            "summary": "LVGL preview contract is missing or not portable.",
+            "diagnostics": diagnostics,
+            "peripherals": peripherals,
+        }), 400
+
+    try:
+        png, renderer, render_diagnostics = render_lvgl_preview_with_fallback(
+            project_files,
+            selected_skills,
+            manifest,
+            viewport,
+            interactions,
+        )
+    except Exception as exc:
+        return jsonify({
+            "status": "failure",
+            "category": "preview-build-failed",
+            "summary": str(exc),
+            "diagnostics": [{"message": str(exc)}],
+            "peripherals": peripherals,
+        }), 500
+
+    return jsonify({
+        "status": "success",
+        "category": None,
+        "screenshotPng": base64.b64encode(png).decode(),
+        "diagnostics": [{
+            "message": "Preview contract passed. Review the first-screen layout before compiling or OTA flashing.",
+        }, *render_diagnostics],
+        "peripherals": peripherals,
+        "summary": "LVGL preview rendered successfully.",
+        "viewport": viewport,
+        "renderer": renderer,
+        "interactions": interactions,
+    })
 
 
 @app.route("/api/devices/heartbeat", methods=["POST"])

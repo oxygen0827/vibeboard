@@ -114,7 +114,9 @@ const wifiCoversOfficialLvglFlow = createCompilePackage({
   boardId: 'szpi_esp32s3',
   selectedSkills: ['wifi'],
   projectFiles: {
-    'main/main.c': '#include "lvgl.h"\n#include "esp_wifi.h"\nvoid app_main(void) { bsp_lvgl_start(); esp_wifi_start(); }',
+    'main/main.c': '#include "esp32_s3_szp.h"\n#include "lvgl.h"\n#include "esp_wifi.h"\n#include "app_ui.h"\nvoid app_main(void) { bsp_lvgl_start(); app_ui_start(); esp_wifi_start(); }',
+    'main/app_ui.h': '#pragma once\n#include "lvgl.h"\nvoid app_ui_create(lv_obj_t *root);\nvoid app_ui_start(void);\n',
+    'main/app_ui.c': '#include "app_ui.h"\nvoid app_ui_create(lv_obj_t *root) { lv_label_create(root); }\nvoid app_ui_start(void) { app_ui_create(lv_scr_act()); }\n',
   },
 })
 assert.equal(wifiCoversOfficialLvglFlow.ok, true)
@@ -126,6 +128,8 @@ const audioPackage = createCompilePackage({
   selectedSkills: ['audio'],
   projectFiles: {
     'main/main.c': '#include "esp32_s3_szp.h"\n#include "audio_player.h"\nvoid app_main(void) { bsp_codec_init(); mp3_player_init(); }',
+    'main/app_ui.h': '#pragma once\n#include "lvgl.h"\nvoid app_ui_create(lv_obj_t *root);\nvoid app_ui_start(void);\n',
+    'main/app_ui.c': '#include "app_ui.h"\nvoid app_ui_create(lv_obj_t *root) { lv_label_create(root); }\nvoid app_ui_start(void) { app_ui_create(lv_scr_act()); }\n',
   },
 })
 assert.equal(audioPackage.ok, true)
