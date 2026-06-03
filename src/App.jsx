@@ -117,6 +117,7 @@ export default function App() {
   const [boardId, setBoardId] = useState(loadInitialBoardId)
   const [selectedSkills, setSelectedSkills] = useState([])
   const [latestManifest, setLatestManifest] = useState(null)
+  const [latestPreviewContext, setLatestPreviewContext] = useState(null)
   const board = BOARDS[boardId]
   const generatedFiles = buildGeneratedConfig(boardId, selectedSkills)
 
@@ -149,6 +150,7 @@ export default function App() {
     setProjectFiles(files)
     setSelectedSkills([])
     setLatestManifest(null)
+    setLatestPreviewContext(null)
     setActiveFile(Object.keys(files)[0] || '')
     setPendingLogAnalysis(null)
     setPendingBuildRepair(null)
@@ -160,8 +162,13 @@ export default function App() {
     setProjectFiles(files)
     setSelectedSkills([])
     setLatestManifest(null)
+    setLatestPreviewContext(null)
     setActiveFile(Object.keys(files)[0] || '')
   }, [boardId])
+
+  const handlePreviewContextChange = useCallback((context) => {
+    setLatestPreviewContext(context || null)
+  }, [])
 
   const handleInsertCode = useCallback((codeOrFiles, options = {}) => {
     const manifest = options.manifest === undefined ? latestManifest : options.manifest
@@ -231,6 +238,7 @@ export default function App() {
             activeFile={activeFile}
             board={board}
             selectedSkills={selectedSkills}
+            onPreviewContextChange={handlePreviewContextChange}
             onFileChange={(newFiles, newActive) => {
               setProjectFiles(newFiles)
               if (newActive !== undefined) setActiveFile(newActive)
@@ -260,6 +268,10 @@ export default function App() {
                 onConsumePrompt={() => setPendingLogAnalysis(null)}
                 repairRequest={pendingBuildRepair}
                 onConsumeRepairRequest={() => setPendingBuildRepair(null)}
+                projectFiles={projectFiles}
+                latestManifest={latestManifest}
+                previewContext={latestPreviewContext}
+                activeFile={activeFile}
                 selectedSkills={selectedSkills}
                 onSkillsChange={handleSkillsChange}
                 onResetProject={resetProjectState}

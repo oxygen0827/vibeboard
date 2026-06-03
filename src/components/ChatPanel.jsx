@@ -26,6 +26,10 @@ import {
   createGenerationWorkflow,
   updateGenerationWorkflow,
 } from '../domain/workflow/generationWorkflow'
+import {
+  buildPreviewFeedbackEvidence,
+  isLikelyPreviewRepairRequest,
+} from '../domain/previewRepair/repairIntent'
 import './ChatPanel.css'
 
 const QUICK_PROMPTS = [
@@ -152,6 +156,10 @@ export default function ChatPanel({
   selectedSkills = [],
   onSkillsChange,
   onResetProject,
+  projectFiles = {},
+  latestManifest = null,
+  previewContext = null,
+  activeFile = '',
 }) {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
@@ -280,6 +288,29 @@ export default function ChatPanel({
   async function generateCodeFromInput(textOverride = null) {
     const text = typeof textOverride === 'string' ? textOverride.trim() : input.trim()
     if (!text || generating || streaming || !hasConfig) return
+
+    if (isLikelyPreviewRepairRequest({
+      text,
+      projectFiles,
+      manifest: latestManifest,
+      previewContext,
+    })) {
+      await repairPreviewFailure({
+        userFeedback: text,
+        previewEvidence: buildPreviewFeedbackEvidence({
+          userFeedback: text,
+          projectFiles,
+          previewContext,
+          activeFile,
+        }),
+        manifest: latestManifest,
+        projectFiles,
+        selectedSkills,
+      })
+      setInput('')
+      return
+    }
+
     setGenerating(true)
     setKnowledgeCard(null)
     setGenerationWorkflow(updateGenerationWorkflow(createGenerationWorkflow(), 'intent', WORKFLOW_STEP_STATUS.ACTIVE, '解析用户需求和技能'))
@@ -689,8 +720,8 @@ export default function ChatPanel({
     setKnowledgeCard(null)
     setMessages(prev => [
       ...prev,
-      { role: 'user', content: '请根据 LVGL 预览结果自动修复当前应用源码。' },
-      { role: 'assistant', content: '正在分析 Preview Evidence 并生成预览修复补丁...' },
+      { role: 'user', content: request.userFeedback || '请根据 LVGL 预览结果自动修复当前应用源码。' },
+      { role: 'assistant', content: '正在分析当前项目和预览反馈，并生成定向修复补丁...' },
     ])
     try {
       const content = await completeChat({
@@ -703,6 +734,7 @@ export default function ChatPanel({
           previewEvidence: request.previewEvidence,
           manifest: request.manifest,
           projectFiles: request.projectFiles,
+          userFeedback: request.userFeedback,
         }),
       })
       const parsed = parseGeneratedFilesResponseWithOptions(content, board, {
@@ -714,6 +746,14 @@ export default function ChatPanel({
         setMessages(prev => {
           const next = [...prev]
           next[next.length - 1] = { role: 'assistant', content: message, error: true }
+          return next
+        })
+        return
+      }
+      if (Object.keys(parsed.files).length === 0) {
+        setMessages(prev => {
+          const next = [...prev]
+          next[next.length - 1] = { role: 'assistant', content: '预览修复没有返回可应用的文件修改。', error: true }
           return next
         })
         return

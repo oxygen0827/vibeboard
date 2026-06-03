@@ -51,7 +51,7 @@ function fileIcon(path) {
   return 'F'
 }
 
-export default function ProjectEditor({ files, generatedFiles = {}, referenceFiles = {}, activeFile, board, selectedSkills = [], onFileChange, onFileSelect, onCompile }) {
+export default function ProjectEditor({ files, generatedFiles = {}, referenceFiles = {}, activeFile, board, selectedSkills = [], onPreviewContextChange, onFileChange, onFileSelect, onCompile }) {
   const [expanded, setExpanded] = useState(() => new Set(['main', 'main/assets', 'main/bt', 'components', 'components/esp32_s3_szp']))
 
   const displayFiles = { ...generatedFiles, ...files }
@@ -175,7 +175,12 @@ export default function ProjectEditor({ files, generatedFiles = {}, referenceFil
         </aside>
 
         <section className="pe-main">
-          <DigitalTwinPreview files={files} selectedSkills={selectedSkills} board={board} />
+          <DigitalTwinPreview
+            files={files}
+            selectedSkills={selectedSkills}
+            board={board}
+            onPreviewContextChange={onPreviewContextChange}
+          />
 
           <div className="pe-topbar">
             <div className="pe-current-file" title={activeFile || ''}>
