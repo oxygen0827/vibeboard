@@ -81,6 +81,11 @@ assert.equal((debugInjected.match(/vibeboard_debug_start/g) || []).length, 1)
 const debugInjectedAgain = normalizeGeneratedSource(debugInjected, 'main/main.c')
 assert.equal((debugInjectedAgain.match(/vibeboard_debug_start/g) || []).length, 1)
 
+const debugInjectedProjectValidation = validateProjectIncludes({
+  'main/main.c': debugInjected,
+}, [])
+assert.equal(debugInjectedProjectValidation.ok, true)
+
 const normalized = normalizeGeneratedSourceFiles({
   'main/main.c': broken,
   'main/app_ui.h': '#pragma once\nvoid app_ui_start(void);\n',

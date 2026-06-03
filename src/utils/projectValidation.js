@@ -9,6 +9,7 @@ const GLOBAL_HEADERS = new Set([
   'esp_wifi.h',
   'esp_http_server.h',
   'esp_ota_ops.h',
+  'vibeboard_debug.h',
   'esp_spiffs.h',
   'esp_vfs_fat.h',
   'nvs_flash.h',
