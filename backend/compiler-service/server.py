@@ -4,7 +4,7 @@ POST /compile - compile ESP-IDF project, streams build log via SSE
 GET  /health  - health check
 """
 
-import os, uuid, shutil, subprocess, logging, json, base64, re, time
+import os, uuid, shutil, subprocess, logging, json, base64, re, time, hashlib
 from pathlib import Path, PurePosixPath
 from flask import Flask, request, Response, jsonify, send_file
 
@@ -30,6 +30,7 @@ ALLOWED_FILENAMES = {"CMakeLists.txt", "sdkconfig.defaults", "idf_component.yml"
 EXAMPLE_ID_RE = re.compile(r"^[0-9]{2}-[A-Za-z0-9_-]+$")
 DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_.:-]{0,96}$")
+PROJECT_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,96}$")
 
 
 def now_ms():
@@ -139,12 +140,32 @@ def validate_project_path(build_dir: Path, rel_path: str) -> Path:
     return target
 
 
-def create_project(build_dir: Path, code: str, project_files: dict):
-    shutil.copytree(TEMPLATE_DIR, build_dir)
-    (build_dir / "spiffs").mkdir(exist_ok=True)
+def normalized_project_id(value: str | None) -> str | None:
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    return value if PROJECT_ID_RE.match(value) else None
+
+
+def project_signature(code: str, project_files: dict) -> str:
+    payload = {
+        "code": code,
+        "projectFiles": {
+            str(key): str(project_files[key])
+            for key in sorted(project_files.keys(), key=str)
+        },
+    }
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def sync_project_files(build_dir: Path, code: str, project_files: dict):
     main_file = project_files.get("__mainFile", "main.c")
+    expected = set()
     main_target = validate_project_path(build_dir / "main", main_file)
+    main_target.parent.mkdir(parents=True, exist_ok=True)
     main_target.write_text(code)
+    expected.add(main_target.resolve())
 
     for rel_path, content in project_files.items():
         if rel_path == "__mainFile":
@@ -152,7 +173,48 @@ def create_project(build_dir: Path, code: str, project_files: dict):
         target = validate_project_path(build_dir, rel_path)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content)
+        expected.add(target.resolve())
         log.info(f"  wrote: {rel_path}")
+
+    for root_name in ("main", "components", "spiffs"):
+        root = build_dir / root_name
+        if not root.exists():
+            continue
+        for path in root.rglob("*"):
+            if path.is_dir() or path.resolve() in expected:
+                continue
+            if root_name == "components" and str(path.resolve()).startswith(str((build_dir / "components" / "esp32_s3_szp").resolve())):
+                continue
+            if path.name == ".gitkeep":
+                continue
+            if path.suffix in ALLOWED_SUFFIXES or path.name in ALLOWED_FILENAMES:
+                path.unlink(missing_ok=True)
+
+
+def create_project(build_dir: Path, code: str, project_files: dict):
+    shutil.copytree(TEMPLATE_DIR, build_dir)
+    (build_dir / "spiffs").mkdir(exist_ok=True)
+    sync_project_files(build_dir, code, project_files)
+
+
+def prepare_cached_project(build_dir: Path, code: str, project_files: dict):
+    signature = project_signature(code, project_files)
+    stamp = build_dir / ".vibeboard-project-signature"
+    if not build_dir.exists():
+        create_project(build_dir, code, project_files)
+        stamp.write_text(signature)
+        return "cache-created"
+    if not (build_dir / "CMakeLists.txt").exists():
+        shutil.rmtree(build_dir, ignore_errors=True)
+        create_project(build_dir, code, project_files)
+        stamp.write_text(signature)
+        return "cache-recreated"
+    previous = stamp.read_text(errors="ignore").strip() if stamp.exists() else ""
+    if previous != signature:
+        sync_project_files(build_dir, code, project_files)
+        stamp.write_text(signature)
+        return "cache-updated"
+    return "cache-hit"
 
 
 def list_official_examples():
@@ -288,7 +350,7 @@ def find_flash_artifacts(build_dir: Path, app_bin: Path):
     return [artifact for artifact in artifacts if artifact]
 
 
-def run_idf_build(job_id: str, build_dir: Path):
+def run_idf_build(job_id: str, build_dir: Path, cleanup: bool = True):
     env = os.environ.copy()
     env["IDF_PATH"] = str(IDF_PATH)
     cmd = [str(IDF_PATH / "tools" / "idf.py"),
@@ -314,11 +376,13 @@ def run_idf_build(job_id: str, build_dir: Path):
     except subprocess.TimeoutExpired:
         proc.kill()
         yield sse({"done": True, "error": f"Build timeout ({BUILD_TIMEOUT_SECONDS}s)"})
-        shutil.rmtree(build_dir, ignore_errors=True)
+        if cleanup:
+            shutil.rmtree(build_dir, ignore_errors=True)
         return
     except Exception as e:
         yield sse({"done": True, "error": str(e)})
-        shutil.rmtree(build_dir, ignore_errors=True)
+        if cleanup:
+            shutil.rmtree(build_dir, ignore_errors=True)
         return
 
     if proc.returncode != 0:
@@ -326,13 +390,15 @@ def run_idf_build(job_id: str, build_dir: Path):
         summary = "\n".join(errors[-20:]) if errors else "\n".join(full_output[-30:])
         log.warning(f"[{job_id}] Build FAILED")
         yield sse({"done": True, "error": summary})
-        shutil.rmtree(build_dir, ignore_errors=True)
+        if cleanup:
+            shutil.rmtree(build_dir, ignore_errors=True)
         return
 
     bin_path = find_app_binary(build_dir)
     if not bin_path:
         yield sse({"done": True, "error": "binary not found after build"})
-        shutil.rmtree(build_dir, ignore_errors=True)
+        if cleanup:
+            shutil.rmtree(build_dir, ignore_errors=True)
         return
 
     size = bin_path.stat().st_size
@@ -350,7 +416,8 @@ def run_idf_build(job_id: str, build_dir: Path):
         "buildId": job_id,
         "command": " ".join(cmd),
     })
-    shutil.rmtree(build_dir, ignore_errors=True)
+    if cleanup:
+        shutil.rmtree(build_dir, ignore_errors=True)
 
 
 def with_extra_done_metadata(events, metadata: dict):
@@ -584,20 +651,25 @@ def compile_code():
     data = request.get_json(force=True)
     code = data.get("code", "").strip()
     project_files = dict(data.get("projectFiles", {}))
+    project_id = normalized_project_id(data.get("projectId"))
 
     if not code:
         return jsonify({"error": "no code provided"}), 400
 
-    job_id    = uuid.uuid4().hex[:8]
-    build_dir = BUILD_BASE / job_id
+    job_id = uuid.uuid4().hex[:8]
+    build_dir = BUILD_BASE / (f"project-{project_id}" if project_id else job_id)
 
     def generate():
         try:
-            create_project(build_dir, code, project_files)
+            cache_status = prepare_cached_project(build_dir, code, project_files) if project_id else None
+            if cache_status:
+                yield sse({"log": f"Incremental build cache: {cache_status}"})
+            else:
+                create_project(build_dir, code, project_files)
         except Exception as e:
             yield sse({"done": True, "error": str(e)})
             return
-        yield from run_idf_build(job_id, build_dir)
+        yield from run_idf_build(job_id, build_dir, cleanup=not project_id)
 
     return Response(generate(), content_type="text/event-stream",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

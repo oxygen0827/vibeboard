@@ -67,7 +67,7 @@ function copyTextFallback(text) {
   if (!ok) throw new Error('copy failed')
 }
 
-export default function CompilePanel({ projectFiles: sourceProp, selectedSkills, boardId, onClose, onRepairBuildFailure }) {
+export default function CompilePanel({ projectFiles: sourceProp, selectedSkills, boardId, projectId, onClose, onRepairBuildFailure }) {
   const [compileMode, setCompileMode] = useState('project')
   const [officialExampleId, setOfficialExampleId] = useState(OFFICIAL_EXAMPLES[0]?.id || '')
   const [serverExamples, setServerExamples] = useState([])
@@ -214,7 +214,7 @@ export default function CompilePanel({ projectFiles: sourceProp, selectedSkills,
         blob = await compileFirmware(code, { ...configFiles, ...compileMetadata }, setStatus, line => {
           setBuildLog(prev => [...prev, line])
           setTimeout(() => logEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 0)
-        })
+        }, { projectId })
       }
       setFirmware(blob)
       setBuildEvidence(blob.buildEvidence || null)
@@ -523,27 +523,29 @@ export default function CompilePanel({ projectFiles: sourceProp, selectedSkills,
             </div>
           )}
 
-          <button className={`compile-btn ${b.cls}`} onClick={handleCompile} disabled={buildState === 'building'}>
-            {b.label}
-          </button>
-
-          {buildState === 'error' && compileMode === 'project' && onRepairBuildFailure && (
-            <button
-              className="compile-btn"
-              onClick={() => {
-                onRepairBuildFailure({
-                  buildEvidence,
-                  buildLog,
-                  errorLog,
-                  projectFiles: sourceProp || {},
-                  selectedSkills: selectedSkills || [],
-                })
-                onClose?.()
-              }}
-            >
-              AI 修复编译错误
+          <div className="compile-primary-actions">
+            <button className={`compile-btn primary ${b.cls}`} onClick={handleCompile} disabled={buildState === 'building'}>
+              {b.label}
             </button>
-          )}
+
+            {buildState === 'error' && compileMode === 'project' && onRepairBuildFailure && (
+              <button
+                className="compile-btn repair"
+                onClick={() => {
+                  onRepairBuildFailure({
+                    buildEvidence,
+                    buildLog,
+                    errorLog,
+                    projectFiles: sourceProp || {},
+                    selectedSkills: selectedSkills || [],
+                  })
+                  onClose?.()
+                }}
+              >
+                AI 修复编译错误
+              </button>
+            )}
+          </div>
 
           <div className="ota-section">
             <label className="field-label">设备 IP（WiFi OTA）</label>

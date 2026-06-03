@@ -277,6 +277,23 @@
 .right-tab-content {
   flex: 1;
   overflow: hidden;
+  display: grid;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+}
+
+.right-tab-panel {
+  grid-area: 1 / 1;
+  min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
+  visibility: hidden;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.right-tab-panel.active {
+  visibility: visible;
+  pointer-events: auto;
+  opacity: 1;
 }

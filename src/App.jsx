@@ -106,6 +106,10 @@ export default function App() {
   const [rightTab, setRightTab] = useState('chat')
   const [pendingLogAnalysis, setPendingLogAnalysis] = useState(null)
   const [pendingBuildRepair, setPendingBuildRepair] = useState(null)
+  const [compileSessionId, setCompileSessionId] = useState(() => {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
+    return `project-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  })
   const [boardId, setBoardId] = useState(loadInitialBoardId)
   const [selectedSkills, setSelectedSkills] = useState([])
   const board = BOARDS[boardId]
@@ -122,7 +126,11 @@ export default function App() {
     setSettings(next)
     saveSettings(next)
   }
-  function handleBoardChange(id) { setBoardId(id); localStorage.setItem(BOARD_STORAGE_KEY, id) }
+  function handleBoardChange(id) {
+    setBoardId(id)
+    setCompileSessionId(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `project-${Date.now()}-${Math.random().toString(16).slice(2)}`)
+    localStorage.setItem(BOARD_STORAGE_KEY, id)
+  }
 
   useEffect(() => {
     const files = getDefaultFiles(boardId)
@@ -216,7 +224,7 @@ export default function App() {
             </button>
           </div>
           <div className="right-tab-content">
-            {rightTab === 'chat' ? (
+            <div className={`right-tab-panel ${rightTab === 'chat' ? 'active' : ''}`}>
               <ChatPanel
                 settings={settings}
                 board={board}
@@ -229,14 +237,15 @@ export default function App() {
                 selectedSkills={selectedSkills}
                 onSkillsChange={setSelectedSkills}
               />
-            ) : (
+            </div>
+            <div className={`right-tab-panel ${rightTab === 'log' ? 'active' : ''}`}>
               <LogPanel
                 onAnalyze={(logs) => {
                   setPendingLogAnalysis(`请帮我分析以下 ESP32 设备日志，找出问题原因并给出修复建议：\n\n\`\`\`\n${logs}\n\`\`\``)
                   setRightTab('chat')
                 }}
               />
-            )}
+            </div>
           </div>
         </div>
       </div>
@@ -255,6 +264,7 @@ export default function App() {
           projectFiles={projectFiles}
           selectedSkills={selectedSkills}
           boardId={boardId}
+          projectId={compileSessionId}
           onRepairBuildFailure={(request) => {
             setPendingBuildRepair(request)
             setRightTab('chat')

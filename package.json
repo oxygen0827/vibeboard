@@ -9,6 +9,7 @@
     "test:code-generation": "node scripts/test-code-generation.mjs",
     "test:file-placement": "node scripts/test-file-placement.mjs",
     "test:official-examples-backend": "node scripts/test-official-examples-backend.mjs",
+    "test:compiler-incremental-cache": "node scripts/test-compiler-incremental-cache.mjs",
     "test:remote-ota-backend": "node scripts/test-remote-ota-backend.mjs",
     "test:program-intent": "node scripts/test-program-intent.mjs",
     "test:program-manifest": "node scripts/test-program-manifest.mjs",

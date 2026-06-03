@@ -11,10 +11,10 @@ import { WORKFLOW_STATUS } from '../domain/workflow/outcome'
  *   {done: true, error: "..."}                      failure
  */
 
-export async function compileFirmware(code, projectFiles, onStatus, onLog) {
+export async function compileFirmware(code, projectFiles, onStatus, onLog, options = {}) {
   return compileSse({
     endpoint: '/compile',
-    payload: { code, projectFiles },
+    payload: { code, projectFiles, projectId: options.projectId },
     onStatus,
     onLog,
   })

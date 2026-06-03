@@ -3,27 +3,33 @@
   inset: 0;
   background: rgba(0,0,0,0.65);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
+  padding: 32px 16px;
   z-index: 1000;
+  overflow-y: auto;
 }
 
 .compile-panel {
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  width: 480px;
+  border-radius: 8px;
+  width: min(720px, 96vw);
+  max-height: calc(100vh - 64px);
   max-width: 95vw;
   display: flex;
   flex-direction: column;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+  overflow: hidden;
 }
 
 .compile-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 18px 24px 14px;
+  padding: 14px 18px;
   border-bottom: 1px solid var(--border-muted);
+  flex-shrink: 0;
 }
 
 .compile-title {
@@ -33,10 +39,12 @@
 }
 
 .compile-body {
-  padding: 20px 24px 24px;
+  padding: 16px 18px 20px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .compile-mode-tabs {
@@ -110,19 +118,22 @@
 
 .compile-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 4px;
 }
 
 .compile-btn {
-  padding: 8px 20px;
+  min-height: 34px;
+  padding: 8px 14px;
   border-radius: 6px;
   font-size: 13px;
   font-weight: 600;
-  border: none;
+  border: 1px solid transparent;
   transition: all 0.15s;
   background: var(--accent);
   color: white;
+  white-space: nowrap;
 }
 .compile-btn:hover:not(:disabled) { background: var(--accent-hover); }
 .compile-btn:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -137,6 +148,33 @@
   color: var(--blue);
 }
 .compile-btn.download:hover { background: var(--blue); color: white; }
+
+.compile-primary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  position: sticky;
+  top: -16px;
+  z-index: 2;
+  padding: 10px 0;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.compile-btn.primary {
+  min-width: 150px;
+}
+
+.compile-btn.repair {
+  background: var(--bg-tertiary);
+  border-color: var(--orange);
+  color: var(--orange);
+}
+
+.compile-btn.repair:hover:not(:disabled) {
+  background: rgba(240, 136, 62, 0.16);
+  color: #f2cc60;
+}
 
 .compile-status {
   font-size: 12px;
@@ -218,12 +256,14 @@
 
 /* OTA section */
 .ota-section {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border-muted);
+  margin-top: 6px;
+  padding: 12px;
+  border: 1px solid var(--border-muted);
+  border-radius: 8px;
+  background: var(--bg-primary);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .ota-ip-row {
@@ -285,9 +325,7 @@
 
 /* BLE OTA section */
 .ble-section {
-  border-top: 1px solid var(--border-muted);
-  padding-top: 14px;
-  margin-top: 4px;
+  margin-top: 6px;
 }
 
 .ble-btn {
@@ -337,9 +375,7 @@
 }
 
 .remote-section {
-  border-top: 1px solid var(--border-muted);
-  padding-top: 14px;
-  margin-top: 4px;
+  margin-top: 6px;
 }
 
 .remote-btn {
@@ -404,4 +440,28 @@
   color: #8b949e;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+@media (max-width: 640px) {
+  .compile-backdrop {
+    padding: 12px;
+  }
+
+  .compile-panel {
+    width: 100%;
+    max-height: calc(100vh - 24px);
+  }
+
+  .compile-mode-tabs {
+    grid-template-columns: 1fr;
+  }
+
+  .compile-actions,
+  .compile-primary-actions {
+    flex-direction: column;
+  }
+
+  .compile-btn {
+    width: 100%;
+  }
 }
