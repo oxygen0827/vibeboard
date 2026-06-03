@@ -275,10 +275,21 @@ esp_err_t bsp_lvgl_start(void)
     };
     esp_lcd_panel_io_handle_t tp_io = NULL;
     esp_lcd_panel_io_i2c_config_t tp_io_cfg = ESP_LCD_TOUCH_IO_I2C_FT5x06_CONFIG();
-    ESP_ERROR_CHECK(esp_lcd_new_panel_io_i2c(s_i2c_bus, &tp_io_cfg, &tp_io));
+    tp_io_cfg.scl_speed_hz = 400000;
+    esp_err_t touch_ret = esp_lcd_new_panel_io_i2c(s_i2c_bus, &tp_io_cfg, &tp_io);
+    if (touch_ret != ESP_OK) {
+        ESP_LOGW(TAG, "Touch IO init failed, continuing without touch: %s", esp_err_to_name(touch_ret));
+        ESP_LOGI(TAG, "LVGL started");
+        return ESP_OK;
+    }
 
     esp_lcd_touch_handle_t tp = NULL;
-    ESP_ERROR_CHECK(esp_lcd_touch_new_i2c_ft5x06(tp_io, &tp_cfg, &tp));
+    touch_ret = esp_lcd_touch_new_i2c_ft5x06(tp_io, &tp_cfg, &tp);
+    if (touch_ret != ESP_OK) {
+        ESP_LOGW(TAG, "Touch init failed, continuing without touch: %s", esp_err_to_name(touch_ret));
+        ESP_LOGI(TAG, "LVGL started");
+        return ESP_OK;
+    }
 
     const lvgl_port_touch_cfg_t touch_cfg = { .disp = disp, .handle = tp };
     lvgl_port_add_touch(&touch_cfg);
