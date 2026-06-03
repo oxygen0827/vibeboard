@@ -1,0 +1,45 @@
+import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+
+const compilePanel = await readFile(new URL('../src/components/CompilePanel.jsx', import.meta.url), 'utf8')
+const bleOta = await readFile(new URL('../src/utils/bleOta.js', import.meta.url), 'utf8')
+const bleReceiver = await readFile(new URL('../backend/compiler-service/ble_ota_receiver/main/main.c', import.meta.url), 'utf8')
+const server = await readFile(new URL('../backend/compiler-service/server.py', import.meta.url), 'utf8')
+const dockerfile = await readFile(new URL('../backend/compiler-service/Dockerfile', import.meta.url), 'utf8')
+const nginx = await readFile(new URL('../deploy/nginx.conf', import.meta.url), 'utf8')
+const nginxVibeboard = await readFile(new URL('../deploy/nginx-vibeboard.conf', import.meta.url), 'utf8')
+
+assert.match(compilePanel, /import \{ connectBle \} from ['"]\.\.\/utils\/bleOta['"]/)
+assert.match(compilePanel, /BLE OTA 基础固件/)
+assert.match(compilePanel, /BLE 烧录（试验）/)
+assert.match(compilePanel, /需要设备已运行 BLE OTA 基础固件并广播 ESP32-Vibe-OTA/)
+assert.match(compilePanel, /USB 直刷/)
+
+assert.match(bleOta, /4fafc201-1fb5-459e-8fcc-c5c9c331914b/)
+assert.match(bleOta, /this\._statusCb = \(bytes2\)/)
+assert.match(bleOta, /await this\._writeControl\(new Uint8Array\(\[0x02\]\)\)/)
+assert.match(bleOta, /async _writeControl\(command\)/)
+assert.match(bleOta, /this\._ctrl\.writeValueWithResponse\(command\)/)
+
+assert.match(bleReceiver, /DEVICE_NAME "ESP32-Vibe-OTA"/)
+assert.match(bleReceiver, /esp_ble_gatts_create_attr_tab/)
+assert.match(bleReceiver, /esp_ota_begin/)
+assert.match(bleReceiver, /esp_ota_write/)
+assert.match(bleReceiver, /esp_ota_set_boot_partition/)
+assert.match(bleReceiver, /static void commit_task/)
+assert.match(bleReceiver, /static void schedule_commit/)
+assert.match(bleReceiver, /notify_code\(0x00\)/)
+assert.match(bleReceiver, /notify_code\(0x02\)/)
+
+assert.match(server, /BLE_OTA_RECEIVER_DIR/)
+assert.match(server, /@app\.route\("\/compile-ble-ota-receiver"/)
+assert.match(server, /def with_build_dir_lock/)
+assert.match(server, /fcntl\.flock/)
+assert.match(server, /with_build_dir_lock\(job_id, build_dir, locked_generate\)/)
+assert.match(dockerfile, /COPY ble_ota_receiver\/ \.\/ble_ota_receiver\//)
+assert.match(nginx, /location \/compile-ble-ota-receiver/)
+assert.match(nginx, /proxy_pass http:\/\/127\.0\.0\.1:8760\/compile-ble-ota-receiver;/)
+assert.match(nginxVibeboard, /location \/compile-ble-ota-receiver/)
+assert.match(nginxVibeboard, /proxy_pass http:\/\/127\.0\.0\.1:8760\/compile-ble-ota-receiver;/)
+
+console.log('ble ota guard tests passed')

@@ -4,7 +4,7 @@ POST /compile - compile ESP-IDF project, streams build log via SSE
 GET  /health  - health check
 """
 
-import os, sys, uuid, shutil, subprocess, logging, json, base64, re, time, hashlib, zlib, struct
+import os, sys, uuid, shutil, subprocess, logging, json, base64, re, time, hashlib, zlib, struct, fcntl
 from io import BytesIO
 from pathlib import Path, PurePosixPath
 from flask import Flask, request, Response, jsonify, send_file
@@ -21,6 +21,7 @@ log = logging.getLogger(__name__)
 TEMPLATE_DIR = Path(os.environ.get("TEMPLATE_DIR", "/compiler/template"))
 EXAMPLES_DIR = Path(os.environ.get("EXAMPLES_DIR", "/compiler/examples"))
 OTA_RECEIVER_DIR = Path(os.environ.get("OTA_RECEIVER_DIR", "/compiler/ota_receiver"))
+BLE_OTA_RECEIVER_DIR = Path(os.environ.get("BLE_OTA_RECEIVER_DIR", "/compiler/ble_ota_receiver"))
 BUILD_BASE   = Path(os.environ.get("BUILD_BASE", "/tmp/builds"))
 REMOTE_OTA_DIR = Path(os.environ.get("REMOTE_OTA_DIR", "/tmp/vibeboard-remote-ota"))
 IDF_PATH     = Path(os.environ.get("IDF_PATH", "/opt/esp/idf"))
@@ -1029,6 +1030,39 @@ def prepare_cached_ota_receiver(build_dir: Path, wifi_ssid: str, wifi_password: 
     }
 
 
+def ble_ota_receiver_signature():
+    payload = {
+        "template": directory_signature(BLE_OTA_RECEIVER_DIR),
+        "deviceName": "ESP32-Vibe-OTA",
+        "protocol": "vibeboard-ble-ota-v1",
+    }
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest(), payload
+
+
+def prepare_cached_ble_ota_receiver(build_dir: Path):
+    if not BLE_OTA_RECEIVER_DIR.exists():
+        raise ValueError("BLE OTA receiver template not installed")
+
+    signature, payload = ble_ota_receiver_signature()
+    stamp = build_dir / ".vibeboard-ble-ota-receiver-signature"
+
+    def recreate(status: str):
+        shutil.rmtree(build_dir, ignore_errors=True)
+        shutil.copytree(BLE_OTA_RECEIVER_DIR, build_dir)
+        stamp.write_text(signature)
+        return status, payload
+
+    if not build_dir.exists():
+        return recreate("cache-created")
+    if not (build_dir / "CMakeLists.txt").exists():
+        return recreate("cache-recreated")
+    previous = stamp.read_text(errors="ignore").strip() if stamp.exists() else ""
+    if previous != signature:
+        return recreate("cache-updated")
+    return "cache-hit", payload
+
+
 def project_name(build_dir: Path) -> str:
     cmake = build_dir / "CMakeLists.txt"
     if not cmake.exists():
@@ -1049,6 +1083,8 @@ def find_app_binary(build_dir: Path) -> Path | None:
         p for p in build_output.glob("*.bin")
         if "bootloader" not in p.name.lower()
         and "partition" not in p.name.lower()
+        and "ota_data" not in p.name.lower()
+        and "ota-data" not in p.name.lower()
         and "storage" not in p.name.lower()
     ]
     return candidates[0] if candidates else None
@@ -1177,6 +1213,26 @@ def with_extra_done_metadata(events, metadata: dict):
             except Exception:
                 pass
         yield event
+
+
+def with_build_dir_lock(job_id: str, build_dir: Path, events_factory):
+    lock_path = BUILD_BASE / f".{build_dir.name}.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("w") as lock_file:
+        waiting = False
+        while True:
+            try:
+                fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if not waiting:
+                    yield sse({"log": f"[{job_id}] Waiting for an existing cached build to finish..."})
+                    waiting = True
+                time.sleep(1)
+        try:
+            yield from events_factory()
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
 def sse(obj):
@@ -1548,20 +1604,52 @@ def compile_ota_receiver():
     build_dir = BUILD_BASE / f"ota-receiver-{signature[:16]}"
 
     def generate():
-        try:
-            cache_status, agent = prepare_cached_ota_receiver(build_dir, wifi_ssid, wifi_password, device_id, device_token, server_url)
-            yield sse({"log": f"OTA receiver cache: {cache_status}"})
-        except Exception as e:
-            yield sse({"done": True, "error": str(e)})
-            return
-        if cache_status == "cache-hit":
-            cached = cached_build_payload(job_id, build_dir)
-            if cached:
-                yield sse({"log": "OTA receiver cached artifact reused"})
-                cached.update({"agent": agent})
-                yield sse(cached)
+        def locked_generate():
+            try:
+                cache_status, agent = prepare_cached_ota_receiver(build_dir, wifi_ssid, wifi_password, device_id, device_token, server_url)
+                yield sse({"log": f"OTA receiver cache: {cache_status}"})
+            except Exception as e:
+                yield sse({"done": True, "error": str(e)})
                 return
-        yield from with_extra_done_metadata(run_idf_build(job_id, build_dir, cleanup=False), {"agent": agent})
+            if cache_status == "cache-hit":
+                cached = cached_build_payload(job_id, build_dir)
+                if cached:
+                    yield sse({"log": "OTA receiver cached artifact reused"})
+                    cached.update({"agent": agent})
+                    yield sse(cached)
+                    return
+            yield from with_extra_done_metadata(run_idf_build(job_id, build_dir, cleanup=False), {"agent": agent})
+
+        yield from with_build_dir_lock(job_id, build_dir, locked_generate)
+
+    return Response(generate(), content_type="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.route("/compile-ble-ota-receiver", methods=["POST"])
+def compile_ble_ota_receiver():
+    job_id = uuid.uuid4().hex[:8]
+    signature, _ = ble_ota_receiver_signature()
+    build_dir = BUILD_BASE / f"ble-ota-receiver-{signature[:16]}"
+
+    def generate():
+        def locked_generate():
+            try:
+                cache_status, info = prepare_cached_ble_ota_receiver(build_dir)
+                yield sse({"log": f"BLE OTA receiver cache: {cache_status}"})
+            except Exception as e:
+                yield sse({"done": True, "error": str(e)})
+                return
+            if cache_status == "cache-hit":
+                cached = cached_build_payload(job_id, build_dir)
+                if cached:
+                    yield sse({"log": "BLE OTA receiver cached artifact reused"})
+                    cached.update({"agent": info})
+                    yield sse(cached)
+                    return
+            yield from with_extra_done_metadata(run_idf_build(job_id, build_dir, cleanup=False), {"agent": info})
+
+        yield from with_build_dir_lock(job_id, build_dir, locked_generate)
 
     return Response(generate(), content_type="text/event-stream",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

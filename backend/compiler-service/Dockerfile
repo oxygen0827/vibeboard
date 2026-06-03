@@ -14,6 +14,7 @@ WORKDIR /compiler
 COPY template/ ./template/
 COPY examples/ ./examples/
 COPY ota_receiver/ ./ota_receiver/
+COPY ble_ota_receiver/ ./ble_ota_receiver/
 COPY preview_runner/ ./preview_runner/
 
 # Vendored-at-build LVGL 8.3 source for the headless preview runner.
@@ -33,4 +34,3 @@ EXPOSE 8760
 
 ENTRYPOINT ["/bin/bash", "-c", \
     "source /opt/esp/idf/export.sh && gunicorn -w 2 -b 0.0.0.0:8760 --timeout 180 server:app"]
-

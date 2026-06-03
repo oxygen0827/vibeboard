@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { compileFirmware, compileOfficialExample, compileOtaReceiver, downloadBin, loadOfficialExamples } from '../utils/compiler'
+import { compileBleOtaReceiver, compileFirmware, compileOfficialExample, compileOtaReceiver, downloadBin, loadOfficialExamples } from '../utils/compiler'
 import { getDeviceInfo, pushOta, loadOtaIp, saveOtaIp } from '../utils/ota'
 import { connectBle } from '../utils/bleOta'
 import { getPairedSerialDebugPorts, isSerialAutoConnectBlocked } from '../utils/logStream'
@@ -29,7 +29,7 @@ const OTA = {
   error: { label: '✕ 推送失败', cls: 'error' },
 }
 const BLE = {
-  idle: { label: '⬆ BLE 烧录', cls: '' },
+  idle: { label: 'BLE 烧录', cls: '' },
   connecting: { label: '⬆ 配对中...', cls: 'building' },
   flashing: { label: '⬆ 烧录中...', cls: 'building' },
   ok: { label: '✓ BLE 成功', cls: 'ok' },
@@ -108,7 +108,6 @@ export default function CompilePanel({
   const [otaProgress, setOtaProgress] = useState(0)
   const [bleState, setBleState] = useState('idle')
   const [bleProgress, setBleProgress] = useState(0)
-  const [bleName, setBleName] = useState('')
   const [usbState, setUsbState] = useState('idle')
   const [usbProgress, setUsbProgress] = useState(0)
   const [remoteState, setRemoteState] = useState('idle')
@@ -120,7 +119,6 @@ export default function CompilePanel({
   const [copyState, setCopyState] = useState('idle')
   const [buildEvidence, setBuildEvidence] = useState(null)
   const logEndRef = useRef(null)
-  const bleSessionRef = useRef(null)
   const autoFlashAttemptedRef = useRef(false)
   const officialExample = getOfficialExample(officialExampleId)
   const availableExampleIds = new Set(serverExamples.map(example => example.id))
@@ -224,6 +222,11 @@ export default function CompilePanel({
           setBuildLog(prev => [...prev, line])
           setTimeout(() => logEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 0)
         })
+      } else if (compileMode === 'ble-ota-receiver') {
+        blob = await compileBleOtaReceiver(setStatus, line => {
+          setBuildLog(prev => [...prev, line])
+          setTimeout(() => logEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 0)
+        })
       } else {
         if (!compilePackage.ok) {
           setErrorLog(compilePackage.message)
@@ -314,8 +317,6 @@ export default function CompilePanel({
     let session
     try {
       session = await connectBle()
-      bleSessionRef.current = session
-      setBleName(session.deviceName)
       setBleState('flashing')
       setStatus(`BLE 已连接 ${session.deviceName}，开始烧录...`)
     } catch (e) {
@@ -336,8 +337,7 @@ export default function CompilePanel({
       setStatus('BLE 烧录失败')
       setBleState('error')
     } finally {
-      session.disconnect()
-      bleSessionRef.current = null
+      session?.disconnect?.()
     }
   }
 
@@ -505,6 +505,12 @@ export default function CompilePanel({
             >
               OTA 基础固件
             </button>
+            <button
+              className={`compile-mode-tab ${compileMode === 'ble-ota-receiver' ? 'active' : ''}`}
+              onClick={() => setCompileMode('ble-ota-receiver')}
+            >
+              BLE OTA 基础固件
+            </button>
           </div>
 
           {compileMode === 'project' && (
@@ -557,6 +563,14 @@ export default function CompilePanel({
                 onChange={e => setAgentDeviceToken(e.target.value)}
                 placeholder="用于设备鉴权"
               />
+            </div>
+          )}
+
+          {compileMode === 'ble-ota-receiver' && (
+            <div className="official-example-box">
+              <div className="compile-hint">
+                这个固件会广播 ESP32-Vibe-OTA，并启动 BLE GATT OTA 服务。首次需要用 USB/串口烧录；之后可以用下面的 BLE 烧录按钮推送新的 app 固件。BLE 传输较慢，适合作为无 WiFi 时的试验路径。
+              </div>
             </div>
           )}
 
@@ -722,18 +736,15 @@ export default function CompilePanel({
           </div>
 
           <div className="ota-section ble-section">
-            <label className="field-label">BLE 烧录（无需 WiFi）</label>
+            <label className="field-label">BLE 烧录（试验）</label>
             <p className="compile-hint">
-              通过蓝牙直接烧录。需要 Chrome / Edge 桌面版，设备需运行 OTA 固件。
+              需要设备已运行 BLE OTA 基础固件并广播 ESP32-Vibe-OTA。首次仍需 USB 直刷基础固件；后续才能用 BLE 更新 app。
             </p>
             {bleState === 'flashing' && (
               <div className="ota-progress-wrap">
                 <div className="ota-progress-bar ble-bar" style={{ width: `${bleProgress}%` }} />
                 <span>{bleProgress}%</span>
               </div>
-            )}
-            {bleName && bleState !== 'idle' && bleState !== 'connecting' && (
-              <div className="device-info">已连接 <b>{bleName}</b></div>
             )}
             <button className={`compile-btn ble-btn ${bl.cls}`} onClick={handleBleFlash} disabled={!firmware || bleState === 'connecting' || bleState === 'flashing'}>
               {bl.label}

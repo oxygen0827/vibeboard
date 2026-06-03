@@ -13,6 +13,7 @@
     "test:official-examples-backend": "node scripts/test-official-examples-backend.mjs",
     "test:compiler-incremental-cache": "node scripts/test-compiler-incremental-cache.mjs",
     "test:remote-ota-backend": "node scripts/test-remote-ota-backend.mjs",
+    "test:ble-ota-guard": "node scripts/test-ble-ota-guard.mjs",
     "test:program-intent": "node scripts/test-program-intent.mjs",
     "test:program-manifest": "node scripts/test-program-manifest.mjs",
     "test:digital-twin-interaction": "node scripts/test-digital-twin-interaction.mjs",

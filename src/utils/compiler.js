@@ -38,6 +38,15 @@ export async function compileOtaReceiver({ wifiSsid, wifiPassword, serverUrl, de
   })
 }
 
+export async function compileBleOtaReceiver(onStatus, onLog) {
+  return compileSse({
+    endpoint: '/compile-ble-ota-receiver',
+    payload: {},
+    onStatus,
+    onLog,
+  })
+}
+
 export async function loadOfficialExamples() {
   const res = await fetch('/examples')
   if (!res.ok) throw new Error(`加载官方例程失败: HTTP ${res.status}`)

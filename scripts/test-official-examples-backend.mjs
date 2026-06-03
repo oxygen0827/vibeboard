@@ -32,6 +32,7 @@ sys.modules["flask"] = flask
 
 os.environ["EXAMPLES_DIR"] = r"${tmp}/examples"
 os.environ["OTA_RECEIVER_DIR"] = r"${tmp}/ota_receiver"
+os.environ["BLE_OTA_RECEIVER_DIR"] = r"${tmp}/ble_ota_receiver"
 import server
 
 root = pathlib.Path(os.environ["EXAMPLES_DIR"])
@@ -74,6 +75,25 @@ assert 'VIBEBOARD_WIFI_SSID "1-306"' in default_cfg, default_cfg
 assert 'VIBEBOARD_WIFI_PASSWORD "szyt1008"' in default_cfg, default_cfg
 assert default_agent["deviceId"] == "szpi-s3-ota-receiver", default_agent
 assert default_agent["deviceToken"] == "vibeboard-ota-receiver", default_agent
+
+ble_root = pathlib.Path(os.environ["BLE_OTA_RECEIVER_DIR"])
+(ble_root / "main").mkdir(parents=True)
+(ble_root / "CMakeLists.txt").write_text("project(vibeboard_ble_ota_receiver)")
+(ble_root / "main" / "main.c").write_text("void app_main(void){}")
+ble_build_dir = pathlib.Path(tempfile.mkdtemp()) / "ble-build"
+cache_status, ble_info = server.prepare_cached_ble_ota_receiver(ble_build_dir)
+assert cache_status == "cache-created", cache_status
+assert (ble_build_dir / "CMakeLists.txt").exists()
+assert ble_info["deviceName"] == "ESP32-Vibe-OTA", ble_info
+assert ble_info["protocol"] == "vibeboard-ble-ota-v1", ble_info
+
+partial_build_dir = pathlib.Path(tempfile.mkdtemp()) / "partial-build"
+(partial_build_dir / "build").mkdir(parents=True)
+(partial_build_dir / "CMakeLists.txt").write_text("project(vibeboard_ble_ota_receiver)")
+(partial_build_dir / "build" / "ota_data_initial.bin").write_bytes(b"not-app")
+assert server.find_app_binary(partial_build_dir) is None
+(partial_build_dir / "build" / "vibeboard_ble_ota_receiver.bin").write_bytes(b"app")
+assert server.find_app_binary(partial_build_dir).name == "vibeboard_ble_ota_receiver.bin"
 
 print("official examples backend tests passed")
 `
