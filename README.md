@@ -390,6 +390,26 @@ docker compose up -d
 
 当前 LVGL 服务边界已经建立，但真实 LVGL/Emscripten 源码集成仍在推进中；没有 `emcc` 或 LVGL runtime 未接入时，服务会返回明确状态而不是伪装成功。
 
+### 数字孪生待做计划
+
+当前家里服务器部署的是轻量 LVGL 仿真服务镜像，`/lvgl-sim-health`
+会返回 `{"status":"ok","emcc":false}`。这表示服务接口、nginx 代理和
+runtime package 接收链路已经上线，但还没有接入真正的 Emscripten/LVGL
+WASM 渲染工具链。
+
+后续需要完成：
+
+1. 制作稳定的 LVGL/Emscripten builder 镜像，避免在线部署时直接拉大体积
+   `emscripten/emsdk` 基础镜像导致超时。
+2. 把 `sim/lvgl-runtime/` 中生成的 `app_ui.c/h`、LVGL init、模拟 display/input
+   和必要 mock BSP 组合成可编译的 WASM/HTML preview bundle。
+3. 将 `/simulate-lvgl` 从当前的 `toolchain-missing` / `lvgl-runtime-not-wired`
+   状态升级为返回真实预览产物地址、构建日志和失败分类。
+4. 在前端 Digital Twin 面板中区分三层状态：语义预览、LVGL 服务可达、真实
+   LVGL framebuffer/WASM 预览可用。
+5. 为服务器部署增加 health check 和镜像回滚说明，确保 LVGL 仿真服务失败时
+   不影响主站、编译服务和 OTA 流程。
+
 ## 关键源码结构
 
 - [src/components/ChatPanel.jsx](./src/components/ChatPanel.jsx)：AI 对话和生成代码。

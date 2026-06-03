@@ -184,7 +184,23 @@ This lets the same `app_ui.c` run in firmware and in the simulator.
 
 Status: service boundary added in `backend/lvgl-sim-service/`. The service can
 accept generated runtime packages, validate paths, and report whether
-Emscripten is available. LVGL source integration is still pending.
+Emscripten is available. The home server currently runs the lightweight
+deployable service image, so `/lvgl-sim-health` returns
+`{"status":"ok","emcc":false}`. LVGL source integration and real WASM rendering
+are still pending.
+
+TODO:
+
+1. Build a stable internal LVGL/Emscripten builder image instead of pulling the
+   large upstream `emscripten/emsdk` image during every server deploy.
+2. Wire generated `app_ui.c/h` and the `sim/lvgl-runtime/` harness into a real
+   LVGL browser preview bundle.
+3. Add simulated display/input/BSP adapters for the board APIs used by generated
+   firmware code.
+4. Return preview HTML/WASM artifact URLs, logs, and structured failure reasons
+   from `/simulate-lvgl`.
+5. Keep semantic preview as a fast fallback and clearly label it separately from
+   real LVGL framebuffer rendering.
 
 Preferred path:
 
