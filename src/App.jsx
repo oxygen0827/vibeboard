@@ -1,7 +1,6 @@
 import { useState, useCallback, useEffect } from 'react'
 import ChatPanel from './components/ChatPanel'
 import LogPanel from './components/LogPanel'
-import ProductConsole from './components/ProductConsole'
 import SettingsModal from './components/SettingsModal'
 import CompilePanel from './components/CompilePanel'
 import ProjectEditor from './components/ProjectEditor'
@@ -230,13 +229,10 @@ export default function App() {
         <div className="right-pane">
           <div className="right-tabs">
             <button className={`right-tab ${rightTab === 'chat' ? 'active' : ''}`} onClick={() => setRightTab('chat')}>
-              AI
+              🤖 AI 助手
             </button>
             <button className={`right-tab ${rightTab === 'log' ? 'active' : ''}`} onClick={() => setRightTab('log')}>
-              Logs
-            </button>
-            <button className={`right-tab ${rightTab === 'product' ? 'active' : ''}`} onClick={() => setRightTab('product')}>
-              Product
+              📟 设备日志
             </button>
           </div>
           <div className="right-tab-content">
@@ -258,17 +254,9 @@ export default function App() {
             <div className={`right-tab-panel ${rightTab === 'log' ? 'active' : ''}`}>
               <LogPanel
                 onAnalyze={(logs) => {
-                  setPendingLogAnalysis(`Analyze these ESP32 device logs, identify the root cause, and suggest a repair:\n\n\`\`\`\n${logs}\n\`\`\``)
+                  setPendingLogAnalysis(`请帮我分析以下 ESP32 设备日志，找出问题原因并给出修复建议：\n\n\`\`\`\n${logs}\n\`\`\``)
                   setRightTab('chat')
                 }}
-              />
-            </div>
-            <div className={`right-tab-panel ${rightTab === 'product' ? 'active' : ''}`}>
-              <ProductConsole
-                board={board}
-                boardId={boardId}
-                selectedSkills={selectedSkills}
-                projectFiles={projectFiles}
               />
             </div>
           </div>
