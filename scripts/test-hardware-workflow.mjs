@@ -47,4 +47,47 @@ assert.equal(failure.payload.failureCategory, 'preview-contract-missing')
 assert.equal(assistantMessageForWorkflowEvent(failure).error, true)
 assert.match(assistantMessageForWorkflowEvent(failure).content, /Missing app_ui\.c/)
 
+await copyModule('src/domain/workflow/hardwareWorkflow.js')
+
+const {
+  runHardwareWorkflow,
+} = await import(pathToFileURL(join(tmp, 'src/domain/workflow/hardwareWorkflow.js')).href)
+
+const events = []
+const outcome = await runHardwareWorkflow({
+  boardId: 'szpi_esp32s3',
+  userRequest: '做一个 WiFi 状态界面',
+  selectedSkills: ['wifi'],
+  projectFiles: { 'main/main.c': 'void app_main(void) {}' },
+}, {
+  resolveSkills: async () => ['wifi', 'lvgl'],
+  runScope: async () => ({ status: 'ready', summary: 'WiFi UI', selectedSkillIds: ['wifi', 'lvgl'] }),
+  shouldDraftDesign: () => false,
+  generateManifest: async () => ({
+    ok: true,
+    manifest: {
+      programName: 'wifi_ui',
+      skillIds: ['wifi', 'lvgl'],
+      files: [{ path: 'main/main.c', role: 'entry' }],
+    },
+  }),
+  generateSource: async () => ({
+    ok: true,
+    files: { 'main/main.c': 'void app_main(void) {}' },
+  }),
+  validateSource: async files => ({ ok: true, files }),
+  compile: async () => ({
+    firmware: { filename: 'wifi_ui.bin', size: 1024 },
+    buildEvidence: { status: 'success' },
+  }),
+  emit: event => events.push(event),
+})
+
+assert.equal(outcome.status, 'completed')
+assert.deepEqual(outcome.selectedSkills, ['wifi', 'lvgl'])
+assert.equal(outcome.manifest.programName, 'wifi_ui')
+assert.equal(outcome.files['main/main.c'], 'void app_main(void) {}')
+assert.equal(outcome.artifact.filename, 'wifi_ui.bin')
+assert(events.some(event => event.type === HARDWARE_WORKFLOW_EVENT.COMPLETED))
+
 console.log('hardware workflow tests passed')
