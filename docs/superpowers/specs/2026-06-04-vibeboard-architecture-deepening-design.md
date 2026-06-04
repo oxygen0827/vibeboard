@@ -444,3 +444,16 @@ validation contract, and Driver Contract selection. Preserve
 - Capability Skill semantics are defined once and consumed by prompt, config,
   validation, and manifest code.
 - Each new Module has focused script tests using fake Adapters.
+
+## Implementation Status
+
+Phase 1 started with the Hardware Workflow foundation plan:
+
+- `docs/superpowers/plans/2026-06-04-vibeboard-hardware-workflow-foundation.md`
+
+The first implementation phase deliberately stops before broad UI rewrites. The
+next plans should be:
+
+1. Preview Runtime Module extraction.
+2. CompileDelivery Module extraction.
+3. BoardCapabilityProfile Module extraction.
