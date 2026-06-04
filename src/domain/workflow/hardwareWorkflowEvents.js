@@ -53,3 +53,10 @@ export function assistantMessageForWorkflowEvent(event) {
   }
   return null
 }
+
+export function replaceLastAssistantMessage(messages, nextMessage) {
+  const updated = [...(messages || [])]
+  if (updated.length === 0) return [nextMessage]
+  updated[updated.length - 1] = nextMessage
+  return updated
+}

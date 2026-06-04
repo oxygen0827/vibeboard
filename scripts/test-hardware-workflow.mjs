@@ -28,6 +28,7 @@ const {
   createWorkflowMessageEvent,
   createWorkflowFailureEvent,
   assistantMessageForWorkflowEvent,
+  replaceLastAssistantMessage,
 } = await import(pathToFileURL(join(tmp, 'src/domain/workflow/hardwareWorkflowEvents.js')).href)
 
 const step = createWorkflowStepEvent('scope', 'active', 'Checking board scope')
@@ -56,6 +57,15 @@ const failureWithCollision = createWorkflowFailureEvent('primary-category', 'Pri
 })
 assert.equal(failureWithCollision.payload.failureCategory, 'primary-category')
 assert.equal(failureWithCollision.payload.message, 'Primary message')
+
+const replaced = replaceLastAssistantMessage(
+  [{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'old' }],
+  { role: 'assistant', content: 'new' },
+)
+assert.deepEqual(replaced, [
+  { role: 'user', content: 'hi' },
+  { role: 'assistant', content: 'new' },
+])
 
 await copyModule('src/domain/workflow/hardwareWorkflow.js')
 

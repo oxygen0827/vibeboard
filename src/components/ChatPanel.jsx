@@ -32,6 +32,9 @@ import {
 } from '../domain/workflow/generationWorkflow'
 import { createWorkflowCompilerAdapter } from '../domain/workflow/workflowCompilerAdapter'
 import {
+  replaceLastAssistantMessage,
+} from '../domain/workflow/hardwareWorkflowEvents'
+import {
   buildPreviewFeedbackEvidence,
   isLikelyPreviewRepairRequest,
 } from '../domain/previewRepair/repairIntent'
@@ -425,11 +428,11 @@ export default function ChatPanel({
         if (!designParsed.ok) {
           const message = `LVGL 设计草稿未通过文件校验：${designParsed.errors.join(', ')}`
           setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'design', WORKFLOW_STEP_STATUS.FAILED, designParsed.errors.join(', ')))
-          setMessages(prev => {
-            const next = [...prev]
-            next[next.length - 1] = { role: 'assistant', content: message, error: true }
-            return next
-          })
+          setMessages(prev => replaceLastAssistantMessage(prev, {
+            role: 'assistant',
+            content: message,
+            error: true,
+          }))
           return
         }
         const designCheck = normalizeAndValidateGeneratedFiles(designParsed.files, scopedSkills, board, {
