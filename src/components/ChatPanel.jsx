@@ -30,6 +30,7 @@ import {
   createGenerationWorkflow,
   updateGenerationWorkflow,
 } from '../domain/workflow/generationWorkflow'
+import { createWorkflowCompilerAdapter } from '../domain/workflow/workflowCompilerAdapter'
 import {
   buildPreviewFeedbackEvidence,
   isLikelyPreviewRepairRequest,
@@ -128,40 +129,19 @@ function normalizeAndValidateGeneratedFiles(files, selectedSkillIds, board, opti
 }
 
 async function compileGeneratedFiles({ boardId, files, selectedSkills, onStatus, onLog }) {
-  const { files: compileProjectFiles, mainFile, compilePackage } = assembleCompileFiles({
-    boardId,
-    projectFiles: files || {},
-    selectedSkills: selectedSkills || [],
+  const adapter = createWorkflowCompilerAdapter({
+    assembleCompileFiles,
+    compileFirmware,
   })
-
-  if (!compilePackage.ok) {
-    const error = new Error(compilePackage.message || '编译前检查失败')
-    error.buildEvidence = {
-      status: 'failure',
-      error: error.message,
-      diagnostics: compilePackage.diagnostics || [],
-    }
-    throw error
-  }
-
-  const mainPath = Object.keys(compileProjectFiles)
-    .find(k => k === mainFile || k === `main/${mainFile}` || k.endsWith(`/${mainFile}`)) || mainFile
-  const code = compileProjectFiles[mainPath] || ''
-  const compilerFiles = compilePackage.backendProjectFiles || compileProjectFiles
-  const configFiles = Object.fromEntries(
-    Object.entries(compilerFiles).filter(([k]) => !k.startsWith('__') && k !== mainPath)
-  )
-  const compileMetadata = Object.fromEntries(
-    Object.entries(compilerFiles).filter(([k]) => k === '__mainFile')
-  )
-
-  return compileFirmware(
-    code,
-    { ...configFiles, ...compileMetadata },
+  const result = await adapter.compile({
+    boardId,
+    projectId: `generation-${Date.now()}`,
+    files,
+    selectedSkills,
     onStatus,
     onLog,
-    { projectId: `generation-${Date.now()}` },
-  )
+  })
+  return result.firmware
 }
 
 export default function ChatPanel({
