@@ -21,7 +21,7 @@ export function createWorkflowStepEvent(stepId, status, detail = '') {
 export function createWorkflowMessageEvent(content, extra = {}) {
   return {
     type: HARDWARE_WORKFLOW_EVENT.MESSAGE,
-    payload: { content, ...extra },
+    payload: { ...extra, content },
   }
 }
 
@@ -29,9 +29,9 @@ export function createWorkflowFailureEvent(failureCategory, message, extra = {})
   return {
     type: HARDWARE_WORKFLOW_EVENT.FAILED,
     payload: {
+      ...extra,
       failureCategory,
       message,
-      ...extra,
     },
   }
 }

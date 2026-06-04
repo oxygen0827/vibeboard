@@ -41,11 +41,21 @@ assert.equal(message.type, HARDWARE_WORKFLOW_EVENT.MESSAGE)
 assert.equal(assistantMessageForWorkflowEvent(message).content, '正在生成 Program Manifest')
 assert.deepEqual(assistantMessageForWorkflowEvent(message).manifest, { programName: 'demo' })
 
+const messageWithCollision = createWorkflowMessageEvent('primary content', { content: 'overridden content' })
+assert.equal(messageWithCollision.payload.content, 'primary content')
+
 const failure = createWorkflowFailureEvent('preview-contract-missing', 'Missing app_ui.c')
 assert.equal(failure.type, HARDWARE_WORKFLOW_EVENT.FAILED)
 assert.equal(failure.payload.failureCategory, 'preview-contract-missing')
 assert.equal(assistantMessageForWorkflowEvent(failure).error, true)
 assert.match(assistantMessageForWorkflowEvent(failure).content, /Missing app_ui\.c/)
+
+const failureWithCollision = createWorkflowFailureEvent('primary-category', 'Primary message', {
+  failureCategory: 'overridden-category',
+  message: 'Overridden message',
+})
+assert.equal(failureWithCollision.payload.failureCategory, 'primary-category')
+assert.equal(failureWithCollision.payload.message, 'Primary message')
 
 await copyModule('src/domain/workflow/hardwareWorkflow.js')
 
