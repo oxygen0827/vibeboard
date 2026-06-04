@@ -12,10 +12,58 @@ function defaultShouldDraftDesign(scopeResult, skillIds) {
   return Boolean(scopeResult?.designRequired || new Set(skillIds || []).has('lvgl'))
 }
 
+const DEFAULT_MAX_SOURCE_REPAIR_ATTEMPTS = 2
+const DEFAULT_MAX_BUILD_REPAIR_ATTEMPTS = 2
+
 async function callAdapter(adapters, name, ...args) {
   const fn = adapters?.[name]
   if (typeof fn !== 'function') throw new Error(`missing workflow adapter: ${name}`)
   return fn(...args)
+}
+
+async function repairSourceUntilValid({
+  adapters,
+  emit,
+  input,
+  manifest,
+  selectedSkills,
+  sourceCheck,
+  sourceFiles,
+  maxSourceRepairAttempts,
+  sourceRepairAttempts,
+  attemptContext = {},
+}) {
+  let currentCheck = sourceCheck
+  let attempts = sourceRepairAttempts
+  while (!currentCheck?.ok && typeof adapters.repairSource === 'function' && attempts < maxSourceRepairAttempts) {
+    attempts += 1
+    const diagnostics = currentCheck?.message || '源码契约未通过'
+    emit(createWorkflowMessageEvent(
+      `生成源码未通过设备/预览契约自检，正在自动修复第 ${attempts}/${maxSourceRepairAttempts} 轮...\n\n${diagnostics}`,
+      { manifest },
+    ))
+    const repairResult = await callAdapter(adapters, 'repairSource', {
+      ...input,
+      ...attemptContext,
+      selectedSkills,
+      manifest,
+      files: currentCheck?.files || sourceFiles || {},
+      diagnostics,
+      attempt: attempts,
+    })
+    if (!repairResult?.ok) throw new Error(repairResult?.message || '源码自动修复未通过校验')
+    currentCheck = await callAdapter(adapters, 'validateSource', repairResult.files || {}, {
+      ...input,
+      ...attemptContext,
+      selectedSkills,
+      manifest,
+      repairAttempt: attempts,
+    })
+  }
+  return {
+    sourceCheck: currentCheck,
+    sourceRepairAttempts: attempts,
+  }
 }
 
 export async function runHardwareWorkflow(input = {}, adapters = {}) {
@@ -112,24 +160,90 @@ export async function runHardwareWorkflow(input = {}, adapters = {}) {
     if (!sourceResult?.ok) throw new Error(sourceResult?.message || '生成结果未通过校验')
 
     emit(createWorkflowStepEvent('validate-source', WORKFLOW_STEP_STATUS.ACTIVE, '校验生成文件'))
-    const sourceCheck = await callAdapter(adapters, 'validateSource', sourceResult.files || {}, {
+    let sourceCheck = await callAdapter(adapters, 'validateSource', sourceResult.files || {}, {
       ...input,
       selectedSkills: scopedSkills,
       manifest: manifestResult.manifest,
     })
+    let sourceRepairAttempts = 0
+    const maxSourceRepairAttempts = Number.isInteger(adapters.maxSourceRepairAttempts)
+      ? adapters.maxSourceRepairAttempts
+      : DEFAULT_MAX_SOURCE_REPAIR_ATTEMPTS
+    ;({ sourceCheck, sourceRepairAttempts } = await repairSourceUntilValid({
+      adapters,
+      emit,
+      input,
+      manifest: manifestResult.manifest,
+      selectedSkills: scopedSkills,
+      sourceCheck,
+      sourceFiles: sourceResult.files || {},
+      maxSourceRepairAttempts,
+      sourceRepairAttempts,
+    }))
     if (!sourceCheck?.ok) throw new Error(sourceCheck?.message || '源码契约未通过')
 
+    let currentFiles = sourceCheck.files || sourceResult.files || {}
     emit({
       type: HARDWARE_WORKFLOW_EVENT.SOURCE_READY,
-      payload: { files: sourceCheck.files || sourceResult.files || {} },
+      payload: { files: currentFiles },
     })
 
-    const compileResult = await callAdapter(adapters, 'compile', {
-      ...input,
-      selectedSkills: scopedSkills,
-      manifest: manifestResult.manifest,
-      files: sourceCheck.files || sourceResult.files || {},
-    })
+    const maxBuildRepairAttempts = Number.isInteger(adapters.maxBuildRepairAttempts)
+      ? adapters.maxBuildRepairAttempts
+      : DEFAULT_MAX_BUILD_REPAIR_ATTEMPTS
+    let buildRepairAttempts = 0
+    let compileResult = null
+    while (!compileResult) {
+      try {
+        compileResult = await callAdapter(adapters, 'compile', {
+          ...input,
+          selectedSkills: scopedSkills,
+          manifest: manifestResult.manifest,
+          files: currentFiles,
+        })
+      } catch (error) {
+        if (typeof adapters.repairBuild !== 'function' || buildRepairAttempts >= maxBuildRepairAttempts) {
+          throw error
+        }
+        buildRepairAttempts += 1
+        const errorMessage = error.message || String(error)
+        emit(createWorkflowMessageEvent(
+          `自动编译发现错误，正在让 AI 修复第 ${buildRepairAttempts}/${maxBuildRepairAttempts} 轮...\n\n${errorMessage}`,
+          { manifest: manifestResult.manifest },
+        ))
+        const repairResult = await callAdapter(adapters, 'repairBuild', {
+          ...input,
+          selectedSkills: scopedSkills,
+          manifest: manifestResult.manifest,
+          files: currentFiles,
+          error: errorMessage,
+          buildEvidence: error.buildEvidence || null,
+          attempt: buildRepairAttempts,
+        })
+        if (!repairResult?.ok) throw new Error(repairResult?.message || '编译自动修复补丁未通过校验')
+        currentFiles = { ...currentFiles, ...(repairResult.files || {}) }
+        sourceCheck = await callAdapter(adapters, 'validateSource', currentFiles, {
+          ...input,
+          selectedSkills: scopedSkills,
+          manifest: manifestResult.manifest,
+          buildRepairAttempt: buildRepairAttempts,
+        })
+        ;({ sourceCheck, sourceRepairAttempts } = await repairSourceUntilValid({
+          adapters,
+          emit,
+          input,
+          manifest: manifestResult.manifest,
+          selectedSkills: scopedSkills,
+          sourceCheck,
+          sourceFiles: currentFiles,
+          maxSourceRepairAttempts,
+          sourceRepairAttempts,
+          attemptContext: { buildRepairAttempt: buildRepairAttempts },
+        }))
+        if (!sourceCheck?.ok) throw new Error(sourceCheck?.message || '编译修复后源码契约仍未通过')
+        currentFiles = sourceCheck.files || currentFiles
+      }
+    }
     emit({
       type: HARDWARE_WORKFLOW_EVENT.COMPILE_ARTIFACT_READY,
       payload: compileResult,
@@ -140,9 +254,11 @@ export async function runHardwareWorkflow(input = {}, adapters = {}) {
       payload: {
         selectedSkills: scopedSkills,
         manifest: manifestResult.manifest,
-        files: sourceCheck.files || sourceResult.files || {},
+        files: currentFiles,
         artifact: compileResult.firmware || compileResult.artifact || null,
         buildEvidence: compileResult.buildEvidence || null,
+        sourceRepairAttempts,
+        buildRepairAttempts,
       },
     }
     emit(completed)
@@ -152,9 +268,11 @@ export async function runHardwareWorkflow(input = {}, adapters = {}) {
       failureCategory: null,
       selectedSkills: scopedSkills,
       manifest: manifestResult.manifest,
-      files: sourceCheck.files || sourceResult.files || {},
+      files: currentFiles,
       artifact: compileResult.firmware || compileResult.artifact || null,
       buildEvidence: compileResult.buildEvidence || null,
+      sourceRepairAttempts,
+      buildRepairAttempts,
       nextAction: null,
     }
   } catch (error) {

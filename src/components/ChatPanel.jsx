@@ -32,8 +32,10 @@ import {
 } from '../domain/workflow/generationWorkflow'
 import { createWorkflowCompilerAdapter } from '../domain/workflow/workflowCompilerAdapter'
 import {
+  HARDWARE_WORKFLOW_EVENT,
   replaceLastAssistantMessage,
 } from '../domain/workflow/hardwareWorkflowEvents'
+import { runHardwareWorkflow } from '../domain/workflow/hardwareWorkflow'
 import {
   buildPreviewFeedbackEvidence,
   isLikelyPreviewRepairRequest,
@@ -145,6 +147,10 @@ async function compileGeneratedFiles({ boardId, files, selectedSkills, onStatus,
     onLog,
   })
   return result.firmware
+}
+
+function appendOrReplaceAssistantMessage(setMessages, nextMessage) {
+  setMessages(prev => replaceLastAssistantMessage(prev, nextMessage))
 }
 
 export default function ChatPanel({
@@ -478,234 +484,139 @@ export default function ChatPanel({
         setPendingLvglDesign(null)
       }
 
-      setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'manifest', WORKFLOW_STEP_STATUS.ACTIVE, '生成 Program Manifest'))
-      const content = await runVibeBoardAgentTask(
-        AGENT_TASK_TYPES.PROGRAM_MANIFEST,
-        buildProgramManifestMessages({
-          board,
-          selectedSkills: scopedSkills,
-          userRequest: effectiveUserRequest,
-          existingFiles: projectFiles,
-        }),
-        { userRequest: effectiveUserRequest, inferredSkills: scopedSkills, scope: scopeResult }
-      )
-      setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'validate-manifest', WORKFLOW_STEP_STATUS.ACTIVE, '校验 Manifest'))
-      const manifestResult = parseProgramManifestResponse(content, board)
-      if (!manifestResult.ok) {
-        const message = `程序清单未通过校验：${manifestResult.errors.join(', ')}`
-        setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'validate-manifest', WORKFLOW_STEP_STATUS.FAILED, manifestResult.errors.join(', ')))
-        setMessages(prev => {
-          const next = [...prev]
-          next[next.length - 1] = { role: 'assistant', content: message, error: true }
-          return next
-        })
-        return
-      }
-      setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'validate-manifest', WORKFLOW_STEP_STATUS.DONE, 'Manifest 已通过校验'))
-
-      if (manifestResult.manifest.skillIds?.length) {
-        onSkillsChange?.(manifestResult.manifest.skillIds)
-      }
-
-      setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'generate-files', WORKFLOW_STEP_STATUS.ACTIVE, `生成 ${manifestResult.manifest.files.length} 个应用文件`))
-      setMessages(prev => {
-        const next = [...prev]
-        next[next.length - 1] = {
-          role: 'assistant',
-          content: `已生成程序清单，正在生成 ${manifestResult.manifest.files.length} 个应用文件...`,
-          manifest: manifestResult.manifest,
-        }
-        return next
-      })
-
-      const fileContent = await runVibeBoardAgentTask(
-        AGENT_TASK_TYPES.GENERATE_CODE,
-        buildManifestCodeGenerationMessages({
-          board,
-          manifest: manifestResult.manifest,
-          userRequest: effectiveUserRequest,
-          existingFiles: projectFiles,
-        }),
-        { userRequest: effectiveUserRequest, manifest: manifestResult.manifest }
-      )
-      setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'validate-source', WORKFLOW_STEP_STATUS.ACTIVE, '校验生成文件'))
-      const parsed = parseGeneratedFilesResponseWithOptions(fileContent, board, {
-        manifest: manifestResult.manifest,
-      })
-      if (!parsed.ok) {
-        const message = `生成结果未通过校验：${parsed.errors.join(', ')}`
-        setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'validate-source', WORKFLOW_STEP_STATUS.FAILED, parsed.errors.join(', ')))
-        setMessages(prev => {
-          const next = [...prev]
-          next[next.length - 1] = { role: 'assistant', content: message, error: true }
-          return next
-        })
-        return
-      }
-      if (Object.keys(parsed.files).length === 0) {
-        setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'validate-source', WORKFLOW_STEP_STATUS.FAILED, '没有可写入的应用源码文件'))
-        setMessages(prev => {
-          const next = [...prev]
-          next[next.length - 1] = { role: 'assistant', content: '生成结果没有可写入的应用源码文件。', error: true }
-          return next
-        })
-        return
-      }
-
-      let currentFiles = parsed.files
-      let sourceCheck = normalizeAndValidateGeneratedFiles(currentFiles, manifestResult.manifest.skillIds, board)
-      let sourceRepairAttempts = 0
-      let buildRepairAttempts = 0
-      let buildVerified = false
-      let compiledFirmware = null
-
-      while (!sourceCheck.ok && sourceRepairAttempts < MAX_SOURCE_REPAIR_ATTEMPTS) {
-        sourceRepairAttempts += 1
-        setGenerationWorkflow(prev => updateGenerationWorkflow(
-          prev,
-          'validate-source',
-          WORKFLOW_STEP_STATUS.ACTIVE,
-          `源码契约未通过，自动修复 ${sourceRepairAttempts}/${MAX_SOURCE_REPAIR_ATTEMPTS}`,
-        ))
-        setMessages(prev => {
-          const next = [...prev]
-          next[next.length - 1] = {
-            role: 'assistant',
-            content: `生成源码未通过设备/预览契约自检，正在自动修复第 ${sourceRepairAttempts}/${MAX_SOURCE_REPAIR_ATTEMPTS} 轮...\n\n${sourceCheck.message}`,
-            manifest: manifestResult.manifest,
+      let latestCompileLog = []
+      let currentBuildRepairAttempt = 0
+      let latestSourceChanged = false
+      const workflowOutcome = await runHardwareWorkflow({
+        boardId,
+        userRequest: effectiveUserRequest,
+        selectedSkills: scopedSkills,
+        projectFiles,
+      }, {
+        maxSourceRepairAttempts: MAX_SOURCE_REPAIR_ATTEMPTS,
+        maxBuildRepairAttempts: MAX_BUILD_REPAIR_ATTEMPTS,
+        resolveSkills: async () => scopedSkills,
+        runScope: async () => ({ ...scopeResult, status: 'ready', selectedSkillIds: scopedSkills }),
+        shouldDraftDesign: () => false,
+        generateManifest: async () => {
+          setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'manifest', WORKFLOW_STEP_STATUS.ACTIVE, '生成 Program Manifest'))
+          const content = await runVibeBoardAgentTask(
+            AGENT_TASK_TYPES.PROGRAM_MANIFEST,
+            buildProgramManifestMessages({
+              board,
+              selectedSkills: scopedSkills,
+              userRequest: effectiveUserRequest,
+              existingFiles: projectFiles,
+            }),
+            { userRequest: effectiveUserRequest, inferredSkills: scopedSkills, scope: scopeResult },
+          )
+          setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'validate-manifest', WORKFLOW_STEP_STATUS.ACTIVE, '校验 Manifest'))
+          const manifestResult = parseProgramManifestResponse(content, board)
+          if (!manifestResult.ok) {
+            return { ok: false, message: `程序清单未通过校验：${manifestResult.errors.join(', ')}` }
           }
-          return next
-        })
-
-        const repairContent = await completeChat({
-          baseUrl: settings.baseUrl,
-          apiKey: settings.apiKey,
-          model: settings.model,
-          messages: buildSourceContractRepairMessages({
-            board,
-            selectedSkills: manifestResult.manifest.skillIds,
-            userRequest: effectiveUserRequest,
-            manifest: manifestResult.manifest,
-            projectFiles: sourceCheck.files,
-            diagnostics: sourceCheck.message,
-            attempt: sourceRepairAttempts,
-          }),
-        })
-        const repairParsed = parseGeneratedFilesResponseWithOptions(repairContent, board, {
-          manifest: manifestResult.manifest,
-        })
-        if (!repairParsed.ok) {
-          const message = `自动修复结果未通过文件校验：${repairParsed.errors.join(', ')}`
-          setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'validate-source', WORKFLOW_STEP_STATUS.FAILED, repairParsed.errors.join(', ')))
-          setMessages(prev => {
-            const next = [...prev]
-            next[next.length - 1] = { role: 'assistant', content: message, error: true }
-            return next
+          setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'validate-manifest', WORKFLOW_STEP_STATUS.DONE, 'Manifest 已通过校验'))
+          if (manifestResult.manifest.skillIds?.length) {
+            onSkillsChange?.(manifestResult.manifest.skillIds)
+          }
+          return { ok: true, manifest: manifestResult.manifest }
+        },
+        generateSource: async ({ manifest }) => {
+          setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'generate-files', WORKFLOW_STEP_STATUS.ACTIVE, `生成 ${manifest.files.length} 个应用文件`))
+          appendOrReplaceAssistantMessage(setMessages, {
+            role: 'assistant',
+            content: `已生成程序清单，正在生成 ${manifest.files.length} 个应用文件...`,
+            manifest,
           })
-          return
-        }
-
-        currentFiles = repairParsed.files
-        sourceCheck = normalizeAndValidateGeneratedFiles(currentFiles, manifestResult.manifest.skillIds, board)
-      }
-
-      if (!sourceCheck.ok) {
-        setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'validate-source', WORKFLOW_STEP_STATUS.FAILED, sourceCheck.message))
-        setMessages(prev => {
-          const next = [...prev]
-          next[next.length - 1] = {
-            role: 'assistant',
-            content: `自动修复 ${sourceRepairAttempts} 轮后源码仍未通过校验：\n\n${sourceCheck.message}`,
-            error: true,
-            manifest: manifestResult.manifest,
-          }
-          return next
-        })
-        return
-      }
-
-      currentFiles = sourceCheck.files
-
-      while (buildRepairAttempts <= MAX_BUILD_REPAIR_ATTEMPTS) {
-        setGenerationWorkflow(prev => updateGenerationWorkflow(
-          prev,
-          'validate-source',
-          WORKFLOW_STEP_STATUS.ACTIVE,
-          buildRepairAttempts > 0
-            ? `编译修复后重新验证 ${buildRepairAttempts}/${MAX_BUILD_REPAIR_ATTEMPTS}`
-            : '源码契约已通过，正在自动编译验证',
-        ))
-        setMessages(prev => {
-          const next = [...prev]
-          next[next.length - 1] = {
-            role: 'assistant',
-            content: buildRepairAttempts > 0
-              ? `已应用编译修复，正在第 ${buildRepairAttempts}/${MAX_BUILD_REPAIR_ATTEMPTS} 次重新编译验证...`
-              : '源码契约自检通过，正在自动调用编译服务验证真实 ESP-IDF 构建...',
-            manifest: manifestResult.manifest,
-          }
-          return next
-        })
-
-        const compileLog = []
-        try {
-          compiledFirmware = await compileGeneratedFiles({
-            boardId,
-            files: currentFiles,
-            selectedSkills: manifestResult.manifest.skillIds,
-            onStatus: () => {},
-            onLog: line => { compileLog.push(line) },
+          const fileContent = await runVibeBoardAgentTask(
+            AGENT_TASK_TYPES.GENERATE_CODE,
+            buildManifestCodeGenerationMessages({
+              board,
+              manifest,
+              userRequest: effectiveUserRequest,
+              existingFiles: projectFiles,
+            }),
+            { userRequest: effectiveUserRequest, manifest },
+          )
+          const parsed = parseGeneratedFilesResponseWithOptions(fileContent, board, { manifest })
+          if (!parsed.ok) return { ok: false, message: `生成结果未通过校验：${parsed.errors.join(', ')}` }
+          if (Object.keys(parsed.files).length === 0) return { ok: false, message: '生成结果没有可写入的应用源码文件。' }
+          return { ok: true, files: parsed.files }
+        },
+        validateSource: async (files, { manifest }) => {
+          setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'validate-source', WORKFLOW_STEP_STATUS.ACTIVE, '校验生成文件'))
+          const result = normalizeAndValidateGeneratedFiles(files, manifest.skillIds, board)
+          latestSourceChanged = Boolean(result.changed)
+          return result
+        },
+        repairSource: async ({ files, diagnostics, attempt, manifest }) => {
+          const repairContent = await completeChat({
+            baseUrl: settings.baseUrl,
+            apiKey: settings.apiKey,
+            model: settings.model,
+            messages: buildSourceContractRepairMessages({
+              board,
+              selectedSkills: manifest.skillIds,
+              userRequest: effectiveUserRequest,
+              manifest,
+              projectFiles: files,
+              diagnostics,
+              attempt,
+            }),
           })
-          buildVerified = true
-          break
-        } catch (err) {
-          if (buildRepairAttempts >= MAX_BUILD_REPAIR_ATTEMPTS) {
-            const summary = err.message || compileLog.slice(-40).join('\n') || '未知编译错误'
-            setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'validate-source', WORKFLOW_STEP_STATUS.FAILED, summary))
-            setMessages(prev => {
-              const next = [...prev]
-              next[next.length - 1] = {
-                role: 'assistant',
-                content: `自动编译修复 ${buildRepairAttempts} 轮后仍失败：\n\n${summary}`,
-                error: true,
-                manifest: manifestResult.manifest,
-              }
-              return next
-            })
-            return
-          }
-
-          buildRepairAttempts += 1
-          const errorSummary = err.message || ''
+          const repairParsed = parseGeneratedFilesResponseWithOptions(repairContent, board, { manifest })
+          if (!repairParsed.ok) return { ok: false, message: `自动修复结果未通过文件校验：${repairParsed.errors.join(', ')}` }
+          return { ok: true, files: repairParsed.files }
+        },
+        compile: async ({ files, manifest }) => {
+          latestCompileLog = []
           setGenerationWorkflow(prev => updateGenerationWorkflow(
             prev,
             'validate-source',
             WORKFLOW_STEP_STATUS.ACTIVE,
-            `自动编译失败，AI 修复 ${buildRepairAttempts}/${MAX_BUILD_REPAIR_ATTEMPTS}`,
+            currentBuildRepairAttempt > 0
+              ? `编译修复后重新验证 ${currentBuildRepairAttempt}/${MAX_BUILD_REPAIR_ATTEMPTS}`
+              : '源码契约已通过，正在自动编译验证',
           ))
-          setMessages(prev => {
-            const next = [...prev]
-            next[next.length - 1] = {
-              role: 'assistant',
-              content: `自动编译发现错误，正在让 AI 修复第 ${buildRepairAttempts}/${MAX_BUILD_REPAIR_ATTEMPTS} 轮...\n\n${errorSummary}`,
-              manifest: manifestResult.manifest,
-            }
-            return next
+          appendOrReplaceAssistantMessage(setMessages, {
+            role: 'assistant',
+            content: currentBuildRepairAttempt > 0
+              ? `已应用编译修复，正在第 ${currentBuildRepairAttempt}/${MAX_BUILD_REPAIR_ATTEMPTS} 次重新编译验证...`
+              : '源码契约自检通过，正在自动调用编译服务验证真实 ESP-IDF 构建...',
+            manifest,
           })
-
+          try {
+            const firmware = await compileGeneratedFiles({
+              boardId,
+              files,
+              selectedSkills: manifest.skillIds,
+              onStatus: () => {},
+              onLog: line => { latestCompileLog.push(line) },
+            })
+            return {
+              firmware,
+              buildEvidence: firmware?.buildEvidence || null,
+            }
+          } catch (err) {
+            err.buildLog = latestCompileLog
+            throw err
+          }
+        },
+        repairBuild: async ({ files, error, buildEvidence, attempt, manifest }) => {
+          currentBuildRepairAttempt = attempt
           const repairContent = await runVibeBoardAgentTask(
             AGENT_TASK_TYPES.REPAIR_BUILD,
             buildBuildRepairMessages({
               board,
-              selectedSkills: manifestResult.manifest.skillIds,
-              buildEvidence: err.buildEvidence || null,
-              buildLog: compileLog,
-              errorLog: errorSummary,
-              projectFiles: currentFiles,
+              selectedSkills: manifest.skillIds,
+              buildEvidence,
+              buildLog: latestCompileLog,
+              errorLog: error,
+              projectFiles: files,
             }),
             {
-              buildEvidence: err.buildEvidence || null,
-              repairContext: err.buildEvidence?.repairContext || null,
+              buildEvidence,
+              repairContext: buildEvidence?.repairContext || null,
               source: 'generation-auto-compile',
             },
           )
@@ -713,84 +624,39 @@ export default function ChatPanel({
             requireCompleteProject: false,
             validateManifestFiles: false,
           })
-          if (!repairParsed.ok) {
-            const message = `编译自动修复补丁未通过校验：${repairParsed.errors.join(', ')}`
-            setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'validate-source', WORKFLOW_STEP_STATUS.FAILED, message))
-            setMessages(prev => {
-              const next = [...prev]
-              next[next.length - 1] = { role: 'assistant', content: message, error: true }
-              return next
+          if (!repairParsed.ok) return { ok: false, message: `编译自动修复补丁未通过校验：${repairParsed.errors.join(', ')}` }
+          return { ok: true, files: repairParsed.files }
+        },
+        emit: event => {
+          if (event.type === HARDWARE_WORKFLOW_EVENT.MESSAGE) {
+            appendOrReplaceAssistantMessage(setMessages, {
+              role: 'assistant',
+              ...(event.payload || {}),
             })
-            return
           }
+        },
+      })
 
-          currentFiles = { ...currentFiles, ...repairParsed.files }
-          sourceCheck = normalizeAndValidateGeneratedFiles(currentFiles, manifestResult.manifest.skillIds, board)
-          if (!sourceCheck.ok) {
-            const repairContentForSource = await completeChat({
-              baseUrl: settings.baseUrl,
-              apiKey: settings.apiKey,
-              model: settings.model,
-              messages: buildSourceContractRepairMessages({
-                board,
-                selectedSkills: manifestResult.manifest.skillIds,
-                userRequest: effectiveUserRequest,
-                manifest: manifestResult.manifest,
-                projectFiles: sourceCheck.files,
-                diagnostics: sourceCheck.message,
-                attempt: sourceRepairAttempts + 1,
-              }),
-            })
-            const repairParsedForSource = parseGeneratedFilesResponseWithOptions(repairContentForSource, board, {
-              manifest: manifestResult.manifest,
-            })
-            if (!repairParsedForSource.ok) {
-              const message = `编译修复后源码契约修复失败：${repairParsedForSource.errors.join(', ')}`
-              setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'validate-source', WORKFLOW_STEP_STATUS.FAILED, message))
-              setMessages(prev => {
-                const next = [...prev]
-                next[next.length - 1] = { role: 'assistant', content: message, error: true }
-                return next
-              })
-              return
-            }
-            sourceRepairAttempts += 1
-            currentFiles = repairParsedForSource.files
-            sourceCheck = normalizeAndValidateGeneratedFiles(currentFiles, manifestResult.manifest.skillIds, board)
-            if (!sourceCheck.ok) {
-              setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'validate-source', WORKFLOW_STEP_STATUS.FAILED, sourceCheck.message))
-              setMessages(prev => {
-                const next = [...prev]
-                next[next.length - 1] = {
-                  role: 'assistant',
-                  content: `编译修复后源码契约仍未通过：\n\n${sourceCheck.message}`,
-                  error: true,
-                  manifest: manifestResult.manifest,
-                }
-                return next
-              })
-              return
-            }
-          } else {
-            currentFiles = sourceCheck.files
-          }
-        }
+      if (workflowOutcome.status !== 'completed') {
+        throw new Error(workflowOutcome.error || '硬件工作流未完成')
       }
 
-      const finalFiles = currentFiles
-      const sourceDetail = sourceRepairAttempts > 0
-        ? `源码契约已通过校验，源码自动修复 ${sourceRepairAttempts} 轮`
-        : sourceCheck.changed
+      const finalFiles = workflowOutcome.files
+      const manifest = workflowOutcome.manifest
+      const compiledFirmware = workflowOutcome.artifact
+      const sourceDetail = workflowOutcome.sourceRepairAttempts > 0
+        ? `源码契约已通过校验，源码自动修复 ${workflowOutcome.sourceRepairAttempts} 轮`
+        : latestSourceChanged
           ? '源码契约已通过校验，已应用本地机械修复'
           : '源码契约已通过校验'
-      const buildDetail = buildVerified
-        ? `自动编译验证已通过${buildRepairAttempts > 0 ? `，编译自动修复 ${buildRepairAttempts} 轮` : ''}`
+      const buildDetail = compiledFirmware
+        ? `自动编译验证已通过${workflowOutcome.buildRepairAttempts > 0 ? `，编译自动修复 ${workflowOutcome.buildRepairAttempts} 轮` : ''}`
         : '自动编译验证未运行'
       setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'validate-source', WORKFLOW_STEP_STATUS.DONE, `${sourceDetail}；${buildDetail}`))
       setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'apply-source', WORKFLOW_STEP_STATUS.ACTIVE, '写入编辑器'))
       onInsertCode?.(finalFiles, {
-        manifest: manifestResult.manifest,
-        selectedSkills: manifestResult.manifest.skillIds,
+        manifest,
+        selectedSkills: manifest.skillIds,
         autoPreview: true,
       })
       if (compiledFirmware) {
@@ -798,8 +664,8 @@ export default function ChatPanel({
           firmware: compiledFirmware,
           buildEvidence: compiledFirmware.buildEvidence || null,
           projectFiles: finalFiles,
-          selectedSkills: manifestResult.manifest.skillIds,
-          manifest: manifestResult.manifest,
+          selectedSkills: manifest.skillIds,
+          manifest,
           autoFlash: true,
           source: 'ai-auto-compile',
         })
@@ -810,8 +676,8 @@ export default function ChatPanel({
         const next = [...prev]
         next[next.length - 1] = {
           role: 'assistant',
-          content: `已通过源码自检和自动编译验证，并写入左侧编辑器，共 ${Object.keys(finalFiles).length} 个应用文件：\n\n${Object.keys(finalFiles).map(path => `- ${path}`).join('\n')}\n\n${sourceDetail}\n${buildDetail}\n编译产物已保存，可直接烧录；检测到已授权 USB 串口时会自动开始 USB 直刷。\n使用技能：${manifestResult.manifest.skillIds.join(', ') || 'none'}`,
-          manifest: manifestResult.manifest,
+          content: `已通过源码自检和自动编译验证，并写入左侧编辑器，共 ${Object.keys(finalFiles).length} 个应用文件：\n\n${Object.keys(finalFiles).map(path => `- ${path}`).join('\n')}\n\n${sourceDetail}\n${buildDetail}\n编译产物已保存，可直接烧录；检测到已授权 USB 串口时会自动开始 USB 直刷。\n使用技能：${manifest.skillIds.join(', ') || 'none'}`,
+          manifest,
         }
         return next
       })
