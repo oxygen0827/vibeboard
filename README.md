@@ -2,6 +2,13 @@
 
 VibeBoard 是一个面向 ESP-IDF 开发板的 AI 硬件开发工作台。它把板卡上下文、自然语言代码生成、官方例程编译、云端 ESP-IDF 构建、HTTPS 网页 USB 直刷、WiFi OTA、BLE OTA 和设备反馈串成一条完整链路。
 
+如果你是第一次进入这个仓库，先看：
+
+- [docs/project-map.md](./docs/project-map.md)：项目地图，说明目录、模块边界和当前整理建议。
+- [CONTEXT.md](./CONTEXT.md)：产品边界和领域语言。
+- [AGENTS.md](./AGENTS.md)：AI 修改项目时必须遵守的规则。
+- [deploy/HTTPS_USB_FLASH.md](./deploy/HTTPS_USB_FLASH.md)：HTTPS USB 直刷部署说明。
+
 当前目标不是做一个泛泛的聊天工具，而是让嵌入式开发可以这样推进：
 
 ```text
