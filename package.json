@@ -16,6 +16,7 @@
     "test:ble-ota-guard": "node scripts/test-ble-ota-guard.mjs",
     "test:program-intent": "node scripts/test-program-intent.mjs",
     "test:program-manifest": "node scripts/test-program-manifest.mjs",
+    "test:hardware-workflow": "node scripts/test-hardware-workflow.mjs",
     "test:digital-twin-interaction": "node scripts/test-digital-twin-interaction.mjs",
     "test:digital-twin-scene": "node scripts/test-digital-twin-scene.mjs",
     "test:lvgl-runtime-package": "node scripts/test-lvgl-runtime-package.mjs",
