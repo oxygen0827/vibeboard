@@ -18,3 +18,20 @@ Important current rules:
 - Keep explanation and code-generation flows separate.
 - Build, flash, logs, and repair are part of one hardware workflow; do not treat
   code generation as the endpoint.
+
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in GitHub Issues for `wangqioo/VibeBoard`. See
+`docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the canonical triage labels documented in
+`docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This repo uses a single-context domain layout with `CONTEXT.md` at the root.
+See `docs/agents/domain.md`.
