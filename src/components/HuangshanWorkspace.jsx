@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Editor from '@monaco-editor/react'
 import { HUANGSHAN_BOARD_PROFILE, listHuangshanCapabilities } from '../domain/huangshan/boardProfile'
 import { createHuangshanAppFiles, normalizeHuangshanAppName } from '../domain/huangshan/appTemplate'
+import { createHuangshanSemanticPreview } from '../domain/huangshan/semanticPreview'
 import {
   buildHuangshanWorkspace,
   flashHuangshanWorkspace,
@@ -33,6 +34,11 @@ export default function HuangshanWorkspace() {
 
   const appName = useMemo(() => normalizeHuangshanAppName(appDisplayName), [appDisplayName])
   const capabilities = useMemo(() => listHuangshanCapabilities(), [])
+  const preview = useMemo(() => createHuangshanSemanticPreview({
+    displayName: appDisplayName,
+    description,
+    files,
+  }), [appDisplayName, description, files])
 
   useEffect(() => {
     loadHuangshanHealth()
@@ -201,6 +207,9 @@ export default function HuangshanWorkspace() {
       </aside>
 
       <section className="huangshan-main">
+        <div className="huangshan-preview-panel">
+          <HuangshanDevicePreview preview={preview} />
+        </div>
         <div className="huangshan-files">
           {filePaths.map(path => (
             <button
@@ -252,6 +261,32 @@ export default function HuangshanWorkspace() {
           ))}
         </div>
       </aside>
+    </div>
+  )
+}
+
+function HuangshanDevicePreview({ preview }) {
+  return (
+    <div className="huangshan-device-preview">
+      <div className="huangshan-watch-shell">
+        <div className="huangshan-watch-screen">
+          <div className="huangshan-watch-glow" />
+          <div className="huangshan-watch-title">{preview.title}</div>
+          <div className="huangshan-watch-grid">
+            {preview.launcherItems.map((item, index) => (
+              <div key={item.id} className={`huangshan-watch-icon ${item.tone}`} style={{ '--i': index }}>
+                <span>{item.label.slice(0, 2)}</span>
+              </div>
+            ))}
+          </div>
+          <div className="huangshan-watch-status">{preview.status}</div>
+          <div className="huangshan-watch-subtitle">{preview.subtitle}</div>
+        </div>
+      </div>
+      <div className="huangshan-preview-meta">
+        <span>{preview.viewport.width} x {preview.viewport.height}</span>
+        <span>Semantic LVGL preview</span>
+      </div>
     </div>
   )
 }

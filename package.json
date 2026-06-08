@@ -32,6 +32,7 @@
     "test:huangshan-build-evidence": "node scripts/test-huangshan-build-adapter-log-parser.mjs",
     "test:huangshan-build-artifacts": "node scripts/test-huangshan-build-artifacts.mjs",
     "test:huangshan-device-actions": "node scripts/test-huangshan-device-actions.mjs",
+    "test:huangshan-semantic-preview": "node scripts/test-huangshan-semantic-preview.mjs",
     "huangshan:service": "node backend/huangshan-service/server.mjs",
     "test:huangshan-service-health": "node backend/huangshan-service/server.mjs --self-test",
     "preview": "vite preview"
