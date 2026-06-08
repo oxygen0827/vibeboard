@@ -31,6 +31,7 @@ def main():
     width = int(sys.argv[4])
     height = int(sys.argv[5])
     output_exe = Path(sys.argv[6]).resolve()
+    output_exe.parent.mkdir(parents=True, exist_ok=True)
 
     compiler = shutil.which(os.environ.get("CC", "gcc"))
     if not compiler:

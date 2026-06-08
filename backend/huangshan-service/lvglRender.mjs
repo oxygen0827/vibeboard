@@ -2,10 +2,12 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { createHuangshanSemanticPreview } from '../../src/domain/huangshan/semanticPreview.js'
 
 const DEFAULT_VIEWPORT = { width: 390, height: 450 }
 const RENDERER_NAME = 'real-lvgl-v8-headless'
+const CACHE_ROOT = join(tmpdir(), 'vibeboard-huangshan-lvgl-cache')
 
 function cString(value) {
   return JSON.stringify(String(value ?? ''))
@@ -13,6 +15,29 @@ function cString(value) {
 
 export function resolveHuangshanLvglSource({ sdk }) {
   return join(sdk, 'external/lvgl_v8')
+}
+
+export function normalizeHuangshanTap(tap, viewport = DEFAULT_VIEWPORT) {
+  if (!tap || !Number.isFinite(Number(tap.x)) || !Number.isFinite(Number(tap.y))) return null
+  return {
+    x: Math.max(0, Math.min(viewport.width - 1, Math.round(Number(tap.x)))),
+    y: Math.max(0, Math.min(viewport.height - 1, Math.round(Number(tap.y)))),
+  }
+}
+
+export function createHuangshanPreviewRunArgs({ outputRgba, tap, viewport = DEFAULT_VIEWPORT } = {}) {
+  const args = [outputRgba]
+  const normalizedTap = normalizeHuangshanTap(tap, viewport)
+  if (normalizedTap) {
+    args.push(String(normalizedTap.x), String(normalizedTap.y))
+  }
+  return args
+}
+
+export function createHuangshanRenderCacheKey({ lvglDir, runnerDir, viewport = DEFAULT_VIEWPORT, coreOnly = true } = {}) {
+  const input = JSON.stringify({ lvglDir, runnerDir, viewport, coreOnly })
+  const digest = createHash('sha256').update(input).digest('hex').slice(0, 12)
+  return `lvgl-v8-${coreOnly ? 'core' : 'full'}-${viewport.width}x${viewport.height}-${digest}`
 }
 
 function createLvConf() {
@@ -188,6 +213,7 @@ export function renderHuangshanLvglPreview({
   displayName,
   description,
   files,
+  tap,
   keepWorkDir = false,
 } = {}) {
   const lvglDir = resolveHuangshanLvglSource({ sdk })
@@ -199,38 +225,61 @@ export function renderHuangshanLvglPreview({
   }
 
   const renderPackage = createHuangshanLvglPreviewPackage({ displayName, description, files })
+  const cacheKey = createHuangshanRenderCacheKey({
+    lvglDir,
+    runnerDir,
+    viewport: renderPackage.viewport,
+    coreOnly: true,
+  })
+  const cacheDir = join(CACHE_ROOT, cacheKey)
+  const outputExe = join(cacheDir, 'preview_runner')
+  const sourceSignature = createHash('sha256')
+    .update(JSON.stringify(renderPackage.files))
+    .digest('hex')
+  const signaturePath = join(cacheDir, 'source.sha256')
   const workDir = mkdtempSync(join(tmpdir(), 'huangshan-lvgl-'))
-  const outputExe = join(workDir, 'preview_runner')
   const outputRgba = join(workDir, 'preview.rgba')
   const diagnostics = []
+  let cacheHit = false
 
   try {
     for (const [path, contents] of Object.entries(renderPackage.files)) {
       writeFileSync(join(workDir, path), contents)
     }
 
-    const build = spawnSync('python3', [
-      join(runnerDir, 'build_runner.py'),
-      lvglDir,
-      runnerDir,
-      workDir,
-      String(renderPackage.viewport.width),
-      String(renderPackage.viewport.height),
-      outputExe,
-    ], {
-      encoding: 'utf8',
-      env: {
-        ...process.env,
-        LVGL_PREVIEW_CORE_ONLY: '1',
-      },
-    })
-    diagnostics.push(build.stdout || '')
-    diagnostics.push(build.stderr || '')
-    if (build.status !== 0) {
-      throw new Error(`LVGL preview runner build failed with exit code ${build.status}: ${(build.stdout || build.stderr || '').slice(-1200)}`)
+    const cachedSignature = existsSync(signaturePath) ? readFileSync(signaturePath, 'utf8').trim() : ''
+    cacheHit = existsSync(outputExe) && cachedSignature === sourceSignature
+
+    if (!cacheHit) {
+      rmSync(cacheDir, { recursive: true, force: true })
+      const build = spawnSync('python3', [
+        join(runnerDir, 'build_runner.py'),
+        lvglDir,
+        runnerDir,
+        workDir,
+        String(renderPackage.viewport.width),
+        String(renderPackage.viewport.height),
+        outputExe,
+      ], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          LVGL_PREVIEW_CORE_ONLY: '1',
+        },
+      })
+      diagnostics.push(build.stdout || '')
+      diagnostics.push(build.stderr || '')
+      if (build.status !== 0) {
+        throw new Error(`LVGL preview runner build failed with exit code ${build.status}: ${(build.stdout || build.stderr || '').slice(-1200)}`)
+      }
+      writeFileSync(signaturePath, sourceSignature)
     }
 
-    const run = spawnSync(outputExe, [outputRgba], { encoding: 'utf8' })
+    const run = spawnSync(outputExe, createHuangshanPreviewRunArgs({
+      outputRgba,
+      tap,
+      viewport: renderPackage.viewport,
+    }), { encoding: 'utf8' })
     diagnostics.push(run.stdout || '')
     diagnostics.push(run.stderr || '')
     if (run.status !== 0) {
@@ -245,6 +294,11 @@ export function renderHuangshanLvglPreview({
       semanticPreview: renderPackage.semanticPreview,
       rgbaBase64: rgba.toString('base64'),
       bytes: rgba.length,
+      cache: {
+        key: cacheKey,
+        hit: cacheHit,
+      },
+      tap: normalizeHuangshanTap(tap, renderPackage.viewport),
       diagnostics: diagnostics.filter(Boolean).slice(-4),
     }
   } finally {

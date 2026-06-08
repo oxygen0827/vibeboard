@@ -70,15 +70,16 @@ export default function HuangshanWorkspace() {
     setStatus(`已生成 ${appName}`)
   }
 
-  async function handleRenderPreview() {
+  async function handleRenderPreview(tap = null) {
     setRenderState('rendering')
     setRenderError('')
-    setStatus('正在执行真实 LVGL 渲染...')
+    setStatus(tap ? `正在执行触摸渲染 ${tap.x}, ${tap.y} ...` : '正在执行真实 LVGL 渲染...')
     try {
-      const rendered = await renderHuangshanLvglPreview({ displayName: appDisplayName, description, files })
+      const rendered = await renderHuangshanLvglPreview({ displayName: appDisplayName, description, files, tap })
       setRealPreview(rendered)
       setRenderState('ok')
-      setStatus(`真实 LVGL 渲染完成: ${rendered.viewport.width}x${rendered.viewport.height}`)
+      const cacheText = rendered.cache?.hit ? '缓存命中' : '已编译'
+      setStatus(`真实 LVGL 渲染完成: ${rendered.viewport.width}x${rendered.viewport.height} / ${cacheText}`)
     } catch (error) {
       setRealPreview(null)
       setRenderState('error')
@@ -307,12 +308,16 @@ export default function HuangshanWorkspace() {
 function HuangshanDevicePreview({ preview, realPreview, renderState, renderError, onRender }) {
   const hasRealPreview = realPreview?.rgbaBase64 && realPreview?.viewport
 
+  function handlePreviewTap(point) {
+    onRender(point)
+  }
+
   return (
     <div className="huangshan-device-preview">
       <div className="huangshan-watch-shell">
         <div className="huangshan-watch-screen">
           {hasRealPreview ? (
-            <HuangshanFramebufferCanvas frame={realPreview} />
+            <HuangshanFramebufferCanvas frame={realPreview} onTap={handlePreviewTap} />
           ) : (
             <>
               <div className="huangshan-watch-glow" />
@@ -333,6 +338,8 @@ function HuangshanDevicePreview({ preview, realPreview, renderState, renderError
       <div className="huangshan-preview-meta">
         <span>{preview.viewport.width} x {preview.viewport.height}</span>
         <span>{hasRealPreview ? realPreview.renderer : 'Semantic LVGL preview'}</span>
+        {hasRealPreview && <span>{realPreview.cache?.hit ? 'cache hit' : 'compiled'}</span>}
+        {realPreview?.tap && <span>tap {realPreview.tap.x},{realPreview.tap.y}</span>}
       </div>
       <button
         className="huangshan-render"
@@ -346,7 +353,7 @@ function HuangshanDevicePreview({ preview, realPreview, renderState, renderError
   )
 }
 
-function HuangshanFramebufferCanvas({ frame }) {
+function HuangshanFramebufferCanvas({ frame, onTap }) {
   const canvasRef = useRef(null)
 
   useEffect(() => {
@@ -367,11 +374,24 @@ function HuangshanFramebufferCanvas({ frame }) {
     context.putImageData(new ImageData(pixels, width, height), 0, 0)
   }, [frame])
 
+  function handlePointerDown(event) {
+    if (!onTap) return
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    const { width, height } = frame.viewport
+    onTap({
+      x: Math.round(((event.clientX - rect.left) / rect.width) * width),
+      y: Math.round(((event.clientY - rect.top) / rect.height) * height),
+    })
+  }
+
   return (
     <canvas
       ref={canvasRef}
       className="huangshan-framebuffer"
       aria-label="Huangshan real LVGL framebuffer"
+      onPointerDown={handlePointerDown}
     />
   )
 }

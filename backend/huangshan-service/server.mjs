@@ -317,6 +317,7 @@ function runLvglRender(body) {
     displayName: body.displayName,
     description: body.description,
     files: body.files,
+    tap: body.tap,
   })
   return {
     ...result,

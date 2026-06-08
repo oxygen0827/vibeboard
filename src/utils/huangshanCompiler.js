@@ -12,11 +12,11 @@ export async function loadHuangshanSerialPorts() {
   return res.json()
 }
 
-export async function renderHuangshanLvglPreview({ displayName, description, files } = {}) {
+export async function renderHuangshanLvglPreview({ displayName, description, files, tap } = {}) {
   const res = await fetch('/huangshan/render-lvgl', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ displayName, description, files }),
+    body: JSON.stringify({ displayName, description, files, tap }),
   })
   if (!res.ok) throw new Error(`真实 LVGL 渲染服务失败: HTTP ${res.status}`)
   const payload = await res.json()

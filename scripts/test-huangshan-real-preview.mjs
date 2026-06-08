@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import {
+  createHuangshanPreviewRunArgs,
+  createHuangshanRenderCacheKey,
   createHuangshanLvglPreviewPackage,
+  normalizeHuangshanTap,
   resolveHuangshanLvglSource,
 } from '../backend/huangshan-service/lvglRender.mjs'
 import { createHuangshanAppFiles } from '../src/domain/huangshan/appTemplate.js'
@@ -39,5 +42,27 @@ assert.match(renderPackage.files['app_ui.c'], /create_label\(parent, "Quote \\"D
 assert.match(renderPackage.files['app_ui.c'], /create_label\(parent, "Line one Line two", 374/)
 assert.match(renderPackage.files['app_ui.c'], /create_label\(parent, "Quote_Dash: ready", 332/)
 assert.doesNotMatch(renderPackage.files['app_ui.c'], /undefined|null/)
+
+assert.deepEqual(normalizeHuangshanTap({ x: 12.6, y: 20.2 }), { x: 13, y: 20 })
+assert.deepEqual(normalizeHuangshanTap({ x: -10, y: 999 }), { x: 0, y: 449 })
+assert.equal(normalizeHuangshanTap(null), null)
+
+assert.deepEqual(createHuangshanPreviewRunArgs({
+  outputRgba: '/tmp/out.rgba',
+}), ['/tmp/out.rgba'])
+assert.deepEqual(createHuangshanPreviewRunArgs({
+  outputRgba: '/tmp/out.rgba',
+  tap: { x: 14.2, y: 33.8 },
+}), ['/tmp/out.rgba', '14', '34'])
+
+assert.equal(
+  createHuangshanRenderCacheKey({
+    lvglDir: '/opt/sifli-sdk/external/lvgl_v8',
+    runnerDir: '/app/backend/compiler-service/preview_runner',
+    viewport: { width: 390, height: 450 },
+    coreOnly: true,
+  }),
+  'lvgl-v8-core-390x450-a6a3f36dc844',
+)
 
 console.log('huangshan real preview package tests passed')
