@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict'
+import { existsSync } from 'node:fs'
 import {
   createHuangshanPreviewRunArgs,
   createHuangshanRenderCacheKey,
   createHuangshanLvglPreviewPackage,
   normalizeHuangshanTap,
+  renderHuangshanLvglPreview,
   resolveHuangshanLvglSource,
 } from '../backend/huangshan-service/lvglRender.mjs'
 import { createHuangshanAppFiles } from '../src/domain/huangshan/appTemplate.js'
@@ -36,9 +38,11 @@ assert.match(renderPackage.files['lv_conf.h'], /#define LV_COLOR_DEPTH 32/)
 assert.match(renderPackage.files['lv_conf.h'], /#define LV_FONT_SIMSUN_16_CJK 1/)
 assert.match(renderPackage.files['lv_conf.h'], /#define LV_FONT_DEFAULT &lv_font_simsun_16_cjk/)
 assert.match(renderPackage.files['rtconfig.h'], /#define BSP_USING_LVGL/)
+assert.match(renderPackage.files['rtconfig.h'], /#define CONFIG_LV_FONT_SIMSUN_16_CJK 1/)
 assert.match(renderPackage.files['lvsf_perf.h'], /#define LV_DEBUG_PSRAM_MON_START\(\)/)
 assert.match(renderPackage.files['lvsf_perf.h'], /#define LV_DEBUG_MARK_START\(tag, name\)/)
 assert.match(renderPackage.files['app_ui.c'], /void app_ui_create\(lv_obj_t \*parent\)/)
+assert.match(renderPackage.files['app_ui.c'], /LV_FONT_DECLARE\(lv_font_simsun_16_cjk\);/)
 assert.match(renderPackage.files['app_ui.c'], /#define HUANGSHAN_TEXT_FONT \(&lv_font_simsun_16_cjk\)/)
 assert.match(renderPackage.files['app_ui.c'], /lv_obj_set_style_bg_color\(parent, lv_color_hex\(0x06090D\), 0\);/)
 assert.match(renderPackage.files['app_ui.c'], /create_label\(parent, "Quote \\"Dash\\"", 70/)
@@ -74,5 +78,19 @@ assert.equal(
   }),
   'lvgl-v8-core-390x450-a6a3f36dc844',
 )
+
+const localSdk = '/Users/wq/huangshan-pi-workspace/sifli-sdk'
+const localRunnerDir = new URL('../backend/compiler-service/preview_runner', import.meta.url).pathname
+if (existsSync(`${localSdk}/external/lvgl_v8/lvgl.h`) && existsSync(`${localRunnerDir}/runner.c`)) {
+  const rendered = renderHuangshanLvglPreview({
+    sdk: localSdk,
+    runnerDir: localRunnerDir,
+    displayName: '小人伙伴',
+    description: '环境光 状态',
+  })
+  assert.equal(rendered.status, 'success')
+  assert.equal(rendered.renderer, 'real-lvgl-v8-headless')
+  assert.equal(rendered.bytes, 390 * 450 * 4)
+}
 
 console.log('huangshan real preview package tests passed')

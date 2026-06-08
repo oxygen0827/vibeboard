@@ -85,6 +85,8 @@ function createAppUiSource(preview) {
   return `#include "lvgl.h"
 #include "app_ui.h"
 
+LV_FONT_DECLARE(lv_font_simsun_16_cjk);
+
 #define HUANGSHAN_TEXT_FONT (&lv_font_simsun_16_cjk)
 
 static lv_obj_t *status_label;
@@ -192,6 +194,7 @@ export function createHuangshanLvglPreviewPackage({ displayName, description, fi
       'rtconfig.h': `#pragma once
 
 #define BSP_USING_LVGL 1
+#define CONFIG_LV_FONT_SIMSUN_16_CJK 1
 `,
       'lvsf_perf.h': `#pragma once
 
