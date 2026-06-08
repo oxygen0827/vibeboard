@@ -79,7 +79,8 @@
 }
 
 .huangshan-section input,
-.huangshan-section textarea {
+.huangshan-section textarea,
+.huangshan-section select {
   width: 100%;
   box-sizing: border-box;
   background: var(--bg-primary);
@@ -96,7 +97,8 @@
 }
 
 .huangshan-primary,
-.huangshan-build {
+.huangshan-build,
+.huangshan-flash {
   width: 100%;
   margin-top: 8px;
   padding: 9px 10px;
@@ -110,7 +112,12 @@
   border-color: var(--accent);
 }
 
-.huangshan-build:disabled {
+.huangshan-flash {
+  border-color: var(--accent);
+}
+
+.huangshan-build:disabled,
+.huangshan-flash:disabled {
   opacity: 0.6;
   cursor: wait;
 }

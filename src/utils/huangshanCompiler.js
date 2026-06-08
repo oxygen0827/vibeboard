@@ -6,13 +6,23 @@ export async function loadHuangshanHealth() {
   return res.json()
 }
 
-export async function buildHuangshanWorkspace({ onStatus, onLog } = {}) {
-  onStatus?.('正在连接黄山派构建服务...')
+export async function loadHuangshanSerialPorts() {
+  const res = await fetch('/huangshan/serial-ports')
+  if (!res.ok) throw new Error(`加载黄山派串口失败: HTTP ${res.status}`)
+  return res.json()
+}
+
+async function runHuangshanStream({ url, method = 'POST', body, initialStatus, onStatus, onLog }) {
+  onStatus?.(initialStatus)
   const logLines = []
   const startedAt = Date.now()
 
-  const res = await fetch('/huangshan/build', { method: 'POST' })
-  if (!res.ok) throw new Error(`黄山派构建服务连接失败: HTTP ${res.status}`)
+  const res = await fetch(url, {
+    method,
+    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  if (!res.ok) throw new Error(`黄山派服务连接失败: HTTP ${res.status}`)
 
   return new Promise((resolve, reject) => {
     const reader = res.body.getReader()
@@ -40,7 +50,7 @@ export async function buildHuangshanWorkspace({ onStatus, onLog } = {}) {
           error.buildEvidence = evidence
           reject(error)
         } else {
-          resolve(evidence)
+          resolve({ evidence, message: msg })
         }
       }
     }
@@ -58,4 +68,25 @@ export async function buildHuangshanWorkspace({ onStatus, onLog } = {}) {
 
     pump()
   })
+}
+
+export async function buildHuangshanWorkspace({ onStatus, onLog } = {}) {
+  const result = await runHuangshanStream({
+    url: '/huangshan/build',
+    initialStatus: '正在连接黄山派构建服务...',
+    onStatus,
+    onLog,
+  })
+  return result.evidence
+}
+
+export async function flashHuangshanWorkspace({ port, onStatus, onLog } = {}) {
+  const result = await runHuangshanStream({
+    url: '/huangshan/flash',
+    body: { port },
+    initialStatus: '正在连接黄山派烧录服务...',
+    onStatus,
+    onLog,
+  })
+  return result.evidence
 }

@@ -2,7 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import Editor from '@monaco-editor/react'
 import { HUANGSHAN_BOARD_PROFILE, listHuangshanCapabilities } from '../domain/huangshan/boardProfile'
 import { createHuangshanAppFiles, normalizeHuangshanAppName } from '../domain/huangshan/appTemplate'
-import { buildHuangshanWorkspace, loadHuangshanHealth } from '../utils/huangshanCompiler'
+import {
+  buildHuangshanWorkspace,
+  flashHuangshanWorkspace,
+  loadHuangshanHealth,
+  loadHuangshanSerialPorts,
+} from '../utils/huangshanCompiler'
 import './HuangshanWorkspace.css'
 
 export default function HuangshanWorkspace() {
@@ -18,6 +23,9 @@ export default function HuangshanWorkspace() {
   const [buildState, setBuildState] = useState('idle')
   const [buildLog, setBuildLog] = useState([])
   const [buildEvidence, setBuildEvidence] = useState(null)
+  const [serialPorts, setSerialPorts] = useState([])
+  const [selectedPort, setSelectedPort] = useState(HUANGSHAN_BOARD_PROFILE.debug.defaultSerialPort)
+  const [flashState, setFlashState] = useState('idle')
 
   const appName = useMemo(() => normalizeHuangshanAppName(appDisplayName), [appDisplayName])
   const capabilities = useMemo(() => listHuangshanCapabilities(), [])
@@ -26,6 +34,14 @@ export default function HuangshanWorkspace() {
     loadHuangshanHealth()
       .then(setHealth)
       .catch(error => setHealth({ ok: false, error: error.message }))
+    loadHuangshanSerialPorts()
+      .then(payload => {
+        const ports = payload.ports || []
+        setSerialPorts(ports)
+        const recommended = ports.find(port => port.recommended) || ports[0]
+        if (recommended) setSelectedPort(recommended.path)
+      })
+      .catch(() => setSerialPorts([]))
   }, [])
 
   function regenerateTemplate() {
@@ -57,8 +73,27 @@ export default function HuangshanWorkspace() {
     }
   }
 
+  async function handleFlash() {
+    setFlashState('flashing')
+    setBuildLog([])
+    setStatus(`正在烧录 ${selectedPort} ...`)
+    try {
+      await flashHuangshanWorkspace({
+        port: selectedPort,
+        onStatus: setStatus,
+        onLog: line => setBuildLog(prev => [...prev, line]),
+      })
+      setFlashState('ok')
+      setStatus('黄山派烧录成功')
+    } catch (error) {
+      setFlashState('error')
+      setStatus(error.message || '黄山派烧录失败')
+    }
+  }
+
   const filePaths = Object.keys(files)
   const activeContent = files[activeFile] || ''
+  const canFlash = buildEvidence?.status === 'success' && selectedPort && flashState !== 'flashing'
 
   return (
     <div className="huangshan-workspace">
@@ -84,6 +119,22 @@ export default function HuangshanWorkspace() {
           <button className="huangshan-primary" onClick={regenerateTemplate}>生成 App 模板</button>
           <button className="huangshan-build" onClick={handleBuild} disabled={buildState === 'building'}>
             {buildState === 'building' ? '构建中...' : '运行 SCons 构建'}
+          </button>
+        </div>
+
+        <div className="huangshan-section">
+          <div className="huangshan-heading">Device</div>
+          <label>
+            Serial port
+            <select value={selectedPort} onChange={event => setSelectedPort(event.target.value)}>
+              {serialPorts.length === 0 && <option value={selectedPort}>{selectedPort}</option>}
+              {serialPorts.map(port => (
+                <option key={port.path} value={port.path}>{port.path}</option>
+              ))}
+            </select>
+          </label>
+          <button className="huangshan-flash" onClick={handleFlash} disabled={!canFlash}>
+            {flashState === 'flashing' ? '烧录中...' : '烧录到已连接设备'}
           </button>
         </div>
 
@@ -124,7 +175,7 @@ export default function HuangshanWorkspace() {
 
       <aside className="huangshan-log">
         <div className="huangshan-heading">Build Evidence</div>
-        <div className={`huangshan-status ${buildState}`}>{status || '等待操作'}</div>
+        <div className={`huangshan-status ${flashState === 'error' ? 'error' : buildState}`}>{status || '等待操作'}</div>
         {buildEvidence?.firstError && (
           <pre className="huangshan-error">{buildEvidence.firstError.context.join('\n')}</pre>
         )}

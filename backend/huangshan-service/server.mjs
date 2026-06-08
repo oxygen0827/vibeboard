@@ -1,6 +1,6 @@
 import http from 'node:http'
 import { spawn } from 'node:child_process'
-import { existsSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -17,6 +17,28 @@ function sse(res, payload) {
   res.write(`data: ${JSON.stringify(payload)}\n\n`)
 }
 
+function readJson(req) {
+  return new Promise((resolve, reject) => {
+    let body = ''
+    req.on('data', chunk => {
+      body += chunk
+      if (body.length > 1024 * 1024) reject(new Error('Request body too large'))
+    })
+    req.on('end', () => {
+      if (!body.trim()) {
+        resolve({})
+        return
+      }
+      try {
+        resolve(JSON.parse(body))
+      } catch (error) {
+        reject(error)
+      }
+    })
+    req.on('error', reject)
+  })
+}
+
 function resolveWorkspace() {
   const workspace = resolve(process.env.HUANGSHAN_WORKSPACE || DEFAULT_WORKSPACE)
   const sdk = resolve(process.env.SIFLI_SDK_PATH || DEFAULT_SDK)
@@ -25,6 +47,33 @@ function resolveWorkspace() {
     sdk,
     buildScript: join(workspace, 'scripts/build.sh'),
     sdkExport: join(sdk, 'export.sh'),
+  }
+}
+
+function listHuangshanSerialPorts({ platform = process.platform, devices } = {}) {
+  const names = devices || (() => {
+    if (platform === 'darwin') {
+      return readdirSync('/dev')
+        .filter(name => name.startsWith('cu.'))
+        .map(name => `/dev/${name}`)
+    }
+    if (platform === 'linux') {
+      return readdirSync('/dev')
+        .filter(name => /^tty(USB|ACM)\d+$/.test(name))
+        .map(name => `/dev/${name}`)
+    }
+    return []
+  })()
+
+  return names
+    .filter(path => /usbserial|ttyUSB|ttyACM/i.test(path))
+    .sort()
+    .map(path => ({ path, recommended: /usbserial|ttyUSB0|ttyACM0/i.test(path) }))
+}
+
+function assertSafeSerialPort(port) {
+  if (typeof port !== 'string' || !/^\/dev\/(?:cu\.[A-Za-z0-9._-]+|ttyUSB\d+|ttyACM\d+)$/.test(port)) {
+    throw new Error(`Unsafe serial port: ${port || ''}`)
   }
 }
 
@@ -55,6 +104,26 @@ function createHuangshanArtifactSummary({ workspace }) {
   return { buildDir, artifacts }
 }
 
+function createHuangshanFlashCommand({ port, buildDir }) {
+  assertSafeSerialPort(port)
+  return {
+    command: 'sftool',
+    args: [
+      '-p',
+      port,
+      '-c',
+      'SF32LB52',
+      '-m',
+      'nor',
+      'write_flash',
+      'bootloader/bootloader.bin@0x12010000',
+      'main.bin@0x12020000',
+      'ftab/ftab.bin@0x12000000',
+    ],
+    cwd: buildDir,
+  }
+}
+
 function healthPayload() {
   const paths = resolveWorkspace()
   return {
@@ -67,6 +136,39 @@ function healthPayload() {
       sdkExport: existsSync(paths.sdkExport),
     },
   }
+}
+
+function runChildAsSse(res, child, { startedAt, command, successPayload = {} }) {
+  child.stdout.on('data', chunk => {
+    for (const line of String(chunk).split(/\r?\n/)) {
+      if (line) sse(res, { log: line })
+    }
+  })
+  child.stderr.on('data', chunk => {
+    for (const line of String(chunk).split(/\r?\n/)) {
+      if (line) sse(res, { log: line })
+    }
+  })
+  child.on('close', code => {
+    if (code === 0) {
+      sse(res, {
+        done: true,
+        status: 'success',
+        command,
+        elapsedMs: Date.now() - startedAt,
+        ...successPayload,
+      })
+    } else {
+      sse(res, {
+        done: true,
+        status: 'failure',
+        error: `${command} failed with exit code ${code}`,
+        command,
+        elapsedMs: Date.now() - startedAt,
+      })
+    }
+    res.end()
+  })
 }
 
 function runBuild(res) {
@@ -86,35 +188,51 @@ function runBuild(res) {
     },
   })
 
-  child.stdout.on('data', chunk => {
-    for (const line of String(chunk).split(/\r?\n/)) {
-      if (line) sse(res, { log: line })
-    }
+  runChildAsSse(res, child, {
+    startedAt,
+    command: './scripts/build.sh',
+    successPayload: { artifactSummary: createHuangshanArtifactSummary(paths) },
   })
-  child.stderr.on('data', chunk => {
-    for (const line of String(chunk).split(/\r?\n/)) {
-      if (line) sse(res, { log: line })
-    }
-  })
-  child.on('close', code => {
-    if (code === 0) {
-      sse(res, {
-        done: true,
-        status: 'success',
-        command: './scripts/build.sh',
-        elapsedMs: Date.now() - startedAt,
-        artifactSummary: createHuangshanArtifactSummary(paths),
-      })
-    } else {
-      sse(res, {
-        done: true,
-        status: 'failure',
-        error: `Huangshan build failed with exit code ${code}`,
-        command: './scripts/build.sh',
-        elapsedMs: Date.now() - startedAt,
-      })
-    }
+}
+
+function runFlash(res, { port }) {
+  const paths = resolveWorkspace()
+  const artifactSummary = createHuangshanArtifactSummary(paths)
+  const buildDir = artifactSummary.buildDir
+  const required = ['main.bin', 'sftool_param.json']
+  const present = new Set(artifactSummary.artifacts.map(item => item.name))
+  const missing = required.filter(name => !present.has(name))
+
+  if (missing.length > 0) {
+    sse(res, { done: true, status: 'failure', error: `Missing build artifacts: ${missing.join(', ')}` })
     res.end()
+    return
+  }
+
+  let flash
+  try {
+    flash = createHuangshanFlashCommand({ port, buildDir })
+  } catch (error) {
+    sse(res, { done: true, status: 'failure', error: error.message })
+    res.end()
+    return
+  }
+
+  const child = spawn(flash.command, flash.args, {
+    cwd: flash.cwd,
+    env: {
+      ...process.env,
+      SIFLI_SDK_PATH: paths.sdk,
+      PATH: [
+        join(process.env.HOME || '', '.sifli/tools/sftool/0.1.16'),
+        process.env.PATH || '',
+      ].filter(Boolean).join(':'),
+    },
+  })
+
+  runChildAsSse(res, child, {
+    startedAt: Date.now(),
+    command: [flash.command, ...flash.args].join(' '),
   })
 }
 
@@ -124,6 +242,10 @@ function createServer() {
       json(res, 200, healthPayload())
       return
     }
+    if (req.method === 'GET' && req.url === '/huangshan/serial-ports') {
+      json(res, 200, { ports: listHuangshanSerialPorts() })
+      return
+    }
     if (req.method === 'POST' && req.url === '/huangshan/build') {
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
@@ -131,6 +253,20 @@ function createServer() {
         Connection: 'keep-alive',
       })
       runBuild(res)
+      return
+    }
+    if (req.method === 'POST' && req.url === '/huangshan/flash') {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      })
+      readJson(req)
+        .then(body => runFlash(res, { port: body.port }))
+        .catch(error => {
+          sse(res, { done: true, status: 'failure', error: error.message })
+          res.end()
+        })
       return
     }
     json(res, 404, { error: 'not found' })
@@ -154,4 +290,11 @@ if (isMain) {
   })
 }
 
-export { createHuangshanArtifactSummary, createServer, healthPayload, resolveWorkspace }
+export {
+  createHuangshanArtifactSummary,
+  createHuangshanFlashCommand,
+  createServer,
+  healthPayload,
+  listHuangshanSerialPorts,
+  resolveWorkspace,
+}
