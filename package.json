@@ -30,6 +30,8 @@
     "test:huangshan-profile": "node scripts/test-huangshan-capability-profile.mjs",
     "test:huangshan-app-template": "node scripts/test-huangshan-app-template.mjs",
     "test:huangshan-build-evidence": "node scripts/test-huangshan-build-adapter-log-parser.mjs",
+    "huangshan:service": "node backend/huangshan-service/server.mjs",
+    "test:huangshan-service-health": "node backend/huangshan-service/server.mjs --self-test",
     "preview": "vite preview"
   },
   "dependencies": {
