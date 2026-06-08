@@ -1,14 +1,13 @@
 .huangshan-workspace {
   display: grid;
-  grid-template-columns: 300px minmax(360px, 1fr) 360px;
+  grid-template-columns: 300px minmax(640px, 1fr);
   height: 100%;
   min-height: 0;
   background: var(--bg-primary);
   color: var(--text-primary);
 }
 
-.huangshan-sidebar,
-.huangshan-log {
+.huangshan-sidebar {
   min-height: 0;
   overflow: auto;
   background: var(--bg-secondary);
@@ -16,7 +15,10 @@
 }
 
 .huangshan-log {
-  border-right: 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-secondary);
   border-left: 1px solid var(--border);
   padding: 14px;
 }
@@ -164,8 +166,16 @@
   flex-direction: column;
 }
 
+.huangshan-stage {
+  flex: 0 0 292px;
+  display: grid;
+  grid-template-columns: minmax(360px, 1fr) 340px;
+  min-height: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-primary);
+}
+
 .huangshan-preview-panel {
-  flex: 0 0 260px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -174,6 +184,14 @@
     var(--bg-primary);
   border-bottom: 1px solid var(--border);
   overflow: hidden;
+}
+
+.huangshan-stage-status {
+  min-width: 0;
+  overflow: auto;
+  padding: 16px;
+  border-left: 1px solid var(--border);
+  background: var(--bg-secondary);
 }
 
 .huangshan-device-preview {
@@ -298,6 +316,8 @@
 
 .huangshan-preview-meta {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 10px;
   color: var(--text-muted);
   font-size: 11px;
@@ -305,11 +325,25 @@
 }
 
 .huangshan-render-error {
-  width: 190px;
+  width: 240px;
   color: var(--red);
   font-size: 11px;
   line-height: 1.4;
   text-align: center;
+}
+
+.huangshan-workbench {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(420px, 1fr) 360px;
+}
+
+.huangshan-code-pane {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .huangshan-files {
@@ -365,6 +399,11 @@
   overflow: visible;
 }
 
+.huangshan-artifacts.compact {
+  max-height: 150px;
+  overflow: auto;
+}
+
 .huangshan-artifact {
   display: flex;
   align-items: center;
@@ -402,18 +441,35 @@
 }
 
 .huangshan-log-lines {
-  height: calc(100% - 88px);
+  height: calc(100% - 34px);
 }
 
 @media (max-width: 980px) {
   .huangshan-workspace {
     grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(520px, 1fr) 260px;
   }
 
-  .huangshan-sidebar,
-  .huangshan-log {
+  .huangshan-sidebar {
     border-left: 0;
     border-right: 0;
+  }
+
+  .huangshan-stage,
+  .huangshan-workbench {
+    grid-template-columns: 1fr;
+  }
+
+  .huangshan-stage {
+    flex-basis: auto;
+  }
+
+  .huangshan-stage-status,
+  .huangshan-log {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .huangshan-log {
+    min-height: 240px;
   }
 }

@@ -71,11 +71,14 @@ export default function HuangshanWorkspace() {
   }
 
   async function handleRenderPreview(tap = null) {
+    const safeTap = tap && Number.isFinite(Number(tap.x)) && Number.isFinite(Number(tap.y))
+      ? { x: Number(tap.x), y: Number(tap.y) }
+      : null
     setRenderState('rendering')
     setRenderError('')
-    setStatus(tap ? `正在执行触摸渲染 ${tap.x}, ${tap.y} ...` : '正在执行真实 LVGL 渲染...')
+    setStatus(safeTap ? `正在执行触摸渲染 ${safeTap.x}, ${safeTap.y} ...` : '正在执行真实 LVGL 渲染...')
     try {
-      const rendered = await renderHuangshanLvglPreview({ displayName: appDisplayName, description, files, tap })
+      const rendered = await renderHuangshanLvglPreview({ displayName: appDisplayName, description, files, tap: safeTap })
       setRealPreview(rendered)
       setRenderState('ok')
       const cacheText = rendered.cache?.hit ? '缓存命中' : '已编译'
@@ -162,6 +165,7 @@ export default function HuangshanWorkspace() {
   const activeContent = files[activeFile] || ''
   const canFlash = buildEvidence?.status === 'success' && selectedPort && flashState !== 'flashing'
   const canMonitor = selectedPort && monitorState !== 'monitoring'
+  const logState = flashState === 'error' || monitorState === 'error' ? 'error' : buildState
 
   return (
     <div className="huangshan-workspace">
@@ -238,69 +242,79 @@ export default function HuangshanWorkspace() {
       </aside>
 
       <section className="huangshan-main">
-        <div className="huangshan-preview-panel">
-          <HuangshanDevicePreview
-            preview={preview}
-            realPreview={realPreview}
-            renderState={renderState}
-            renderError={renderError}
-            onRender={handleRenderPreview}
-          />
+        <div className="huangshan-stage">
+          <div className="huangshan-preview-panel">
+            <HuangshanDevicePreview
+              preview={preview}
+              realPreview={realPreview}
+              renderState={renderState}
+              renderError={renderError}
+              onRender={handleRenderPreview}
+            />
+          </div>
+          <div className="huangshan-stage-status">
+            <div className="huangshan-heading">Session</div>
+            <div className={`huangshan-status ${logState}`}>
+              {status || '等待操作'}
+            </div>
+            {buildEvidence?.artifactSummary?.artifacts?.length > 0 && (
+              <div className="huangshan-artifacts compact">
+                {buildEvidence.artifactSummary.artifacts.map(item => (
+                  <div key={item.relativePath} className="huangshan-artifact">
+                    <div>
+                      <strong>{item.name}</strong>
+                      <span>{item.kind}</span>
+                    </div>
+                    <code>{formatArtifactSize(item.size)}</code>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
-        <div className="huangshan-files">
-          {filePaths.map(path => (
-            <button
-              key={path}
-              className={activeFile === path ? 'active' : ''}
-              onClick={() => setActiveFile(path)}
-              title={path}
-            >
-              {path}
-            </button>
-          ))}
-        </div>
-        <div className="huangshan-editor">
-          <Editor
-            key={activeFile}
-            language={activeFile.endsWith('SConscript') ? 'python' : 'c'}
-            theme="vs-dark"
-            value={activeContent}
-            onChange={value => {
-              setFiles(prev => ({ ...prev, [activeFile]: value || '' }))
-              setRealPreview(null)
-            }}
-            options={{ minimap: { enabled: false }, fontSize: 13, scrollBeyondLastLine: false }}
-          />
+
+        <div className="huangshan-workbench">
+          <div className="huangshan-code-pane">
+            <div className="huangshan-files">
+              {filePaths.map(path => (
+                <button
+                  key={path}
+                  className={activeFile === path ? 'active' : ''}
+                  onClick={() => setActiveFile(path)}
+                  title={path}
+                >
+                  {path}
+                </button>
+              ))}
+            </div>
+            <div className="huangshan-editor">
+              <Editor
+                key={activeFile}
+                language={activeFile.endsWith('SConscript') ? 'python' : 'c'}
+                theme="vs-dark"
+                value={activeContent}
+                onChange={value => {
+                  setFiles(prev => ({ ...prev, [activeFile]: value || '' }))
+                  setRealPreview(null)
+                }}
+                options={{ minimap: { enabled: false }, fontSize: 13, scrollBeyondLastLine: false }}
+              />
+            </div>
+          </div>
+
+          <aside className="huangshan-log">
+            <div className="huangshan-heading">Build Evidence</div>
+            {buildEvidence?.firstError && (
+              <pre className="huangshan-error">{buildEvidence.firstError.context.join('\n')}</pre>
+            )}
+            <div className="huangshan-log-lines">
+              {buildLog.slice(-160).map((line, index) => (
+                <div key={`${index}-${line}`}>{line}</div>
+              ))}
+            </div>
+          </aside>
         </div>
       </section>
-
-      <aside className="huangshan-log">
-        <div className="huangshan-heading">Build Evidence</div>
-        <div className={`huangshan-status ${flashState === 'error' || monitorState === 'error' ? 'error' : buildState}`}>
-          {status || '等待操作'}
-        </div>
-        {buildEvidence?.firstError && (
-          <pre className="huangshan-error">{buildEvidence.firstError.context.join('\n')}</pre>
-        )}
-        {buildEvidence?.artifactSummary?.artifacts?.length > 0 && (
-          <div className="huangshan-artifacts">
-            {buildEvidence.artifactSummary.artifacts.map(item => (
-              <div key={item.relativePath} className="huangshan-artifact">
-                <div>
-                  <strong>{item.name}</strong>
-                  <span>{item.kind}</span>
-                </div>
-                <code>{formatArtifactSize(item.size)}</code>
-              </div>
-            ))}
-          </div>
-        )}
-        <div className="huangshan-log-lines">
-          {buildLog.slice(-160).map((line, index) => (
-            <div key={`${index}-${line}`}>{line}</div>
-          ))}
-        </div>
-      </aside>
     </div>
   )
 }
@@ -343,7 +357,7 @@ function HuangshanDevicePreview({ preview, realPreview, renderState, renderError
       </div>
       <button
         className="huangshan-render"
-        onClick={onRender}
+        onClick={() => onRender()}
         disabled={renderState === 'rendering'}
       >
         {renderState === 'rendering' ? '渲染中...' : '真实 LVGL 渲染'}
