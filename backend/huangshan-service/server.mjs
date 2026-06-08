@@ -1,6 +1,6 @@
 import http from 'node:http'
 import { spawn } from 'node:child_process'
-import { existsSync, readdirSync, statSync } from 'node:fs'
+import { createReadStream, existsSync, readdirSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -124,6 +124,14 @@ function createHuangshanFlashCommand({ port, buildDir }) {
   }
 }
 
+function createHuangshanMonitorSetupCommand({ port, baud = 921600, platform = process.platform }) {
+  assertSafeSerialPort(port)
+  return {
+    command: 'stty',
+    args: [platform === 'darwin' ? '-f' : '-F', port, String(baud), 'raw', '-echo'],
+  }
+}
+
 function healthPayload() {
   const paths = resolveWorkspace()
   return {
@@ -136,6 +144,66 @@ function healthPayload() {
       sdkExport: existsSync(paths.sdkExport),
     },
   }
+}
+
+function runMonitor(res, { port, baud }) {
+  let setup
+  try {
+    setup = createHuangshanMonitorSetupCommand({ port, baud })
+  } catch (error) {
+    sse(res, { done: true, status: 'failure', error: error.message })
+    res.end()
+    return
+  }
+
+  const startedAt = Date.now()
+  const setupChild = spawn(setup.command, setup.args)
+  setupChild.on('close', code => {
+    if (code !== 0) {
+      sse(res, {
+        done: true,
+        status: 'failure',
+        error: `${setup.command} ${setup.args.join(' ')} failed with exit code ${code}`,
+        elapsedMs: Date.now() - startedAt,
+      })
+      res.end()
+      return
+    }
+
+    sse(res, {
+      status: 'connected',
+      command: `${setup.command} ${setup.args.join(' ')}`,
+      port,
+          baud: Number(baud) || 921600,
+    })
+
+    const stream = createReadStream(port, { encoding: 'utf8' })
+    let buffer = ''
+
+    function closeStream() {
+      stream.destroy()
+    }
+
+    res.on('close', closeStream)
+    stream.on('data', chunk => {
+      buffer += chunk
+      const lines = buffer.split(/\r?\n/)
+      buffer = lines.pop() || ''
+      for (const line of lines) {
+        if (line) sse(res, { log: line })
+      }
+    })
+    stream.on('error', error => {
+      sse(res, { done: true, status: 'failure', error: error.message })
+      res.end()
+    })
+    stream.on('close', () => {
+      if (!res.destroyed) {
+        sse(res, { done: true, status: 'closed' })
+        res.end()
+      }
+    })
+  })
 }
 
 function runChildAsSse(res, child, { startedAt, command, successPayload = {} }) {
@@ -269,6 +337,23 @@ function createServer() {
         })
       return
     }
+    if (req.method === 'POST' && req.url === '/huangshan/monitor') {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      })
+      readJson(req)
+        .then(body => runMonitor(res, {
+          port: body.port,
+          baud: body.baud || 921600,
+        }))
+        .catch(error => {
+          sse(res, { done: true, status: 'failure', error: error.message })
+          res.end()
+        })
+      return
+    }
     json(res, 404, { error: 'not found' })
   })
 }
@@ -293,6 +378,7 @@ if (isMain) {
 export {
   createHuangshanArtifactSummary,
   createHuangshanFlashCommand,
+  createHuangshanMonitorSetupCommand,
   createServer,
   healthPayload,
   listHuangshanSerialPorts,

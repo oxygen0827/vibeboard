@@ -7,6 +7,7 @@ import {
   flashHuangshanWorkspace,
   loadHuangshanHealth,
   loadHuangshanSerialPorts,
+  monitorHuangshanSerial,
 } from '../utils/huangshanCompiler'
 import './HuangshanWorkspace.css'
 
@@ -25,7 +26,10 @@ export default function HuangshanWorkspace() {
   const [buildEvidence, setBuildEvidence] = useState(null)
   const [serialPorts, setSerialPorts] = useState([])
   const [selectedPort, setSelectedPort] = useState(HUANGSHAN_BOARD_PROFILE.debug.defaultSerialPort)
+  const [monitorBaud, setMonitorBaud] = useState(921600)
   const [flashState, setFlashState] = useState('idle')
+  const [monitorState, setMonitorState] = useState('idle')
+  const [monitorAbort, setMonitorAbort] = useState(null)
 
   const appName = useMemo(() => normalizeHuangshanAppName(appDisplayName), [appDisplayName])
   const capabilities = useMemo(() => listHuangshanCapabilities(), [])
@@ -91,9 +95,42 @@ export default function HuangshanWorkspace() {
     }
   }
 
+  function handleStartMonitor() {
+    const controller = new AbortController()
+    setMonitorAbort(controller)
+    setMonitorState('monitoring')
+    setBuildLog([])
+    monitorHuangshanSerial({
+      port: selectedPort,
+      baud: monitorBaud,
+      signal: controller.signal,
+      onStatus: setStatus,
+      onLog: line => setBuildLog(prev => [...prev, line]),
+    }).then(() => {
+      setMonitorState('idle')
+      setMonitorAbort(null)
+    }).catch(error => {
+      if (error.name === 'AbortError') {
+        setStatus('串口监视已停止')
+      } else {
+        setStatus(error.message || '串口监视失败')
+        setMonitorState('error')
+      }
+      setMonitorAbort(null)
+    })
+  }
+
+  function handleStopMonitor() {
+    monitorAbort?.abort()
+    setMonitorState('idle')
+    setMonitorAbort(null)
+    setStatus('串口监视已停止')
+  }
+
   const filePaths = Object.keys(files)
   const activeContent = files[activeFile] || ''
   const canFlash = buildEvidence?.status === 'success' && selectedPort && flashState !== 'flashing'
+  const canMonitor = selectedPort && monitorState !== 'monitoring'
 
   return (
     <div className="huangshan-workspace">
@@ -133,9 +170,24 @@ export default function HuangshanWorkspace() {
               ))}
             </select>
           </label>
+          <label>
+            Monitor baud
+            <select value={monitorBaud} onChange={event => setMonitorBaud(Number(event.target.value))}>
+              <option value={921600}>921600</option>
+              <option value={115200}>115200</option>
+              <option value={1000000}>1000000</option>
+            </select>
+          </label>
           <button className="huangshan-flash" onClick={handleFlash} disabled={!canFlash}>
             {flashState === 'flashing' ? '烧录中...' : '烧录到已连接设备'}
           </button>
+          {monitorState === 'monitoring' ? (
+            <button className="huangshan-monitor" onClick={handleStopMonitor}>停止串口监视</button>
+          ) : (
+            <button className="huangshan-monitor" onClick={handleStartMonitor} disabled={!canMonitor}>
+              开始串口监视
+            </button>
+          )}
         </div>
 
         <div className="huangshan-section">
@@ -175,7 +227,9 @@ export default function HuangshanWorkspace() {
 
       <aside className="huangshan-log">
         <div className="huangshan-heading">Build Evidence</div>
-        <div className={`huangshan-status ${flashState === 'error' ? 'error' : buildState}`}>{status || '等待操作'}</div>
+        <div className={`huangshan-status ${flashState === 'error' || monitorState === 'error' ? 'error' : buildState}`}>
+          {status || '等待操作'}
+        </div>
         {buildEvidence?.firstError && (
           <pre className="huangshan-error">{buildEvidence.firstError.context.join('\n')}</pre>
         )}

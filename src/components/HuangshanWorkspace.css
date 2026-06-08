@@ -98,7 +98,8 @@
 
 .huangshan-primary,
 .huangshan-build,
-.huangshan-flash {
+.huangshan-flash,
+.huangshan-monitor {
   width: 100%;
   margin-top: 8px;
   padding: 9px 10px;
@@ -116,8 +117,13 @@
   border-color: var(--accent);
 }
 
+.huangshan-monitor {
+  color: var(--text-secondary);
+}
+
 .huangshan-build:disabled,
-.huangshan-flash:disabled {
+.huangshan-flash:disabled,
+.huangshan-monitor:disabled {
   opacity: 0.6;
   cursor: wait;
 }

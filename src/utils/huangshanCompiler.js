@@ -12,7 +12,7 @@ export async function loadHuangshanSerialPorts() {
   return res.json()
 }
 
-async function runHuangshanStream({ url, method = 'POST', body, initialStatus, onStatus, onLog }) {
+async function runHuangshanStream({ url, method = 'POST', body, initialStatus, onStatus, onLog, signal }) {
   onStatus?.(initialStatus)
   const logLines = []
   const startedAt = Date.now()
@@ -21,6 +21,7 @@ async function runHuangshanStream({ url, method = 'POST', body, initialStatus, o
     method,
     headers: body ? { 'Content-Type': 'application/json' } : undefined,
     body: body ? JSON.stringify(body) : undefined,
+    signal,
   })
   if (!res.ok) throw new Error(`黄山派服务连接失败: HTTP ${res.status}`)
 
@@ -67,6 +68,17 @@ async function runHuangshanStream({ url, method = 'POST', body, initialStatus, o
     }
 
     pump()
+  })
+}
+
+export async function monitorHuangshanSerial({ port, baud = 1000000, signal, onStatus, onLog } = {}) {
+  return runHuangshanStream({
+    url: '/huangshan/monitor',
+    body: { port, baud },
+    signal,
+    initialStatus: `正在连接串口 ${port} ...`,
+    onStatus,
+    onLog,
   })
 }
 

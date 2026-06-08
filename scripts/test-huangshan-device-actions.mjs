@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import {
   createHuangshanFlashCommand,
+  createHuangshanMonitorSetupCommand,
   listHuangshanSerialPorts,
 } from '../backend/huangshan-service/server.mjs'
 
@@ -31,9 +32,29 @@ assert.deepEqual(command.args, [
 ])
 assert.equal(command.cwd, '/workspace/project/build_sf32lb52-lchspi-ulp_hcpu')
 
+const monitor = createHuangshanMonitorSetupCommand({
+  port: '/dev/cu.usbserial-110',
+  baud: 921600,
+  platform: 'darwin',
+})
+assert.equal(monitor.command, 'stty')
+assert.deepEqual(monitor.args, ['-f', '/dev/cu.usbserial-110', '921600', 'raw', '-echo'])
+
+const linuxMonitor = createHuangshanMonitorSetupCommand({
+  port: '/dev/ttyUSB0',
+  baud: 1000000,
+  platform: 'linux',
+})
+assert.deepEqual(linuxMonitor.args, ['-F', '/dev/ttyUSB0', '1000000', 'raw', '-echo'])
+
 assert.throws(() => createHuangshanFlashCommand({
   port: '../bad',
   buildDir: '/workspace/project/build_sf32lb52-lchspi-ulp_hcpu',
+}), /Unsafe serial port/)
+
+assert.throws(() => createHuangshanMonitorSetupCommand({
+  port: '/tmp/not-serial',
+  baud: 1000000,
 }), /Unsafe serial port/)
 
 console.log('huangshan device action tests passed')
