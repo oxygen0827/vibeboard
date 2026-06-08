@@ -4,6 +4,7 @@ import LogPanel from './components/LogPanel'
 import SettingsModal from './components/SettingsModal'
 import CompilePanel from './components/CompilePanel'
 import ProjectEditor from './components/ProjectEditor'
+import HuangshanWorkspace from './components/HuangshanWorkspace'
 import { BOARDS, DEFAULT_BOARD_ID, getBoardList, getBoard } from './context/boards'
 import { providerKeyForBaseUrl } from './utils/aiApi'
 import { buildGeneratedConfig } from './utils/projectAssembly'
@@ -111,6 +112,7 @@ export default function App() {
   const [settings, setSettings] = useState(loadSettings)
   const [showSettings, setShowSettings] = useState(false)
   const [showCompile, setShowCompile] = useState(false)
+  const [workspaceMode, setWorkspaceMode] = useState('esp-idf')
   const [rightTab, setRightTab] = useState('chat')
   const [pendingLogAnalysis, setPendingLogAnalysis] = useState(null)
   const [pendingBuildRepair, setPendingBuildRepair] = useState(null)
@@ -236,15 +238,25 @@ export default function App() {
             <span className="logo-text">ESP32 Vibe Coder</span>
           </div>
           <div className="divider" />
-          <div className="board-selector">
-            <select className="board-select-input" value={boardId} onChange={e => handleBoardChange(e.target.value)}>
-              {getBoardList().map(b => (
-                <option key={b.id} value={b.id}>
-                  [ESP-IDF] {b.name} ({b.chip})
-                </option>
-              ))}
-            </select>
+          <div className="workspace-switcher">
+            <button className={workspaceMode === 'esp-idf' ? 'active' : ''} onClick={() => setWorkspaceMode('esp-idf')}>
+              ESP-IDF
+            </button>
+            <button className={workspaceMode === 'huangshan' ? 'active' : ''} onClick={() => setWorkspaceMode('huangshan')}>
+              Huangshan
+            </button>
           </div>
+          {workspaceMode === 'esp-idf' && (
+            <div className="board-selector">
+              <select className="board-select-input" value={boardId} onChange={e => handleBoardChange(e.target.value)}>
+                {getBoardList().map(b => (
+                  <option key={b.id} value={b.id}>
+                    [ESP-IDF] {b.name} ({b.chip})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
         <div className="header-right">
           <div className="model-info">
@@ -260,67 +272,73 @@ export default function App() {
         </div>
       </header>
 
-      <div className="app-body">
-        <div className="editor-pane">
-          <ProjectEditor
-            files={projectFiles}
-            generatedFiles={generatedFiles}
-            referenceFiles={BSP_REFERENCE_FILES}
-            activeFile={activeFile}
-            board={board}
-            selectedSkills={selectedSkills}
-            onPreviewContextChange={handlePreviewContextChange}
-            onFileChange={(newFiles, newActive) => {
-              setProjectFiles(newFiles)
-              setLatestCompileArtifact(null)
-              if (newActive !== undefined) setActiveFile(newActive)
-            }}
-            onFileSelect={setActiveFile}
-            onCompile={() => setShowCompile(true)}
-          />
+      {workspaceMode === 'huangshan' ? (
+        <div className="app-body huangshan-body">
+          <HuangshanWorkspace />
         </div>
+      ) : (
+        <div className="app-body">
+          <div className="editor-pane">
+            <ProjectEditor
+              files={projectFiles}
+              generatedFiles={generatedFiles}
+              referenceFiles={BSP_REFERENCE_FILES}
+              activeFile={activeFile}
+              board={board}
+              selectedSkills={selectedSkills}
+              onPreviewContextChange={handlePreviewContextChange}
+              onFileChange={(newFiles, newActive) => {
+                setProjectFiles(newFiles)
+                setLatestCompileArtifact(null)
+                if (newActive !== undefined) setActiveFile(newActive)
+              }}
+              onFileSelect={setActiveFile}
+              onCompile={() => setShowCompile(true)}
+            />
+          </div>
 
-        <div className="right-pane">
-          <div className="right-tabs">
-            <button className={`right-tab ${rightTab === 'chat' ? 'active' : ''}`} onClick={() => setRightTab('chat')}>
-              🤖 AI 助手
-            </button>
-            <button className={`right-tab ${rightTab === 'log' ? 'active' : ''}`} onClick={() => setRightTab('log')}>
-              📟 设备日志
-            </button>
-          </div>
-          <div className="right-tab-content">
-            <div className={`right-tab-panel ${rightTab === 'chat' ? 'active' : ''}`}>
-              <ChatPanel
-                settings={settings}
-                board={board}
-                boardId={boardId}
-                onInsertCode={handleInsertCode}
-                onCompileArtifact={handleCompileArtifact}
-                initialPrompt={pendingLogAnalysis}
-                onConsumePrompt={() => setPendingLogAnalysis(null)}
-                repairRequest={pendingBuildRepair}
-                onConsumeRepairRequest={() => setPendingBuildRepair(null)}
-                projectFiles={projectFiles}
-                latestManifest={latestManifest}
-                previewContext={latestPreviewContext}
-                activeFile={activeFile}
-                selectedSkills={selectedSkills}
-                onSkillsChange={handleSkillsChange}
-                onResetProject={resetProjectState}
-              />
+          <div className="right-pane">
+            <div className="right-tabs">
+              <button className={`right-tab ${rightTab === 'chat' ? 'active' : ''}`} onClick={() => setRightTab('chat')}>
+                🤖 AI 助手
+              </button>
+              <button className={`right-tab ${rightTab === 'log' ? 'active' : ''}`} onClick={() => setRightTab('log')}>
+                📟 设备日志
+              </button>
             </div>
-            <div className={`right-tab-panel ${rightTab === 'log' ? 'active' : ''}`}>
-              <LogPanel
-                onAnalyze={(logs) => {
-                  setPendingLogAnalysis(`请帮我分析以下 ESP32 设备日志，找出问题原因并给出修复建议：\n\n\`\`\`\n${logs}\n\`\`\``)
-                  setRightTab('chat')
-                }}
-              />
+            <div className="right-tab-content">
+              <div className={`right-tab-panel ${rightTab === 'chat' ? 'active' : ''}`}>
+                <ChatPanel
+                  settings={settings}
+                  board={board}
+                  boardId={boardId}
+                  onInsertCode={handleInsertCode}
+                  onCompileArtifact={handleCompileArtifact}
+                  initialPrompt={pendingLogAnalysis}
+                  onConsumePrompt={() => setPendingLogAnalysis(null)}
+                  repairRequest={pendingBuildRepair}
+                  onConsumeRepairRequest={() => setPendingBuildRepair(null)}
+                  projectFiles={projectFiles}
+                  latestManifest={latestManifest}
+                  previewContext={latestPreviewContext}
+                  activeFile={activeFile}
+                  selectedSkills={selectedSkills}
+                  onSkillsChange={handleSkillsChange}
+                  onResetProject={resetProjectState}
+                />
+              </div>
+              <div className={`right-tab-panel ${rightTab === 'log' ? 'active' : ''}`}>
+                <LogPanel
+                  onAnalyze={(logs) => {
+                    setPendingLogAnalysis(`请帮我分析以下 ESP32 设备日志，找出问题原因并给出修复建议：\n\n\`\`\`\n${logs}\n\`\`\``)
+                    setRightTab('chat')
+                  }}
+                />
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
       {showSettings && (
         <SettingsModal

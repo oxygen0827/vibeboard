@@ -57,6 +57,29 @@
   background: var(--border);
 }
 
+/* Workspace switcher */
+.workspace-switcher {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg-tertiary);
+}
+
+.workspace-switcher button {
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.workspace-switcher button.active {
+  background: var(--accent-muted);
+  color: var(--accent-hover);
+}
+
 /* Board selector */
 .board-selector {
   display: flex;
@@ -166,6 +189,10 @@
   display: flex;
   flex: 1;
   overflow: hidden;
+}
+
+.huangshan-body {
+  display: block;
 }
 
 /* ===== Editor pane ===== */
