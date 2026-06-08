@@ -28,6 +28,7 @@
     "test:board-skills": "node scripts/test-board-skills.mjs",
     "test:project-config": "node scripts/test-project-config.mjs",
     "test:huangshan-profile": "node scripts/test-huangshan-capability-profile.mjs",
+    "test:huangshan-app-template": "node scripts/test-huangshan-app-template.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
