@@ -119,7 +119,7 @@
 }
 
 .huangshan-builder-toggle {
-  grid-row: span 2;
+  grid-row: span 3;
   display: flex !important;
   flex-direction: row !important;
   align-items: center;
@@ -134,7 +134,8 @@
   width: auto;
 }
 
-.huangshan-builder-item > input {
+.huangshan-builder-item > input,
+.huangshan-builder-item > select {
   min-width: 0;
   padding: 6px 7px;
   font-size: 12px;

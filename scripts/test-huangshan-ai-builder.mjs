@@ -18,6 +18,9 @@ assert.match(messages[0].content, /metric/)
 assert.match(messages[0].content, /battery/)
 assert.match(messages[0].content, /bluetooth/)
 assert.match(messages[0].content, /action/)
+assert.match(messages[0].content, /capability/)
+assert.match(messages[0].content, /ambient_light/)
+assert.match(messages[0].content, /motor/)
 assert.match(messages[1].content, /Sport Watch/)
 assert.match(messages[1].content, /运动手表首页/)
 
@@ -27,11 +30,12 @@ const fenced = `
   "displayName": "Sport Watch",
   "description": "Workout dashboard.",
   "components": [
-    { "type": "status", "label": "Ready", "value": "Tap to start" },
-    { "type": "metric", "label": "Heart", "value": "78 bpm" },
-    { "type": "metric", "label": "Steps", "value": "4218" },
-    { "type": "battery", "label": "Battery", "value": "86%" },
-    { "type": "bluetooth", "label": "BLE", "value": "Linked" },
+    { "type": "status", "capability": "status", "label": "Ready", "value": "Tap to start" },
+    { "type": "metric", "capability": "imu", "label": "Heart", "value": "78 bpm" },
+    { "type": "metric", "capability": "ambient_light", "label": "Light", "value": "12 lux" },
+    { "type": "battery", "capability": "battery", "label": "Battery", "value": "86%" },
+    { "type": "bluetooth", "capability": "bluetooth", "label": "BLE", "value": "Linked" },
+    { "type": "action", "capability": "motor", "label": "Vibe", "value": "Motor hook" },
     { "type": "raw_code", "label": "Unsafe", "value": "ignored" }
   ]
 }
@@ -51,6 +55,7 @@ assert.deepEqual(parsed.components.map(component => component.type), [
   'metric',
   'battery',
   'bluetooth',
+  'action',
 ])
 assert.deepEqual(parsed.components.map(component => component.id), [
   'status_0',
@@ -58,6 +63,15 @@ assert.deepEqual(parsed.components.map(component => component.id), [
   'metric_2',
   'battery_3',
   'bluetooth_4',
+  'action_5',
+])
+assert.deepEqual(parsed.components.map(component => component.capability), [
+  'status',
+  'imu',
+  'ambient_light',
+  'battery',
+  'bluetooth',
+  'motor',
 ])
 
 assert.throws(

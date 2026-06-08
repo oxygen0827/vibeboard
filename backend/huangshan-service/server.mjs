@@ -1,6 +1,6 @@
 import http from 'node:http'
 import { spawn } from 'node:child_process'
-import { createReadStream, existsSync, readdirSync, statSync } from 'node:fs'
+import { createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { renderHuangshanLvglPreview } from './lvglRender.mjs'
@@ -79,6 +79,46 @@ function assertSafeSerialPort(port) {
   if (typeof port !== 'string' || !/^\/dev\/(?:cu\.[A-Za-z0-9._-]+|ttyUSB\d+|ttyACM\d+)$/.test(port)) {
     throw new Error(`Unsafe serial port: ${port || ''}`)
   }
+}
+
+function sanitizeHuangshanWorkspaceFilePath(path) {
+  if (typeof path !== 'string' || path.startsWith('/') || path.includes('..')) {
+    throw new Error(`Unsafe Huangshan file path: ${path || ''}`)
+  }
+  if (path === 'project/proj.conf') return path
+  if (!/^src\/gui_apps\/[A-Za-z0-9_/-]+\/(?:main\.c|SConscript)$/.test(path)) {
+    throw new Error(`Unsafe Huangshan file path: ${path}`)
+  }
+  return path
+}
+
+function mergeProjectConfig(existing, generated) {
+  const lines = []
+  const seen = new Set()
+  for (const line of `${existing || ''}\n${generated || ''}`.split(/\r?\n/)) {
+    if (!line.trim()) continue
+    if (seen.has(line)) continue
+    seen.add(line)
+    lines.push(line)
+  }
+  return `${lines.join('\n')}\n`
+}
+
+function applyHuangshanWorkspaceFiles({ workspace, files = {} } = {}) {
+  const written = []
+  for (const [path, contents] of Object.entries(files || {})) {
+    const safePath = sanitizeHuangshanWorkspaceFilePath(path)
+    const absolutePath = join(workspace, safePath)
+    mkdirSync(dirname(absolutePath), { recursive: true })
+    if (safePath === 'project/proj.conf') {
+      const existing = existsSync(absolutePath) ? readFileSync(absolutePath, 'utf8') : ''
+      writeFileSync(absolutePath, mergeProjectConfig(existing, String(contents ?? '')))
+    } else {
+      writeFileSync(absolutePath, String(contents ?? ''))
+    }
+    written.push(safePath)
+  }
+  return { written }
 }
 
 const ARTIFACT_KINDS = {
@@ -243,10 +283,19 @@ function runChildAsSse(res, child, { startedAt, command, successPayload = {} }) 
   })
 }
 
-function runBuild(res) {
+function runBuild(res, { files } = {}) {
   const paths = resolveWorkspace()
   if (!existsSync(paths.buildScript) || !existsSync(paths.sdkExport)) {
     sse(res, { done: true, error: 'Huangshan workspace or SiFli SDK missing', health: healthPayload() })
+    res.end()
+    return
+  }
+
+  let fileResult = { written: [] }
+  try {
+    fileResult = applyHuangshanWorkspaceFiles({ workspace: paths.workspace, files })
+  } catch (error) {
+    sse(res, { done: true, status: 'failure', error: error.message })
     res.end()
     return
   }
@@ -263,7 +312,10 @@ function runBuild(res) {
   runChildAsSse(res, child, {
     startedAt,
     command: './scripts/build.sh',
-    successPayload: { artifactSummary: createHuangshanArtifactSummary(paths) },
+    successPayload: {
+      artifactSummary: createHuangshanArtifactSummary(paths),
+      workspaceFiles: fileResult,
+    },
   })
 }
 
@@ -341,7 +393,12 @@ function createServer() {
         'Cache-Control': 'no-cache',
         Connection: 'keep-alive',
       })
-      runBuild(res)
+      readJson(req)
+        .then(body => runBuild(res, { files: body.files }))
+        .catch(error => {
+          sse(res, { done: true, status: 'failure', error: error.message })
+          res.end()
+        })
       return
     }
     if (req.method === 'POST' && req.url === '/huangshan/flash') {
@@ -407,6 +464,7 @@ if (isMain) {
 }
 
 export {
+  applyHuangshanWorkspaceFiles,
   createHuangshanArtifactSummary,
   createHuangshanFlashCommand,
   createHuangshanMonitorSetupCommand,
@@ -414,4 +472,5 @@ export {
   healthPayload,
   listHuangshanSerialPorts,
   resolveWorkspace,
+  sanitizeHuangshanWorkspaceFilePath,
 }

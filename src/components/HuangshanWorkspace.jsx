@@ -19,6 +19,17 @@ import {
 import { generateHuangshanBuilderConfig } from '../utils/huangshanAi'
 import './HuangshanWorkspace.css'
 
+const HUANGSHAN_CAPABILITY_OPTIONS = [
+  { value: 'status', label: '状态' },
+  { value: 'ambient_light', label: '环境光' },
+  { value: 'imu', label: 'IMU' },
+  { value: 'battery', label: '电池' },
+  { value: 'bluetooth', label: '蓝牙' },
+  { value: 'key', label: '按键' },
+  { value: 'led', label: 'LED' },
+  { value: 'motor', label: '马达' },
+]
+
 export default function HuangshanWorkspace({ settings, onOpenSettings }) {
   const [appDisplayName, setAppDisplayName] = useState('Board Diagnostics')
   const [description, setDescription] = useState('Show display, touch, and timer status.')
@@ -182,6 +193,7 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
     setStatus('正在构建黄山派工程...')
     try {
       const evidence = await buildHuangshanWorkspace({
+        files,
         onStatus: setStatus,
         onLog: line => setBuildLog(prev => [...prev, line]),
       })
@@ -336,6 +348,15 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
                   onChange={event => updateBuilderComponent(component.id, { value: event.target.value })}
                   aria-label={`${component.type} value`}
                 />
+                <select
+                  value={component.capability || 'status'}
+                  onChange={event => updateBuilderComponent(component.id, { capability: event.target.value })}
+                  aria-label={`${component.type} capability`}
+                >
+                  {HUANGSHAN_CAPABILITY_OPTIONS.map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
               </div>
             ))}
           </div>

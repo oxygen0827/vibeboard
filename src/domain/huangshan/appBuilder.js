@@ -1,6 +1,13 @@
 import { normalizeHuangshanAppId, normalizeHuangshanAppName } from './appTemplate.js'
 
 const COMPONENT_TYPES = new Set(['status', 'metric', 'battery', 'bluetooth', 'action'])
+const CAPABILITY_TYPES = new Set(['status', 'ambient_light', 'imu', 'battery', 'bluetooth', 'key', 'led', 'motor'])
+
+function defaultCapabilityForType(type) {
+  if (type === 'battery') return 'battery'
+  if (type === 'bluetooth') return 'bluetooth'
+  return type === 'action' ? 'key' : 'status'
+}
 
 function cStringLiteral(value) {
   return String(value || '')
@@ -13,9 +20,12 @@ function normalizeComponent(component, index) {
   if (!COMPONENT_TYPES.has(component?.type)) return null
   const label = String(component.label || component.type).trim() || component.type
   const value = String(component.value || '').trim() || 'Ready'
+  const requestedCapability = String(component.capability || '').trim()
+  const capability = CAPABILITY_TYPES.has(requestedCapability) ? requestedCapability : defaultCapabilityForType(component.type)
   return {
     id: `${component.type}_${index}`,
     type: component.type,
+    capability,
     label,
     value,
     enabled: component.enabled === false ? false : true,
@@ -31,11 +41,11 @@ export function createDefaultHuangshanBuilderConfig({
     description,
     components: [
       { type: 'status', label: 'Status', value: 'Ready' },
-      { type: 'metric', label: 'Light', value: '128 lx' },
-      { type: 'metric', label: 'Motion', value: 'Stable' },
-      { type: 'battery', label: 'Battery', value: '86%' },
-      { type: 'bluetooth', label: 'BLE', value: 'Connected' },
-      { type: 'action', label: 'Start', value: 'Action selected' },
+      { type: 'metric', capability: 'ambient_light', label: 'Light', value: '128 lx' },
+      { type: 'metric', capability: 'imu', label: 'Motion', value: 'Stable' },
+      { type: 'battery', capability: 'battery', label: 'Battery', value: '86%' },
+      { type: 'bluetooth', capability: 'bluetooth', label: 'BLE', value: 'Connected' },
+      { type: 'action', capability: 'key', label: 'Start', value: 'Action selected' },
     ],
   }
 }
@@ -55,14 +65,29 @@ export function normalizeHuangshanBuilderConfig(config = {}) {
   }
 }
 
-function createSconscript() {
+function createSconscript(config = {}) {
+  const capabilities = new Set((config.components || []).map(component => component.capability))
+  const needsSensor = capabilities.has('ambient_light') || capabilities.has('imu')
+  const needsLed = capabilities.has('led')
+  const extraIncludes = [
+    "os.path.join(rtconfig.SIFLI_SDK, 'rtos/rtthread/components/drivers/include')",
+    needsSensor ? "os.path.join(rtconfig.SIFLI_SDK, 'rtos/rtthread/components/drivers/sensors')" : null,
+    capabilities.has('ambient_light') ? "os.path.join(rtconfig.SIFLI_SDK, 'customer/peripherals/sensor/LTR303')" : null,
+    capabilities.has('imu') ? "os.path.join(rtconfig.SIFLI_SDK, 'customer/peripherals/sensor/LSM6DSL')" : null,
+    needsLed ? "os.path.join(rtconfig.SIFLI_SDK, 'drivers/Include')" : null,
+  ].filter(Boolean)
+
   return `from building import *
+import os
 import rtconfig
 
 cwd = GetCurrentDir()
 
 src = Glob('*.c')
 inc = [cwd]
+inc += [
+${extraIncludes.map(path => `    ${path},`).join('\n')}
+]
 
 LOCAL_CCFLAGS = ''
 
@@ -72,6 +97,33 @@ Return('group')
 `
 }
 
+function createProjectConfig(config = {}) {
+  const capabilities = new Set((config.components || []).map(component => component.capability))
+  const lines = ['# VibeBoard Huangshan generated capability config']
+  if (capabilities.has('ambient_light') || capabilities.has('imu')) {
+    lines.push('CONFIG_BSP_USING_I2C3=y')
+  }
+  if (capabilities.has('ambient_light')) {
+    lines.push('CONFIG_SENSOR_USING_ASL=y')
+    lines.push('CONFIG_ASL_USING_LTR303=y')
+  }
+  if (capabilities.has('imu')) {
+    lines.push('CONFIG_SENSOR_USING_6D=y')
+    lines.push('CONFIG_ACC_USING_LSM6DSL=y')
+  }
+  if (capabilities.has('battery')) {
+    lines.push('CONFIG_BSP_USING_ADC1=y')
+  }
+  if (capabilities.has('led')) {
+    lines.push('CONFIG_BSP_PWM3_CC1_USING_DMA=y')
+    lines.push('CONFIG_RGB_SK6812MINI_HS_ENABLE=y')
+    lines.push('CONFIG_RGB_USING_SK6812MINI_HS_DEV_NAME=y')
+    lines.push('CONFIG_RGB_USING_SK6812MINI_HS_PWM_DEV_NAME="pwm3"')
+    lines.push('CONFIG_BSP_USING_RGBLED_CH=1')
+  }
+  return `${lines.join('\n')}\n`
+}
+
 function createMainSource(config) {
   const appName = normalizeHuangshanAppName(config.displayName)
   const appId = normalizeHuangshanAppId(config.displayName)
@@ -79,6 +131,14 @@ function createMainSource(config) {
   const safeDescription = cStringLiteral(config.description)
   const infoComponents = config.components.filter(component => component.type !== 'action')
   const actionComponents = config.components.filter(component => component.type === 'action')
+  const capabilities = new Set(config.components.map(component => component.capability))
+  const hasAmbientLight = capabilities.has('ambient_light')
+  const hasImu = capabilities.has('imu')
+  const hasBattery = capabilities.has('battery')
+  const hasBluetooth = capabilities.has('bluetooth')
+  const hasKey = capabilities.has('key')
+  const hasLed = capabilities.has('led')
+  const hasMotor = capabilities.has('motor')
 
   const infoCalls = infoComponents.map((component, index) => {
     const column = index % 2
@@ -89,31 +149,77 @@ function createMainSource(config) {
   }).join('\n')
 
   const actionCalls = actionComponents.map((component, index) => {
-    const x = actionComponents.length === 1 ? 0 : (index === 0 ? -92 : 92)
-    return `    create_action_button(g_state.root, "${cStringLiteral(component.label)}", "${cStringLiteral(component.value)}", ${x}, 348);`
+    const column = index % 2
+    const row = Math.floor(index / 2)
+    const x = actionComponents.length === 1 ? 0 : (column === 0 ? -92 : 92)
+    const y = 330 + row * 54
+    return `    create_action_button(g_state.root, "${cStringLiteral(component.label)}", "${cStringLiteral(component.value)}", "${cStringLiteral(component.capability)}", ${x}, ${y});`
   }).join('\n')
 
   return `#include <rtthread.h>
+#include <rtdevice.h>
+#include <string.h>
+#include "board.h"
+#include "bf0_hal.h"
+#include "drv_io.h"
 #include "lvgl.h"
 #include "gui_app_fwk.h"
 #include "lv_ext_resource_manager.h"
 #include "lv_ex_data.h"
 
+${hasAmbientLight ? '#include "sensor_liteon_ltr303.h"' : ''}
+${hasImu ? '#include "st_lsm6dsl_sensor_v1.h"' : ''}
+${hasBattery ? '#include "bf0_sys_cfg.h"' : ''}
+${hasLed ? '#include "drivers/rt_drv_pwm.h"' : ''}
+
 #define APP_ID "${appId}"
+${hasBattery ? '#define HUANGSHAN_BAT_CHANNEL 7' : ''}
+${hasKey ? '#define HUANGSHAN_KEY2_PIN 43 /* KEY2 / PA43: verified by LCKFB GPIO example */' : ''}
+${hasLed ? '#define RGBLED_NAME "rgbled"' : ''}
 
 typedef struct
 {
     lv_obj_t *root;
     lv_obj_t *status_label;
+    lv_timer_t *poll_timer;
+    rt_device_t ambient_light_dev;
+    rt_device_t imu_acce_dev;
+    rt_device_t battery_dev;
+    rt_device_t rgbled_dev;
 } ${appId}_state_t;
 
 static ${appId}_state_t g_state;
+
+static void huangshan_set_status(const char *text)
+{
+    if (g_state.status_label)
+    {
+        lv_label_set_text(g_state.status_label, text);
+    }
+}
+
+static void huangshan_led_set_color_hook(uint32_t color)
+{
+${hasLed ? `    if (!g_state.rgbled_dev) return;
+    struct rt_rgbled_configuration configuration;
+    configuration.color_rgb = color;
+    rt_device_control(g_state.rgbled_dev, PWM_CMD_SET_COLOR, &configuration);` : `    (void)color;
+    rt_kprintf("[${appName}] LED capability not enabled\\n");`}
+}
+
+static void huangshan_motor_pulse_hook(void)
+{
+${hasMotor ? `    rt_kprintf("[${appName}] motor pulse hook selected; bind board motor driver after pin verification\\n");` : `    rt_kprintf("[${appName}] motor capability not enabled\\n");`}
+}
 
 static void action_event_cb(lv_event_t *event)
 {
     if (LV_EVENT_CLICKED == lv_event_get_code(event) && g_state.status_label)
     {
-        lv_label_set_text(g_state.status_label, (const char *)lv_event_get_user_data(event));
+        const char *status_text = (const char *)lv_event_get_user_data(event);
+        huangshan_set_status(status_text);
+${hasLed ? `        if (status_text && strstr(status_text, "LED")) huangshan_led_set_color_hook(0x000F00);` : ''}
+${hasMotor ? `        if (status_text && strstr(status_text, "Motor")) huangshan_motor_pulse_hook();` : ''}
     }
 }
 
@@ -141,8 +247,9 @@ static lv_obj_t *create_info_chip(lv_obj_t *parent, const char *label_text, cons
     return chip;
 }
 
-static lv_obj_t *create_action_button(lv_obj_t *parent, const char *label_text, const char *status_text, int32_t x, int32_t y)
+static lv_obj_t *create_action_button(lv_obj_t *parent, const char *label_text, const char *status_text, const char *capability, int32_t x, int32_t y)
 {
+    (void)capability;
     lv_obj_t *button = lv_btn_create(parent);
     lv_obj_set_size(button, 150, 46);
     lv_obj_set_style_radius(button, 23, 0);
@@ -154,6 +261,79 @@ static lv_obj_t *create_action_button(lv_obj_t *parent, const char *label_text, 
     lv_label_set_text(label, label_text);
     lv_obj_center(label);
     return button;
+}
+
+static void huangshan_capability_init(void)
+{
+${hasAmbientLight ? `    struct rt_sensor_config light_cfg;
+    rt_memset(&light_cfg, 0, sizeof(light_cfg));
+    light_cfg.intf.dev_name = "i2c3";
+    HAL_PIN_Set(PAD_PA40, I2C3_SCL, PIN_PULLUP, 1);
+    HAL_PIN_Set(PAD_PA39, I2C3_SDA, PIN_PULLUP, 1);
+    rt_hw_ltr303_init("ltr303", &light_cfg);
+    g_state.ambient_light_dev = rt_device_find("li_ltr303");
+    if (g_state.ambient_light_dev)
+    {
+        rt_device_open(g_state.ambient_light_dev, RT_DEVICE_FLAG_RDONLY);
+        rt_device_control(g_state.ambient_light_dev, RT_SENSOR_CTRL_SET_POWER, (void *)RT_SENSOR_POWER_NORMAL);
+    }
+` : ''}
+${hasImu ? `    struct rt_sensor_config imu_cfg;
+    rt_memset(&imu_cfg, 0, sizeof(imu_cfg));
+    imu_cfg.intf.dev_name = "i2c3";
+    imu_cfg.intf.user_data = (void *)LSM6DSL_ADDR_DEFAULT;
+    imu_cfg.irq_pin.pin = RT_PIN_NONE;
+    HAL_PIN_Set(PAD_PA40, I2C3_SCL, PIN_PULLUP, 1);
+    HAL_PIN_Set(PAD_PA39, I2C3_SDA, PIN_PULLUP, 1);
+    rt_hw_lsm6dsl_init("lsm6d", &imu_cfg);
+    g_state.imu_acce_dev = rt_device_find("acce_lsm");
+    if (g_state.imu_acce_dev)
+    {
+        rt_device_open(g_state.imu_acce_dev, RT_DEVICE_FLAG_RDONLY);
+        rt_device_control(g_state.imu_acce_dev, RT_SENSOR_CTRL_SET_ODR, (void *)1660);
+    }
+` : ''}
+${hasBattery ? `    g_state.battery_dev = rt_device_find("bat1");
+` : ''}
+${hasKey ? `    rt_pin_mode(HUANGSHAN_KEY2_PIN, PIN_MODE_INPUT);
+` : ''}
+${hasLed ? `    HAL_PMU_ConfigPeriLdo(PMU_PERI_LDO3_3V3, true, true);
+    HAL_PIN_Set(PAD_PA32, GPTIM2_CH1, PIN_NOPULL, 1);
+    g_state.rgbled_dev = rt_device_find(RGBLED_NAME);
+` : ''}
+${hasBluetooth ? `    rt_kprintf("[${appName}] BLE capability requested; generate service binding in next slice\\n");
+` : ''}
+}
+
+static void huangshan_capability_poll(lv_timer_t *timer)
+{
+    (void)timer;
+${hasAmbientLight ? `    if (g_state.ambient_light_dev)
+    {
+        struct rt_sensor_data light;
+        if (rt_device_read(g_state.ambient_light_dev, 0, &light, 1) == 1)
+        {
+            rt_kprintf("[${appName}] light: %d lux\\n", light.data.light);
+        }
+    }
+` : ''}
+${hasImu ? `    if (g_state.imu_acce_dev)
+    {
+        struct rt_sensor_data acce;
+        if (rt_device_read(g_state.imu_acce_dev, 0, &acce, 1) == 1)
+        {
+            rt_kprintf("[${appName}] acce: %d,%d,%d\\n", acce.data.acce.x, acce.data.acce.y, acce.data.acce.z);
+        }
+    }
+` : ''}
+${hasBattery ? `    if (g_state.battery_dev)
+    {
+        rt_adc_enable((rt_adc_device_t)g_state.battery_dev, HUANGSHAN_BAT_CHANNEL);
+        rt_uint32_t vbat = rt_adc_read((rt_adc_device_t)g_state.battery_dev, HUANGSHAN_BAT_CHANNEL);
+        rt_adc_disable((rt_adc_device_t)g_state.battery_dev, HUANGSHAN_BAT_CHANNEL);
+        rt_kprintf("[${appName}] VBAT read value: %u\\n", vbat);
+    }
+` : ''}
 }
 
 static void back_event_cb(lv_event_t *event)
@@ -205,11 +385,18 @@ ${actionCalls}
     lv_obj_set_style_text_align(g_state.status_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(g_state.status_label, lv_color_hex(0xA7F3D0), 0);
     lv_obj_align(g_state.status_label, LV_ALIGN_BOTTOM_MID, 0, -18);
+    huangshan_capability_init();
+    g_state.poll_timer = lv_timer_create(huangshan_capability_poll, 1000, RT_NULL);
     rt_kprintf("[${appName}] start\\n");
 }
 
 static void on_stop(void)
 {
+    if (g_state.poll_timer)
+    {
+        lv_timer_del(g_state.poll_timer);
+        g_state.poll_timer = RT_NULL;
+    }
     if (g_state.root)
     {
         lv_obj_del(g_state.root);
@@ -234,7 +421,16 @@ static void msg_handler(gui_app_msg_type_t msg, void *param)
 }
 
 LV_IMG_DECLARE(img_LiChuang);
-BUILTIN_APP_EXPORT(LV_EXT_STR_ID(${appId}), LV_EXT_IMG_GET(img_LiChuang), APP_ID, msg_handler);
+
+static int app_main(intent_t i)
+{
+    (void)i;
+    gui_app_regist_msg_handler(APP_ID, msg_handler);
+    rt_kprintf("[${appName}] registered\\n");
+    return 0;
+}
+
+BUILTIN_APP_EXPORT(LV_EXT_STR_ID(lckfb), LV_EXT_IMG_GET(img_LiChuang), APP_ID, app_main);
 `
 }
 
@@ -243,7 +439,8 @@ export function createHuangshanAppFilesFromBuilder(config = {}) {
   const appName = normalizeHuangshanAppName(normalized.displayName)
   const baseDir = `src/gui_apps/${appName}`
   return {
-    [`${baseDir}/SConscript`]: createSconscript(),
+    [`${baseDir}/SConscript`]: createSconscript(normalized),
     [`${baseDir}/main.c`]: createMainSource(normalized),
+    'project/proj.conf': createProjectConfig(normalized),
   }
 }

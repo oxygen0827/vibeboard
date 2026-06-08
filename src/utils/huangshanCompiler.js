@@ -96,9 +96,10 @@ export async function monitorHuangshanSerial({ port, baud = 1000000, signal, onS
   })
 }
 
-export async function buildHuangshanWorkspace({ onStatus, onLog } = {}) {
+export async function buildHuangshanWorkspace({ files, onStatus, onLog } = {}) {
   const result = await runHuangshanStream({
     url: '/huangshan/build',
+    body: { files },
     initialStatus: '正在连接黄山派构建服务...',
     onStatus,
     onLog,

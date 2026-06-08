@@ -60,7 +60,8 @@ function createLvConf() {
 #define LV_FONT_MONTSERRAT_18 1
 #define LV_FONT_MONTSERRAT_20 1
 #define LV_FONT_MONTSERRAT_24 1
-#define LV_FONT_DEFAULT &lv_font_montserrat_14
+#define LV_FONT_SIMSUN_16_CJK 1
+#define LV_FONT_DEFAULT &lv_font_simsun_16_cjk
 
 #define LV_USE_LABEL 1
 #define LV_USE_BTN 1
@@ -83,6 +84,8 @@ function createAppUiSource(preview) {
 
   return `#include "lvgl.h"
 #include "app_ui.h"
+
+#define HUANGSHAN_TEXT_FONT (&lv_font_simsun_16_cjk)
 
 static lv_obj_t *status_label;
 
@@ -130,7 +133,7 @@ static void create_icon(lv_obj_t *parent, const char *text, const char *status_t
     lv_obj_t *label = lv_label_create(icon);
     lv_label_set_text(label, text);
     lv_obj_set_style_text_color(label, lv_color_hex(0xFFFFFF), 0);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(label, HUANGSHAN_TEXT_FONT, 0);
     lv_obj_center(label);
 }
 
@@ -160,7 +163,7 @@ void app_ui_create(lv_obj_t *parent)
     lv_obj_center(back_label);
     lv_obj_add_event_cb(back, back_event_cb, LV_EVENT_CLICKED, NULL);
 
-    lv_obj_t *title = create_label(parent, ${cString(preview.title)}, 70, LV_FONT_DEFAULT, lv_color_hex(0xF8FAFC));
+    lv_obj_t *title = create_label(parent, ${cString(preview.title)}, 70, HUANGSHAN_TEXT_FONT, lv_color_hex(0xF8FAFC));
     lv_label_set_long_mode(title, LV_LABEL_LONG_DOT);
 
     create_icon(parent, ${cString(itemLabels[0])}, ${cString(`${itemLabels[0]} selected`)}, -76, -22, lv_color_hex(0xD97706));
@@ -168,10 +171,10 @@ void app_ui_create(lv_obj_t *parent)
     create_icon(parent, ${cString(itemLabels[2])}, ${cString(`${itemLabels[2]} selected`)}, -76, 92, lv_color_hex(0x16A34A));
     create_icon(parent, ${cString(itemLabels[3])}, ${cString(`${itemLabels[3]} selected`)}, 76, 92, lv_color_hex(0xF8FAFC));
 
-    status_label = create_label(parent, ${cString(preview.status)}, 332, LV_FONT_DEFAULT, lv_color_hex(0xA7F3D0));
+    status_label = create_label(parent, ${cString(preview.status)}, 332, HUANGSHAN_TEXT_FONT, lv_color_hex(0xA7F3D0));
     lv_label_set_long_mode(status_label, LV_LABEL_LONG_DOT);
 
-    lv_obj_t *subtitle = create_label(parent, ${cString(preview.subtitle)}, 374, LV_FONT_DEFAULT, lv_color_hex(0x94A3B8));
+    lv_obj_t *subtitle = create_label(parent, ${cString(preview.subtitle)}, 374, HUANGSHAN_TEXT_FONT, lv_color_hex(0x94A3B8));
     lv_label_set_long_mode(subtitle, LV_LABEL_LONG_DOT);
 }
 `

@@ -33,6 +33,7 @@
     "test:huangshan-ai-builder": "node scripts/test-huangshan-ai-builder.mjs",
     "test:huangshan-build-evidence": "node scripts/test-huangshan-build-adapter-log-parser.mjs",
     "test:huangshan-build-artifacts": "node scripts/test-huangshan-build-artifacts.mjs",
+    "test:huangshan-workspace-files": "node scripts/test-huangshan-workspace-files.mjs",
     "test:huangshan-device-actions": "node scripts/test-huangshan-device-actions.mjs",
     "test:huangshan-semantic-preview": "node scripts/test-huangshan-semantic-preview.mjs",
     "test:huangshan-real-preview": "node scripts/test-huangshan-real-preview.mjs",

@@ -2,6 +2,7 @@ import { HUANGSHAN_BOARD_PROFILE } from './boardProfile.js'
 import { normalizeHuangshanBuilderConfig } from './appBuilder.js'
 
 const COMPONENT_TYPES = ['status', 'metric', 'battery', 'bluetooth', 'action']
+const CAPABILITY_TYPES = ['status', 'ambient_light', 'imu', 'battery', 'bluetooth', 'key', 'led', 'motor']
 
 function trimText(value) {
   return String(value || '').trim()
@@ -19,7 +20,8 @@ export function createHuangshanAiBuilderMessages({
         'You generate Huangshan Pi SF32LB52 watch UI builder JSON.',
         'Return ONLY one JSON object. Do not include markdown or prose.',
         'Allowed component types: status, metric, battery, bluetooth, action.',
-        'The output schema is: {"displayName": string, "description": string, "components": [{"type": string, "label": string, "value": string, "enabled": boolean}]}',
+        'Allowed capability values: status, ambient_light, imu, battery, bluetooth, key, led, motor.',
+        'The output schema is: {"displayName": string, "description": string, "components": [{"type": string, "capability": string, "label": string, "value": string, "enabled": boolean}]}',
         'Use concise labels and values that fit a 390x450 round-corner AMOLED watch screen.',
         'Do not return C code, JavaScript, HTML, CSS, shell commands, paths, or unsupported component types.',
       ].join('\n'),
@@ -36,6 +38,7 @@ export function createHuangshanAiBuilderMessages({
         '',
         `User request: ${trimText(userPrompt) || 'Create a practical diagnostics watch screen.'}`,
         '',
+        'Capability mapping hints: environment light -> ambient_light, IMU/motion/steps -> imu, power/VBAT -> battery, BLE -> bluetooth, physical key -> key, RGB LED -> led, vibration -> motor.',
         'Prefer 4 to 6 components. Use at most one action component.',
       ].join('\n'),
     },
@@ -69,7 +72,12 @@ export function extractHuangshanBuilderConfigFromAiText(text, fallback = {}) {
     displayName: parsed.displayName || fallback.displayName,
     description: parsed.description || fallback.description,
     components: Array.isArray(parsed.components)
-      ? parsed.components.filter(component => COMPONENT_TYPES.includes(component?.type))
+      ? parsed.components
+        .filter(component => COMPONENT_TYPES.includes(component?.type))
+        .map(component => ({
+          ...component,
+          capability: CAPABILITY_TYPES.includes(component?.capability) ? component.capability : undefined,
+        }))
       : undefined,
   })
 

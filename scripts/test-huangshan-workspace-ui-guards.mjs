@@ -13,6 +13,9 @@ assert.match(source, /renderHuangshanLvglPreview\(\{ displayName: appDisplayName
 assert.match(appSource, /<HuangshanWorkspace settings=\{settings\} onOpenSettings=\{\(\) => setShowSettings\(true\)\} \/>/)
 assert.match(source, /generateHuangshanBuilderConfig/)
 assert.match(source, /handleGenerateWithAi/)
+assert.match(source, /HUANGSHAN_CAPABILITY_OPTIONS/)
+assert.match(source, /ambient_light/)
+assert.match(source, /aria-label=\{`\$\{component\.type\} capability`\}/)
 
 assert.match(styles, /\.huangshan-stage\s*\{[\s\S]*flex:\s*0 0 400px;/)
 assert.match(styles, /\.huangshan-watch-shell\s*\{[\s\S]*width:\s*260px;/)
