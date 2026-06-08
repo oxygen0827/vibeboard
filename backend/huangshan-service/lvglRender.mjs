@@ -84,6 +84,21 @@ function createAppUiSource(preview) {
   return `#include "lvgl.h"
 #include "app_ui.h"
 
+static lv_obj_t *status_label;
+
+static void icon_event_cb(lv_event_t *event)
+{
+    if (status_label == NULL) return;
+    lv_label_set_text(status_label, (const char *)lv_event_get_user_data(event));
+}
+
+static void back_event_cb(lv_event_t *event)
+{
+    (void)event;
+    if (status_label == NULL) return;
+    lv_label_set_text(status_label, "Back pressed");
+}
+
 static lv_obj_t *create_label(lv_obj_t *parent, const char *text, int32_t y, const lv_font_t *font, lv_color_t color)
 {
     lv_obj_t *label = lv_label_create(parent);
@@ -96,7 +111,7 @@ static lv_obj_t *create_label(lv_obj_t *parent, const char *text, int32_t y, con
     return label;
 }
 
-static void create_icon(lv_obj_t *parent, const char *text, int32_t x, int32_t y, lv_color_t color)
+static void create_icon(lv_obj_t *parent, const char *text, const char *status_text, int32_t x, int32_t y, lv_color_t color)
 {
     lv_obj_t *icon = lv_btn_create(parent);
     lv_obj_remove_style_all(icon);
@@ -110,6 +125,7 @@ static void create_icon(lv_obj_t *parent, const char *text, int32_t x, int32_t y
     lv_obj_set_style_shadow_width(icon, 10, 0);
     lv_obj_set_style_shadow_color(icon, lv_color_hex(0x000000), 0);
     lv_obj_align(icon, LV_ALIGN_CENTER, x, y);
+    lv_obj_add_event_cb(icon, icon_event_cb, LV_EVENT_CLICKED, (void *)status_text);
 
     lv_obj_t *label = lv_label_create(icon);
     lv_label_set_text(label, text);
@@ -142,17 +158,18 @@ void app_ui_create(lv_obj_t *parent)
     lv_label_set_text(back_label, "Back");
     lv_obj_set_style_text_color(back_label, lv_color_hex(0xCBD5E1), 0);
     lv_obj_center(back_label);
+    lv_obj_add_event_cb(back, back_event_cb, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *title = create_label(parent, ${cString(preview.title)}, 70, LV_FONT_DEFAULT, lv_color_hex(0xF8FAFC));
     lv_label_set_long_mode(title, LV_LABEL_LONG_DOT);
 
-    create_icon(parent, ${cString(itemLabels[0])}, -76, -22, lv_color_hex(0xD97706));
-    create_icon(parent, ${cString(itemLabels[1])}, 76, -22, lv_color_hex(0x1D8BD1));
-    create_icon(parent, ${cString(itemLabels[2])}, -76, 92, lv_color_hex(0x16A34A));
-    create_icon(parent, ${cString(itemLabels[3])}, 76, 92, lv_color_hex(0xF8FAFC));
+    create_icon(parent, ${cString(itemLabels[0])}, ${cString(`${itemLabels[0]} selected`)}, -76, -22, lv_color_hex(0xD97706));
+    create_icon(parent, ${cString(itemLabels[1])}, ${cString(`${itemLabels[1]} selected`)}, 76, -22, lv_color_hex(0x1D8BD1));
+    create_icon(parent, ${cString(itemLabels[2])}, ${cString(`${itemLabels[2]} selected`)}, -76, 92, lv_color_hex(0x16A34A));
+    create_icon(parent, ${cString(itemLabels[3])}, ${cString(`${itemLabels[3]} selected`)}, 76, 92, lv_color_hex(0xF8FAFC));
 
-    lv_obj_t *status = create_label(parent, ${cString(preview.status)}, 332, LV_FONT_DEFAULT, lv_color_hex(0xA7F3D0));
-    lv_label_set_long_mode(status, LV_LABEL_LONG_DOT);
+    status_label = create_label(parent, ${cString(preview.status)}, 332, LV_FONT_DEFAULT, lv_color_hex(0xA7F3D0));
+    lv_label_set_long_mode(status_label, LV_LABEL_LONG_DOT);
 
     lv_obj_t *subtitle = create_label(parent, ${cString(preview.subtitle)}, 374, LV_FONT_DEFAULT, lv_color_hex(0x94A3B8));
     lv_label_set_long_mode(subtitle, LV_LABEL_LONG_DOT);

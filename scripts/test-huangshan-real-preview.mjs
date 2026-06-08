@@ -41,6 +41,12 @@ assert.match(renderPackage.files['app_ui.c'], /lv_obj_set_style_bg_color\(parent
 assert.match(renderPackage.files['app_ui.c'], /create_label\(parent, "Quote \\"Dash\\"", 70/)
 assert.match(renderPackage.files['app_ui.c'], /create_label\(parent, "Line one Line two", 374/)
 assert.match(renderPackage.files['app_ui.c'], /create_label\(parent, "Quote_Dash: ready", 332/)
+assert.match(renderPackage.files['app_ui.c'], /static lv_obj_t \*status_label;/)
+assert.match(renderPackage.files['app_ui.c'], /static void back_event_cb\(lv_event_t \*event\)/)
+assert.match(renderPackage.files['app_ui.c'], /static void icon_event_cb\(lv_event_t \*event\)/)
+assert.match(renderPackage.files['app_ui.c'], /lv_obj_add_event_cb\(back, back_event_cb, LV_EVENT_CLICKED, NULL\);/)
+assert.match(renderPackage.files['app_ui.c'], /lv_obj_add_event_cb\(icon, icon_event_cb, LV_EVENT_CLICKED, \(void \*\)status_text\);/)
+assert.match(renderPackage.files['app_ui.c'], /lv_label_set_text\(status_label, \(const char \*\)lv_event_get_user_data\(event\)\);/)
 assert.doesNotMatch(renderPackage.files['app_ui.c'], /undefined|null/)
 
 assert.deepEqual(normalizeHuangshanTap({ x: 12.6, y: 20.2 }), { x: 13, y: 20 })
