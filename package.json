@@ -1,6 +1,7 @@
 {
   "name": "vibeboard",
   "version": "0.1.0",
+  "type": "module",
   "private": true,
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5173",
@@ -26,6 +27,7 @@
     "test:project-validation": "node scripts/test-project-validation.mjs",
     "test:board-skills": "node scripts/test-board-skills.mjs",
     "test:project-config": "node scripts/test-project-config.mjs",
+    "test:huangshan-profile": "node scripts/test-huangshan-capability-profile.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
