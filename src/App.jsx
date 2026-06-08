@@ -274,7 +274,7 @@ export default function App() {
 
       {workspaceMode === 'huangshan' ? (
         <div className="app-body huangshan-body">
-          <HuangshanWorkspace />
+          <HuangshanWorkspace settings={settings} onOpenSettings={() => setShowSettings(true)} />
         </div>
       ) : (
         <div className="app-body">

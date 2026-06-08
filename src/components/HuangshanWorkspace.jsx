@@ -16,11 +16,15 @@ import {
   monitorHuangshanSerial,
   renderHuangshanLvglPreview,
 } from '../utils/huangshanCompiler'
+import { generateHuangshanBuilderConfig } from '../utils/huangshanAi'
 import './HuangshanWorkspace.css'
 
-export default function HuangshanWorkspace() {
+export default function HuangshanWorkspace({ settings, onOpenSettings }) {
   const [appDisplayName, setAppDisplayName] = useState('Board Diagnostics')
   const [description, setDescription] = useState('Show display, touch, and timer status.')
+  const [aiPrompt, setAiPrompt] = useState('做一个黄山派运动手表首页，显示心率、步数、电量、蓝牙和开始运动按钮。')
+  const [aiState, setAiState] = useState('idle')
+  const [aiError, setAiError] = useState('')
   const [builderConfig, setBuilderConfig] = useState(() => normalizeHuangshanBuilderConfig(createDefaultHuangshanBuilderConfig({
     displayName: 'Board Diagnostics',
     description: 'Show display, touch, and timer status.',
@@ -96,6 +100,38 @@ export default function HuangshanWorkspace() {
     setRenderState('idle')
     setRenderError('')
     setStatus(`已生成 Builder App: ${appName}`)
+  }
+
+  async function handleGenerateWithAi() {
+    setAiState('generating')
+    setAiError('')
+    setStatus('正在用 AI 生成黄山派 Builder 页面...')
+    try {
+      const generated = await generateHuangshanBuilderConfig({
+        settings,
+        userPrompt: aiPrompt,
+        displayName: appDisplayName,
+        description,
+      })
+      const normalized = normalizeHuangshanBuilderConfig(generated.config)
+      const next = createHuangshanAppFilesFromBuilder(normalized)
+      setAppDisplayName(normalized.displayName)
+      setDescription(normalized.description)
+      setBuilderConfig(normalized)
+      setFiles(next)
+      setActiveFile(Object.keys(next)[0])
+      setBuildEvidence(null)
+      setBuildLog([])
+      setRealPreview(null)
+      setRenderState('idle')
+      setRenderError('')
+      setAiState('ok')
+      setStatus(`AI 已生成黄山派页面: ${normalizeHuangshanAppName(normalized.displayName)}`)
+    } catch (error) {
+      setAiState('error')
+      setAiError(error.message || 'AI 生成失败')
+      setStatus(error.message || 'AI 生成失败')
+    }
   }
 
   function updateBuilderComponent(componentId, patch) {
@@ -249,6 +285,32 @@ export default function HuangshanWorkspace() {
           <button className="huangshan-build" onClick={handleBuild} disabled={buildState === 'building'}>
             {buildState === 'building' ? '构建中...' : '运行 SCons 构建'}
           </button>
+        </div>
+
+        <div className="huangshan-section huangshan-ai-section">
+          <div className="huangshan-heading">AI Builder</div>
+          <label>
+            Natural language
+            <textarea
+              value={aiPrompt}
+              onChange={event => setAiPrompt(event.target.value)}
+              placeholder="例如：做一个天气手表首页，显示温度、湿度、紫外线、电量和同步按钮。"
+            />
+          </label>
+          <div className="huangshan-ai-actions">
+            <button
+              className="huangshan-primary"
+              onClick={handleGenerateWithAi}
+              disabled={aiState === 'generating'}
+            >
+              {aiState === 'generating' ? 'AI 生成中...' : 'AI 生成页面'}
+            </button>
+            <button className="huangshan-secondary" onClick={onOpenSettings} type="button">
+              配置 AI
+            </button>
+          </div>
+          {aiError && <div className="huangshan-ai-error">{aiError}</div>}
+          <p className="huangshan-ai-note">当前生成受限在 Builder 组件内，生成后可直接真实 LVGL 渲染。</p>
         </div>
 
         <div className="huangshan-section">

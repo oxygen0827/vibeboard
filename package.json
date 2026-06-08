@@ -30,6 +30,7 @@
     "test:huangshan-profile": "node scripts/test-huangshan-capability-profile.mjs",
     "test:huangshan-app-template": "node scripts/test-huangshan-app-template.mjs",
     "test:huangshan-app-builder": "node scripts/test-huangshan-app-builder.mjs",
+    "test:huangshan-ai-builder": "node scripts/test-huangshan-ai-builder.mjs",
     "test:huangshan-build-evidence": "node scripts/test-huangshan-build-adapter-log-parser.mjs",
     "test:huangshan-build-artifacts": "node scripts/test-huangshan-build-artifacts.mjs",
     "test:huangshan-device-actions": "node scripts/test-huangshan-device-actions.mjs",
