@@ -1,12 +1,16 @@
 import http from 'node:http'
 import { spawn } from 'node:child_process'
 import { createReadStream, existsSync, readdirSync, statSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { renderHuangshanLvglPreview } from './lvglRender.mjs'
 
 const DEFAULT_WORKSPACE = '/Users/wq/huangshan-pi-workspace/huangshan-pi-sf32-dev'
 const DEFAULT_SDK = '/Users/wq/huangshan-pi-workspace/sifli-sdk'
 const PORT = Number(process.env.HUANGSHAN_SERVICE_PORT || 8771)
+const SERVICE_DIR = dirname(fileURLToPath(import.meta.url))
+const REPO_ROOT = resolve(SERVICE_DIR, '../..')
+const PREVIEW_RUNNER_DIR = join(REPO_ROOT, 'backend/compiler-service/preview_runner')
 
 function json(res, status, payload) {
   res.writeHead(status, { 'Content-Type': 'application/json' })
@@ -174,7 +178,7 @@ function runMonitor(res, { port, baud }) {
       status: 'connected',
       command: `${setup.command} ${setup.args.join(' ')}`,
       port,
-          baud: Number(baud) || 921600,
+      baud: Number(baud) || 921600,
     })
 
     const stream = createReadStream(port, { encoding: 'utf8' })
@@ -304,6 +308,22 @@ function runFlash(res, { port }) {
   })
 }
 
+function runLvglRender(body) {
+  const paths = resolveWorkspace()
+  const startedAt = Date.now()
+  const result = renderHuangshanLvglPreview({
+    sdk: paths.sdk,
+    runnerDir: PREVIEW_RUNNER_DIR,
+    displayName: body.displayName,
+    description: body.description,
+    files: body.files,
+  })
+  return {
+    ...result,
+    elapsedMs: Date.now() - startedAt,
+  }
+}
+
 function createServer() {
   return http.createServer((req, res) => {
     if (req.method === 'GET' && req.url === '/huangshan/health') {
@@ -352,6 +372,16 @@ function createServer() {
           sse(res, { done: true, status: 'failure', error: error.message })
           res.end()
         })
+      return
+    }
+    if (req.method === 'POST' && req.url === '/huangshan/render-lvgl') {
+      readJson(req)
+        .then(body => json(res, 200, runLvglRender(body)))
+        .catch(error => json(res, 200, {
+          status: 'failure',
+          renderer: 'real-lvgl-v8-headless',
+          error: error.message,
+        }))
       return
     }
     json(res, 404, { error: 'not found' })

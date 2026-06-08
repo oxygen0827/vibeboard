@@ -99,7 +99,8 @@
 .huangshan-primary,
 .huangshan-build,
 .huangshan-flash,
-.huangshan-monitor {
+.huangshan-monitor,
+.huangshan-render {
   width: 100%;
   margin-top: 8px;
   padding: 9px 10px;
@@ -121,9 +122,17 @@
   color: var(--text-secondary);
 }
 
+.huangshan-render {
+  width: 190px;
+  margin-top: 0;
+  border-color: var(--accent);
+  font-size: 12px;
+}
+
 .huangshan-build:disabled,
 .huangshan-flash:disabled,
-.huangshan-monitor:disabled {
+.huangshan-monitor:disabled,
+.huangshan-render:disabled {
   opacity: 0.6;
   cursor: wait;
 }
@@ -199,6 +208,12 @@
     radial-gradient(circle at 28% 26%, rgba(251, 146, 60, 0.18), transparent 16%),
     #06090d;
   border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.huangshan-framebuffer {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .huangshan-watch-glow {
@@ -287,6 +302,14 @@
   color: var(--text-muted);
   font-size: 11px;
   font-family: var(--font-mono);
+}
+
+.huangshan-render-error {
+  width: 190px;
+  color: var(--red);
+  font-size: 11px;
+  line-height: 1.4;
+  text-align: center;
 }
 
 .huangshan-files {

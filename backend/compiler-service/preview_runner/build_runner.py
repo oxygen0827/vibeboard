@@ -7,6 +7,7 @@ from pathlib import Path
 
 
 def collect_sources(lvgl_dir: Path):
+    core_only = os.environ.get("LVGL_PREVIEW_CORE_ONLY") == "1"
     return [
         str(path)
         for path in lvgl_dir.rglob("*.c")
@@ -14,6 +15,8 @@ def collect_sources(lvgl_dir: Path):
         and "/demos/" not in path.as_posix()
         and "/tests/" not in path.as_posix()
         and "/env_support/" not in path.as_posix()
+        and (not core_only or "/src/extra/" not in path.as_posix())
+        and (not core_only or not path.name.startswith("lv_font_loader"))
     ]
 
 
@@ -40,6 +43,9 @@ def main():
     sources = collect_sources(lvgl_dir)
     sources.append(str(runner_dir / "runner.c"))
     sources.append(str(work_dir / "app_ui.c"))
+    for path in sorted(work_dir.glob("*.c")):
+        if path.name != "app_ui.c":
+            sources.append(str(path))
 
     cmd = [
         compiler,
@@ -52,6 +58,7 @@ def main():
         "-I", str(runner_dir),
         "-I", str(lvgl_dir.parent),
         "-I", str(lvgl_dir),
+        "-I", str(lvgl_dir / "src"),
         "-o", str(output_exe),
         *sources,
         "-lm",

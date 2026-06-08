@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Editor from '@monaco-editor/react'
 import { HUANGSHAN_BOARD_PROFILE, listHuangshanCapabilities } from '../domain/huangshan/boardProfile'
 import { createHuangshanAppFiles, normalizeHuangshanAppName } from '../domain/huangshan/appTemplate'
@@ -9,6 +9,7 @@ import {
   loadHuangshanHealth,
   loadHuangshanSerialPorts,
   monitorHuangshanSerial,
+  renderHuangshanLvglPreview,
 } from '../utils/huangshanCompiler'
 import './HuangshanWorkspace.css'
 
@@ -31,6 +32,9 @@ export default function HuangshanWorkspace() {
   const [flashState, setFlashState] = useState('idle')
   const [monitorState, setMonitorState] = useState('idle')
   const [monitorAbort, setMonitorAbort] = useState(null)
+  const [realPreview, setRealPreview] = useState(null)
+  const [renderState, setRenderState] = useState('idle')
+  const [renderError, setRenderError] = useState('')
 
   const appName = useMemo(() => normalizeHuangshanAppName(appDisplayName), [appDisplayName])
   const capabilities = useMemo(() => listHuangshanCapabilities(), [])
@@ -60,7 +64,27 @@ export default function HuangshanWorkspace() {
     setActiveFile(Object.keys(next)[0])
     setBuildEvidence(null)
     setBuildLog([])
+    setRealPreview(null)
+    setRenderState('idle')
+    setRenderError('')
     setStatus(`已生成 ${appName}`)
+  }
+
+  async function handleRenderPreview() {
+    setRenderState('rendering')
+    setRenderError('')
+    setStatus('正在执行真实 LVGL 渲染...')
+    try {
+      const rendered = await renderHuangshanLvglPreview({ displayName: appDisplayName, description, files })
+      setRealPreview(rendered)
+      setRenderState('ok')
+      setStatus(`真实 LVGL 渲染完成: ${rendered.viewport.width}x${rendered.viewport.height}`)
+    } catch (error) {
+      setRealPreview(null)
+      setRenderState('error')
+      setRenderError(error.message || '真实 LVGL 渲染失败')
+      setStatus(error.message || '真实 LVGL 渲染失败')
+    }
   }
 
   async function handleBuild() {
@@ -153,11 +177,17 @@ export default function HuangshanWorkspace() {
         <div className="huangshan-section">
           <label>
             App name
-            <input value={appDisplayName} onChange={event => setAppDisplayName(event.target.value)} />
+            <input value={appDisplayName} onChange={event => {
+              setAppDisplayName(event.target.value)
+              setRealPreview(null)
+            }} />
           </label>
           <label>
             Description
-            <textarea value={description} onChange={event => setDescription(event.target.value)} />
+            <textarea value={description} onChange={event => {
+              setDescription(event.target.value)
+              setRealPreview(null)
+            }} />
           </label>
           <button className="huangshan-primary" onClick={regenerateTemplate}>生成 App 模板</button>
           <button className="huangshan-build" onClick={handleBuild} disabled={buildState === 'building'}>
@@ -208,7 +238,13 @@ export default function HuangshanWorkspace() {
 
       <section className="huangshan-main">
         <div className="huangshan-preview-panel">
-          <HuangshanDevicePreview preview={preview} />
+          <HuangshanDevicePreview
+            preview={preview}
+            realPreview={realPreview}
+            renderState={renderState}
+            renderError={renderError}
+            onRender={handleRenderPreview}
+          />
         </div>
         <div className="huangshan-files">
           {filePaths.map(path => (
@@ -228,7 +264,10 @@ export default function HuangshanWorkspace() {
             language={activeFile.endsWith('SConscript') ? 'python' : 'c'}
             theme="vs-dark"
             value={activeContent}
-            onChange={value => setFiles(prev => ({ ...prev, [activeFile]: value || '' }))}
+            onChange={value => {
+              setFiles(prev => ({ ...prev, [activeFile]: value || '' }))
+              setRealPreview(null)
+            }}
             options={{ minimap: { enabled: false }, fontSize: 13, scrollBeyondLastLine: false }}
           />
         </div>
@@ -265,29 +304,75 @@ export default function HuangshanWorkspace() {
   )
 }
 
-function HuangshanDevicePreview({ preview }) {
+function HuangshanDevicePreview({ preview, realPreview, renderState, renderError, onRender }) {
+  const hasRealPreview = realPreview?.rgbaBase64 && realPreview?.viewport
+
   return (
     <div className="huangshan-device-preview">
       <div className="huangshan-watch-shell">
         <div className="huangshan-watch-screen">
-          <div className="huangshan-watch-glow" />
-          <div className="huangshan-watch-title">{preview.title}</div>
-          <div className="huangshan-watch-grid">
-            {preview.launcherItems.map((item, index) => (
-              <div key={item.id} className={`huangshan-watch-icon ${item.tone}`} style={{ '--i': index }}>
-                <span>{item.label.slice(0, 2)}</span>
+          {hasRealPreview ? (
+            <HuangshanFramebufferCanvas frame={realPreview} />
+          ) : (
+            <>
+              <div className="huangshan-watch-glow" />
+              <div className="huangshan-watch-title">{preview.title}</div>
+              <div className="huangshan-watch-grid">
+                {preview.launcherItems.map((item, index) => (
+                  <div key={item.id} className={`huangshan-watch-icon ${item.tone}`} style={{ '--i': index }}>
+                    <span>{item.label.slice(0, 2)}</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          <div className="huangshan-watch-status">{preview.status}</div>
-          <div className="huangshan-watch-subtitle">{preview.subtitle}</div>
+              <div className="huangshan-watch-status">{preview.status}</div>
+              <div className="huangshan-watch-subtitle">{preview.subtitle}</div>
+            </>
+          )}
         </div>
       </div>
       <div className="huangshan-preview-meta">
         <span>{preview.viewport.width} x {preview.viewport.height}</span>
-        <span>Semantic LVGL preview</span>
+        <span>{hasRealPreview ? realPreview.renderer : 'Semantic LVGL preview'}</span>
       </div>
+      <button
+        className="huangshan-render"
+        onClick={onRender}
+        disabled={renderState === 'rendering'}
+      >
+        {renderState === 'rendering' ? '渲染中...' : '真实 LVGL 渲染'}
+      </button>
+      {renderError && <div className="huangshan-render-error">{renderError}</div>}
     </div>
+  )
+}
+
+function HuangshanFramebufferCanvas({ frame }) {
+  const canvasRef = useRef(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const { width, height } = frame.viewport
+    canvas.width = width
+    canvas.height = height
+
+    const binary = atob(frame.rgbaBase64)
+    const pixels = new Uint8ClampedArray(binary.length)
+    for (let index = 0; index < binary.length; index++) {
+      pixels[index] = binary.charCodeAt(index)
+    }
+
+    const context = canvas.getContext('2d')
+    context.putImageData(new ImageData(pixels, width, height), 0, 0)
+  }, [frame])
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="huangshan-framebuffer"
+      aria-label="Huangshan real LVGL framebuffer"
+    />
   )
 }
 
