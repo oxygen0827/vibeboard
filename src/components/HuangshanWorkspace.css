@@ -172,6 +172,7 @@
 }
 
 .huangshan-error,
+.huangshan-artifacts,
 .huangshan-log-lines {
   margin: 10px 0 0;
   padding: 10px;
@@ -184,6 +185,50 @@
   line-height: 1.45;
   white-space: pre-wrap;
   overflow: auto;
+}
+
+.huangshan-artifacts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-family: inherit;
+  overflow: visible;
+}
+
+.huangshan-artifact {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.huangshan-artifact div {
+  min-width: 0;
+}
+
+.huangshan-artifact strong,
+.huangshan-artifact span {
+  display: block;
+}
+
+.huangshan-artifact strong {
+  color: var(--text-primary);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.huangshan-artifact span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.huangshan-artifact code {
+  flex: 0 0 auto;
+  color: var(--accent-hover);
+  font-family: var(--font-mono);
+  font-size: 11px;
 }
 
 .huangshan-log-lines {

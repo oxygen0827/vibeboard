@@ -1,6 +1,6 @@
 import http from 'node:http'
 import { spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -26,6 +26,33 @@ function resolveWorkspace() {
     buildScript: join(workspace, 'scripts/build.sh'),
     sdkExport: join(sdk, 'export.sh'),
   }
+}
+
+const ARTIFACT_KINDS = {
+  'main.bin': 'firmware',
+  'bootloader.bin': 'bootloader',
+  'ftab.bin': 'flash-table',
+  'sftool_param.json': 'flash-manifest',
+  'download.bat': 'download-script',
+}
+
+function createHuangshanArtifactSummary({ workspace }) {
+  const buildDir = join(workspace, 'project/build_sf32lb52-lchspi-ulp_hcpu')
+  const artifacts = Object.entries(ARTIFACT_KINDS)
+    .map(([name, kind]) => {
+      const absolutePath = join(buildDir, name)
+      if (!existsSync(absolutePath)) return null
+      const relativePath = `project/build_sf32lb52-lchspi-ulp_hcpu/${name}`
+      return {
+        name,
+        kind,
+        relativePath,
+        size: statSync(absolutePath).size,
+      }
+    })
+    .filter(Boolean)
+
+  return { buildDir, artifacts }
 }
 
 function healthPayload() {
@@ -76,6 +103,7 @@ function runBuild(res) {
         status: 'success',
         command: './scripts/build.sh',
         elapsedMs: Date.now() - startedAt,
+        artifactSummary: createHuangshanArtifactSummary(paths),
       })
     } else {
       sse(res, {
@@ -126,4 +154,4 @@ if (isMain) {
   })
 }
 
-export { createServer, healthPayload, resolveWorkspace }
+export { createHuangshanArtifactSummary, createServer, healthPayload, resolveWorkspace }

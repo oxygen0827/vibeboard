@@ -34,6 +34,7 @@ export async function buildHuangshanWorkspace({ onStatus, onLog } = {}) {
           logLines,
           elapsedMs: msg.elapsedMs || Date.now() - startedAt,
         })
+        evidence.artifactSummary = msg.artifactSummary || { artifacts: [] }
         if (msg.error) {
           const error = new Error(msg.error)
           error.buildEvidence = evidence

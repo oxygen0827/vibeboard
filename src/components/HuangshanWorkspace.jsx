@@ -128,6 +128,19 @@ export default function HuangshanWorkspace() {
         {buildEvidence?.firstError && (
           <pre className="huangshan-error">{buildEvidence.firstError.context.join('\n')}</pre>
         )}
+        {buildEvidence?.artifactSummary?.artifacts?.length > 0 && (
+          <div className="huangshan-artifacts">
+            {buildEvidence.artifactSummary.artifacts.map(item => (
+              <div key={item.relativePath} className="huangshan-artifact">
+                <div>
+                  <strong>{item.name}</strong>
+                  <span>{item.kind}</span>
+                </div>
+                <code>{formatArtifactSize(item.size)}</code>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="huangshan-log-lines">
           {buildLog.slice(-160).map((line, index) => (
             <div key={`${index}-${line}`}>{line}</div>
@@ -136,4 +149,11 @@ export default function HuangshanWorkspace() {
       </aside>
     </div>
   )
+}
+
+function formatArtifactSize(size) {
+  if (!Number.isFinite(size)) return '-'
+  if (size >= 1024 * 1024) return `${(size / 1024 / 1024).toFixed(2)} MB`
+  if (size >= 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${size} B`
 }
