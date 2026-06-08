@@ -8,6 +8,7 @@ export default defineConfig({
       '/compile':     'http://127.0.0.1:8760',
       '/health':      'http://127.0.0.1:8760',
       '/preview':     'http://127.0.0.1:8760',
+      '/huangshan':   'http://127.0.0.1:8771',
     },
   },
 })
