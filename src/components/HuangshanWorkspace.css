@@ -98,6 +98,48 @@
   resize: vertical;
 }
 
+.huangshan-builder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.huangshan-builder-item {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr);
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border-muted);
+  border-radius: 6px;
+  background: var(--bg-primary);
+}
+
+.huangshan-builder-item.disabled {
+  opacity: 0.58;
+}
+
+.huangshan-builder-toggle {
+  grid-row: span 2;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 6px !important;
+  margin-bottom: 0 !important;
+  color: var(--text-primary) !important;
+  font-family: var(--font-mono);
+  font-size: 11px !important;
+}
+
+.huangshan-builder-toggle input {
+  width: auto;
+}
+
+.huangshan-builder-item > input {
+  min-width: 0;
+  padding: 6px 7px;
+  font-size: 12px;
+}
+
 .huangshan-primary,
 .huangshan-build,
 .huangshan-flash,

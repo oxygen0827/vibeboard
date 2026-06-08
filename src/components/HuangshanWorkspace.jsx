@@ -2,6 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Editor from '@monaco-editor/react'
 import { HUANGSHAN_BOARD_PROFILE, listHuangshanCapabilities } from '../domain/huangshan/boardProfile'
 import { createHuangshanAppFiles, normalizeHuangshanAppName } from '../domain/huangshan/appTemplate'
+import {
+  createDefaultHuangshanBuilderConfig,
+  createHuangshanAppFilesFromBuilder,
+  normalizeHuangshanBuilderConfig,
+} from '../domain/huangshan/appBuilder'
 import { createHuangshanSemanticPreview } from '../domain/huangshan/semanticPreview'
 import {
   buildHuangshanWorkspace,
@@ -16,6 +21,10 @@ import './HuangshanWorkspace.css'
 export default function HuangshanWorkspace() {
   const [appDisplayName, setAppDisplayName] = useState('Board Diagnostics')
   const [description, setDescription] = useState('Show display, touch, and timer status.')
+  const [builderConfig, setBuilderConfig] = useState(() => normalizeHuangshanBuilderConfig(createDefaultHuangshanBuilderConfig({
+    displayName: 'Board Diagnostics',
+    description: 'Show display, touch, and timer status.',
+  })))
   const [files, setFiles] = useState(() => createHuangshanAppFiles({
     displayName: 'Board Diagnostics',
     description: 'Show display, touch, and timer status.',
@@ -68,6 +77,45 @@ export default function HuangshanWorkspace() {
     setRenderState('idle')
     setRenderError('')
     setStatus(`已生成 ${appName}`)
+  }
+
+  function handleGenerateBuilderApp() {
+    const normalized = normalizeHuangshanBuilderConfig({
+      ...builderConfig,
+      displayName: appDisplayName,
+      description,
+      components: builderConfig.components.filter(component => component.enabled !== false),
+    })
+    const next = createHuangshanAppFilesFromBuilder(normalized)
+    setBuilderConfig(normalized)
+    setFiles(next)
+    setActiveFile(Object.keys(next)[0])
+    setBuildEvidence(null)
+    setBuildLog([])
+    setRealPreview(null)
+    setRenderState('idle')
+    setRenderError('')
+    setStatus(`已生成 Builder App: ${appName}`)
+  }
+
+  function updateBuilderComponent(componentId, patch) {
+    setBuilderConfig(prev => ({
+      ...prev,
+      components: prev.components.map(component => (
+        component.id === componentId ? { ...component, ...patch } : component
+      )),
+    }))
+    setRealPreview(null)
+  }
+
+  function toggleBuilderComponent(componentId) {
+    setBuilderConfig(prev => ({
+      ...prev,
+      components: prev.components.map(component => (
+        component.id === componentId ? { ...component, enabled: component.enabled === false } : component
+      )),
+    }))
+    setRealPreview(null)
   }
 
   async function handleRenderPreview(tap = null) {
@@ -184,6 +232,7 @@ export default function HuangshanWorkspace() {
             App name
             <input value={appDisplayName} onChange={event => {
               setAppDisplayName(event.target.value)
+              setBuilderConfig(prev => ({ ...prev, displayName: event.target.value }))
               setRealPreview(null)
             }} />
           </label>
@@ -191,13 +240,43 @@ export default function HuangshanWorkspace() {
             Description
             <textarea value={description} onChange={event => {
               setDescription(event.target.value)
+              setBuilderConfig(prev => ({ ...prev, description: event.target.value }))
               setRealPreview(null)
             }} />
           </label>
           <button className="huangshan-primary" onClick={regenerateTemplate}>生成 App 模板</button>
+          <button className="huangshan-primary" onClick={handleGenerateBuilderApp}>生成 Builder 页面</button>
           <button className="huangshan-build" onClick={handleBuild} disabled={buildState === 'building'}>
             {buildState === 'building' ? '构建中...' : '运行 SCons 构建'}
           </button>
+        </div>
+
+        <div className="huangshan-section">
+          <div className="huangshan-heading">Builder</div>
+          <div className="huangshan-builder-list">
+            {builderConfig.components.map(component => (
+              <div key={component.id || `${component.type}-${component.label}`} className={`huangshan-builder-item ${component.enabled === false ? 'disabled' : ''}`}>
+                <label className="huangshan-builder-toggle">
+                  <input
+                    type="checkbox"
+                    checked={component.enabled !== false}
+                    onChange={() => toggleBuilderComponent(component.id)}
+                  />
+                  <span>{component.type}</span>
+                </label>
+                <input
+                  value={component.label}
+                  onChange={event => updateBuilderComponent(component.id, { label: event.target.value })}
+                  aria-label={`${component.type} label`}
+                />
+                <input
+                  value={component.value}
+                  onChange={event => updateBuilderComponent(component.id, { value: event.target.value })}
+                  aria-label={`${component.type} value`}
+                />
+              </div>
+            ))}
+          </div>
         </div>
 
         <div className="huangshan-section">
