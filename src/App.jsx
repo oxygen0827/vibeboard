@@ -234,8 +234,15 @@ export default function App() {
       <header className="app-header">
         <div className="header-left">
           <div className="logo">
-            <span className="logo-icon">⚡</span>
-            <span className="logo-text">ESP32 Vibe Coder</span>
+            <span className="logo-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+            <span className="logo-copy">
+              <span className="logo-text">VibeBoard Micro</span>
+              <span className="product-subtitle">AI Hardware Workbench</span>
+            </span>
+          </div>
+          <div className="divider" />
+          <div className="workflow-strip" aria-label="Micro workflow">
+            生成 / 编译 / 烧录 / 设备证据
           </div>
           <div className="divider" />
           <div className="workspace-switcher">
@@ -267,7 +274,7 @@ export default function App() {
             )}
           </div>
           <button className={`settings-btn ${!hasConfig ? 'pulse' : ''}`} onClick={() => setShowSettings(true)}>
-            ⚙ 配置 AI
+            配置 AI
           </button>
         </div>
       </header>
@@ -300,10 +307,10 @@ export default function App() {
           <div className="right-pane">
             <div className="right-tabs">
               <button className={`right-tab ${rightTab === 'chat' ? 'active' : ''}`} onClick={() => setRightTab('chat')}>
-                🤖 AI 助手
+                AI 工作流
               </button>
               <button className={`right-tab ${rightTab === 'log' ? 'active' : ''}`} onClick={() => setRightTab('log')}>
-                📟 设备日志
+                设备证据
               </button>
             </div>
             <div className="right-tab-content">

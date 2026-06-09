@@ -27,6 +27,7 @@
     "test:project-validation": "node scripts/test-project-validation.mjs",
     "test:board-skills": "node scripts/test-board-skills.mjs",
     "test:project-config": "node scripts/test-project-config.mjs",
+    "test:platform-ui-branding": "node scripts/test-platform-ui-branding.mjs",
     "test:huangshan-profile": "node scripts/test-huangshan-capability-profile.mjs",
     "test:huangshan-app-template": "node scripts/test-huangshan-app-template.mjs",
     "test:huangshan-app-builder": "node scripts/test-huangshan-app-builder.mjs",

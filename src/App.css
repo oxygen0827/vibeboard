@@ -35,19 +35,66 @@
 .logo {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
-.logo-icon {
-  font-size: 18px;
-  line-height: 1;
+.logo-mark {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-primary);
+}
+
+.logo-mark span {
+  border-radius: 2px;
+  background: var(--accent-hover);
+}
+
+.logo-mark span:nth-child(2) {
+  background: var(--accent);
+}
+
+.logo-mark span:nth-child(3) {
+  background: var(--text-secondary);
+}
+
+.logo-copy {
+  display: grid;
+  gap: 1px;
 }
 
 .logo-text {
   font-size: 14px;
   font-weight: 700;
   color: var(--text-primary);
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
+}
+
+.product-subtitle {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.workflow-strip {
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  white-space: nowrap;
 }
 
 /* Divider */
