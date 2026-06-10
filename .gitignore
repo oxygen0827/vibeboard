@@ -5,10 +5,10 @@ __pycache__/
 .env
 *.log
 .DS_Store
-__pycache__/
 
 # Local presentation/source-material workspaces
 outputs/
 图片/
 小光/
 VibeBoard商业计划书_演示文稿.pptx
+*.zip

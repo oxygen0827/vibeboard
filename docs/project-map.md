@@ -39,7 +39,8 @@ surface.
 | `backend/compiler-service/ble_ota_receiver/` | BLE OTA base firmware | First-stage firmware that advertises `ESP32-Vibe-OTA` and accepts app OTA over BLE. |
 | `backend/lvgl-sim-service/` | LVGL simulation backend | Receives LVGL runtime packages; real LVGL/WASM rendering is still incomplete. |
 | `deploy/` | Deployment wrappers | Nginx/Caddy/Docker config and HTTPS USB flashing notes. |
-| `docs/` | Architecture, board notes, and planning | Keep durable explanations here instead of extending README indefinitely. |
+| `docs/` | Documentation hub | Architecture, guides, board notes, planning, and business material. |
+| `docs/guides/` | Operational guides | Local development, flashing, OTA, and compiler-service usage. |
 | `scripts/` | Test and local helper scripts | Mostly narrow Node-based guard tests for generation, compile, OTA, and simulation behavior. |
 
 ## Sparse Checkout Caveat
@@ -102,18 +103,16 @@ tracked area such as `docs/business/`, `business-site/`, or a future
 
 ## Current Friction
 
-1. `README.md` is doing too much: product intro, user manual, deployment guide,
-   architecture summary, board notes, and future plan.
-2. `src/App.jsx` is too broad: settings storage, board selection, compile
+1. `src/App.jsx` is too broad: settings storage, board selection, compile
    session state, BSP raw imports, editor state, and right-panel orchestration
    live in one file.
-3. Hardware base firmware exists in multiple places:
+2. Hardware base firmware exists in multiple places:
    `backend/compiler-service/ota_receiver/`,
    `backend/compiler-service/ble_ota_receiver/`, and the sparse-hidden
    `hardware/ota-firmware/`.
-4. Browser-side adapters in `src/utils/` mix several levels:
+3. Browser-side adapters in `src/utils/` mix several levels:
    project assembly, transport clients, AI API access, and validation.
-5. Several major product concepts are documented in `CONTEXT.md` but are still
+4. Several major product concepts are documented in `CONTEXT.md` but are still
    partially implicit in UI components.
 
 ## Suggested Next Refactors
@@ -121,19 +120,16 @@ tracked area such as `docs/business/`, `business-site/`, or a future
 Do these in small commits. Avoid broad moves while hardware flashing and OTA are
 being actively debugged.
 
-1. Split `README.md` into a short product entry plus linked guides:
-   `docs/guides/local-development.md`, `docs/guides/flashing.md`,
-   `docs/guides/ota.md`, and `docs/guides/compiler-service.md`.
-2. Extract an `AppShell` or `workspaceState` module from `src/App.jsx` so UI
+1. Extract an `AppShell` or `workspaceState` module from `src/App.jsx` so UI
    layout is separate from settings, board state, compile sessions, and project
    file state.
-3. Create a clear hardware firmware area, then decide whether
+2. Create a clear hardware firmware area, then decide whether
    `hardware/ota-firmware/` is obsolete or should replace the receiver folders
    under `backend/compiler-service/`.
-4. Split `src/utils/` by adapter role:
+3. Split `src/utils/` by adapter role:
    `src/adapters/ai/`, `src/adapters/compiler/`, `src/adapters/flash/`, and keep
    pure project assembly/validation close to `src/domain/`.
-5. Promote Build Evidence and Device Evidence into first-class workflow inputs
+4. Promote Build Evidence and Device Evidence into first-class workflow inputs
    so repair flows do not depend on component-local state.
 
 ## Fast Orientation Commands
