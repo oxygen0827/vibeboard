@@ -46,15 +46,168 @@ ALLOWED_SUFFIXES = {".c", ".cc", ".cpp", ".cxx", ".h", ".hpp", ".s", ".S"}
 # deliberately NOT here: they can carry build-time code execution (CMake
 # execute_process, etc.), so their only trusted source is the server-side
 # board template. See SYSTEM_MANAGED_FILES below.
-ALLOWED_FILENAMES = {"idf_component.yml"}
+ALLOWED_FILENAMES = set()
 # L0-L3 system files owned by the board template. If the client submits any of
 # these we ignore them (and log) rather than writing client-controlled build
 # logic into the project. The template copied by setup_build_dir is the only
 # source of truth for them.
-SYSTEM_MANAGED_FILES = {"CMakeLists.txt", "sdkconfig.defaults", "sdkconfig", "partitions.csv"}
+SYSTEM_MANAGED_FILES = {"CMakeLists.txt", "sdkconfig.defaults", "sdkconfig", "partitions.csv", "idf_component.yml"}
 # Application source must live under one of these roots. A bare top-level file
 # (e.g. a client trying to drop a root CMakeLists.txt) is rejected.
 ALLOWED_PROJECT_ROOTS = {"main", "components", "spiffs"}
+TRUSTED_BASE_IDF_COMPONENTS = [
+    'lvgl/lvgl: "~8.3.0"',
+    'espressif/esp_lvgl_port: "~1.4.0"',
+    'espressif/esp_lcd_touch_ft5x06: "~1.0.6"',
+    'espressif/esp32-camera: "^2.0.10"',
+]
+TRUSTED_BASE_IDF_REQUIRES = [
+    "esp32_s3_szp",
+    "esp_event",
+    "esp_http_server",
+    "esp_netif",
+    "esp_wifi",
+    "nvs_flash",
+]
+TRUSTED_BASE_SDKCONFIG = [
+    'CONFIG_IDF_TARGET="esp32s3"',
+    "CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y",
+    "CONFIG_SPIRAM=y",
+    "CONFIG_SPIRAM_MODE_OCT=y",
+    "CONFIG_SPIRAM_SPEED_80M=y",
+    "CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y",
+    "CONFIG_PARTITION_TABLE_CUSTOM=y",
+    "CONFIG_HTTPD_WS_SUPPORT=y",
+    "CONFIG_HTTPD_MAX_REQ_HDR_LEN=4096",
+    "CONFIG_HTTPD_MAX_URI_LEN=1024",
+]
+TRUSTED_BASE_PARTITIONS = [
+    "# Name,   Type, SubType, Offset,  Size, Flags",
+    "nvs,      data, nvs,     0x9000,  0x6000,",
+    "phy_init, data, phy,     ,        0x1000,",
+    "factory,  app,  factory, ,        7M,",
+]
+TRUSTED_SKILL_IDF_COMPONENTS = {
+    "audio": [
+        'chmorgan/esp-audio-player: "~1.0.7"',
+        'chmorgan/esp-file-iterator: "1.0.0"',
+        'espressif/esp_codec_dev: "~1.3.0"',
+    ],
+    "speech": [
+        'chmorgan/esp-audio-player: "~1.0.7"',
+        'chmorgan/esp-file-iterator: "1.0.0"',
+        'espressif/esp_codec_dev: "~1.3.0"',
+        'espressif/esp-sr: "~1.6.0"',
+    ],
+    "handheld": [
+        'chmorgan/esp-audio-player: "~1.0.7"',
+        'chmorgan/esp-file-iterator: "1.0.0"',
+        'espressif/esp_codec_dev: "~1.3.0"',
+        'espressif/esp-sr: "~1.6.0"',
+    ],
+}
+TRUSTED_SKILL_CONFIG = {
+    "lvgl": {
+        "sdkconfig": [
+            "CONFIG_LV_COLOR_16_SWAP=y",
+            "CONFIG_LV_MEM_CUSTOM=y",
+            "CONFIG_LV_FONT_MONTSERRAT_12=y",
+            "CONFIG_LV_FONT_MONTSERRAT_16=y",
+            "CONFIG_LV_FONT_MONTSERRAT_20=y",
+            "CONFIG_LV_USE_DEMO_WIDGETS=y",
+            "CONFIG_LV_USE_DEMO_KEYPAD_AND_ENCODER=y",
+            "CONFIG_LV_USE_DEMO_BENCHMARK=y",
+            "CONFIG_LV_USE_DEMO_STRESS=y",
+            "CONFIG_LV_USE_DEMO_MUSIC=y",
+        ],
+        "requires": ["lvgl", "esp_lvgl_port", "esp_lcd_touch_ft5x06"],
+    },
+    "audio": {
+        "sdkconfig": [
+            "CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB=y",
+            "CONFIG_ESP32S3_DATA_CACHE_64KB=y",
+            "CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y",
+            "CONFIG_LV_FONT_MONTSERRAT_24=y",
+            "CONFIG_LV_FONT_MONTSERRAT_32=y",
+            "CONFIG_SPIFFS_OBJ_NAME_LEN=128",
+        ],
+        "requires": ["lvgl", "esp_lvgl_port", "esp_lcd_touch_ft5x06", "esp-audio-player", "esp-file-iterator", "esp_codec_dev"],
+        "partitions": [
+            "# Name,   Type, SubType, Offset,  Size, Flags",
+            "nvs,      data, nvs,     0x9000,  24k",
+            "phy_init, data, phy,     0xf000,  4k",
+            "factory,  app,  factory, ,        3M",
+            "storage,  data, spiffs,  ,        3M,",
+        ],
+        "spiffs": True,
+    },
+    "ble": {
+        "sdkconfig": [
+            "CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB=y",
+            "CONFIG_ESP32S3_DATA_CACHE_64KB=y",
+            "CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y",
+            "CONFIG_LV_COLOR_16_SWAP=y",
+            "CONFIG_LV_MEM_CUSTOM=y",
+            "CONFIG_LV_FONT_MONTSERRAT_20=y",
+            "CONFIG_BT_ENABLED=y",
+            "# CONFIG_BT_BLE_50_FEATURES_SUPPORTED is not set",
+            "CONFIG_BT_BLE_42_FEATURES_SUPPORTED=y",
+        ],
+        "requires": ["lvgl", "esp_lvgl_port", "esp_lcd_touch_ft5x06"],
+        "compileOptions": ["-Wno-unused-const-variable"],
+    },
+    "camera": {
+        "requires": ["esp32-camera"],
+        "partitions": [
+            "# Name,   Type, SubType, Offset,  Size, Flags",
+            "nvs,      data, nvs,     0x9000,  24k",
+            "phy_init, data, phy,     0xf000,  4k",
+            "factory,  app,  factory, ,        3M",
+        ],
+    },
+    "speech": {
+        "sdkconfig": [
+            "CONFIG_SPIFFS_OBJ_NAME_LEN=128",
+            "CONFIG_LV_USE_GIF=y",
+        ],
+        "requires": ["lvgl", "esp_lvgl_port", "esp_lcd_touch_ft5x06", "esp-audio-player", "esp-file-iterator", "esp_codec_dev", "esp-sr"],
+        "partitions": [
+            "# Name,   Type, SubType, Offset,  Size, Flags",
+            "nvs,      data, nvs,     0x9000,  24k",
+            "phy_init, data, phy,     0xf000,  4k",
+            "factory,  app,  factory, ,        3M",
+            "storage,  data, spiffs,  ,        3M",
+            "model,    data, spiffs,  ,        5168K,",
+        ],
+        "spiffs": True,
+    },
+    "handheld": {
+        "sdkconfig": [
+            "CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=2048",
+            "CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y",
+            "CONFIG_BT_ENABLED=y",
+            "# CONFIG_BT_BLE_50_FEATURES_SUPPORTED is not set",
+            "CONFIG_BT_BLE_42_FEATURES_SUPPORTED=y",
+            "CONFIG_FATFS_LFN_HEAP=y",
+            "CONFIG_FATFS_CODEPAGE_936=y",
+            "CONFIG_FATFS_API_ENCODING_UTF_8=y",
+            "CONFIG_FATFS_VFS_FSTAT_BLKSIZE=4096",
+            "CONFIG_SPIFFS_OBJ_NAME_LEN=128",
+            "CONFIG_LV_USE_PNG=y",
+            "CONFIG_LV_USE_GIF=y",
+        ],
+        "requires": ["esp32-camera", "lvgl", "esp_lvgl_port", "esp_lcd_touch_ft5x06", "esp-audio-player", "esp-file-iterator", "esp_codec_dev", "esp-sr"],
+        "partitions": [
+            "# Name,   Type, SubType, Offset,  Size, Flags",
+            "nvs,      data, nvs,     0x9000,  24k",
+            "phy_init, data, phy,     0xf000,  4k",
+            "factory,  app,  factory, ,        8M",
+            "storage,  data, spiffs,  ,        3M",
+        ],
+        "compileOptions": ["-Wno-unused-const-variable"],
+        "spiffs": True,
+    },
+}
 EXAMPLE_ID_RE = re.compile(r"^[0-9]{2}-[A-Za-z0-9_-]+$")
 DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_.:-]{0,96}$")
@@ -840,8 +993,125 @@ def fixed_build_id(prefix: str, value: str) -> str:
     return f"{prefix}-{name}"[:120]
 
 
+def trusted_idf_component_manifest(selected_skills):
+    components = []
+
+    def add(component):
+        if component not in components:
+            components.append(component)
+
+    for component in TRUSTED_BASE_IDF_COMPONENTS:
+        add(component)
+    for skill in selected_skills or []:
+        for component in TRUSTED_SKILL_IDF_COMPONENTS.get(str(skill), []):
+            add(component)
+
+    return (
+        "# IDF Component Manager Manifest File\n"
+        "dependencies:\n"
+        + "\n".join(f"  {component}" for component in components)
+        + '\n  idf:\n    version: ">=5.0"'
+    )
+
+
+def unique_lines(lines):
+    result = []
+    for line in lines or []:
+        if line not in result:
+            result.append(line)
+    return result
+
+
+def skill_config_values(selected_skills, key):
+    values = []
+    for skill in selected_skills or []:
+        item = TRUSTED_SKILL_CONFIG.get(str(skill), {})
+        values.extend(item.get(key, []))
+    return values
+
+
+def trusted_main_cmake(selected_skills):
+    requires = unique_lines(TRUSTED_BASE_IDF_REQUIRES + skill_config_values(selected_skills, "requires"))
+    compile_options = unique_lines(skill_config_values(selected_skills, "compileOptions"))
+    needs_spiffs = any(TRUSTED_SKILL_CONFIG.get(str(skill), {}).get("spiffs") for skill in selected_skills or [])
+
+    lines = [
+        "# Generated by VibeBoard compiler service.",
+        "# Client uploads application sources only; this build file is server-owned.",
+        'file(GLOB_RECURSE APP_SOURCES CONFIGURE_DEPENDS',
+        '    "${CMAKE_CURRENT_LIST_DIR}/*.c"',
+        '    "${CMAKE_CURRENT_LIST_DIR}/*.cc"',
+        '    "${CMAKE_CURRENT_LIST_DIR}/*.cpp"',
+        '    "${CMAKE_CURRENT_LIST_DIR}/*.cxx"',
+        '    "${CMAKE_CURRENT_LIST_DIR}/*.s"',
+        '    "${CMAKE_CURRENT_LIST_DIR}/*.S"',
+        ")",
+        "",
+        "idf_component_register(",
+        "    SRCS ${APP_SOURCES}",
+        '    INCLUDE_DIRS "."',
+        f"    REQUIRES {' '.join(requires)}",
+        ")",
+    ]
+    if needs_spiffs:
+        lines.extend(["", "spiffs_create_partition_image(storage ../spiffs FLASH_IN_PROJECT)"])
+    if compile_options:
+        lines.extend(["", f"target_compile_options(${{COMPONENT_LIB}} PRIVATE {' '.join(compile_options)})"])
+    return "\n".join(lines) + "\n"
+
+
+def trusted_sdkconfig_defaults(selected_skills):
+    return "\n".join(unique_lines(TRUSTED_BASE_SDKCONFIG + skill_config_values(selected_skills, "sdkconfig"))) + "\n"
+
+
+def partition_size_bytes(size):
+    match = re.match(r"^\s*(\d+)\s*(k|m|kb|mb)?\s*$", str(size or "").lower())
+    if not match:
+        return 0
+    value = int(match.group(1))
+    unit = match.group(2) or ""
+    if unit.startswith("m"):
+        return value * 1024 * 1024
+    if unit.startswith("k"):
+        return value * 1024
+    return value
+
+
+def trusted_partitions_csv(selected_skills):
+    by_name = {}
+    for line in TRUSTED_BASE_PARTITIONS + skill_config_values(selected_skills, "partitions"):
+        trimmed = str(line).strip()
+        if not trimmed or trimmed.startswith("#"):
+            continue
+        parts = [part.strip() for part in trimmed.split(",")]
+        name = parts[0] if parts else ""
+        if not name:
+            continue
+        current = by_name.get(name)
+        size = parts[4] if len(parts) > 4 else ""
+        current_size = current["parts"][4] if current and len(current["parts"]) > 4 else ""
+        if not current or partition_size_bytes(size) > partition_size_bytes(current_size):
+            by_name[name] = {"line": trimmed, "parts": parts}
+
+    ordered = ["# Name,   Type, SubType, Offset,  Size, Flags"]
+    for name in ["nvs", "phy_init", "factory", "storage", "model"]:
+        if name in by_name:
+            ordered.append(by_name[name]["line"])
+    for name, item in by_name.items():
+        if name not in {"nvs", "phy_init", "factory", "storage", "model"}:
+            ordered.append(item["line"])
+    return "\n".join(ordered) + "\n"
+
+
+def normalize_selected_skills(value):
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if isinstance(item, str) and re.match(r"^[A-Za-z0-9_-]{1,64}$", item)]
+
+
 def sync_project_files(build_dir: Path, code: str, project_files: dict):
     main_file = project_files.get("__mainFile", "main.c")
+    selected_skills = normalize_selected_skills(project_files.get("__selectedSkills", []))
     expected = set()
     # The main entry file is special: it is named relative to main/ and is a
     # plain source filename, so validate it directly (path-traversal + suffix)
@@ -859,7 +1129,7 @@ def sync_project_files(build_dir: Path, code: str, project_files: dict):
     expected.add(main_target.resolve())
 
     for rel_path, content in project_files.items():
-        if rel_path == "__mainFile":
+        if rel_path in {"__mainFile", "__selectedSkills"}:
             continue
         try:
             target = validate_project_path(build_dir, rel_path)
@@ -872,6 +1142,18 @@ def sync_project_files(build_dir: Path, code: str, project_files: dict):
         target.write_text(content)
         expected.add(target.resolve())
         log.info(f"  wrote: {rel_path}")
+
+    generated_system_files = {
+        "main/CMakeLists.txt": trusted_main_cmake(selected_skills),
+        "main/idf_component.yml": trusted_idf_component_manifest(selected_skills),
+        "sdkconfig.defaults": trusted_sdkconfig_defaults(selected_skills),
+        "partitions.csv": trusted_partitions_csv(selected_skills),
+    }
+    for rel_path, content in generated_system_files.items():
+        target = (build_dir / rel_path).resolve()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content)
+        expected.add(target)
 
     for root_name in ("main", "components", "spiffs"):
         root = build_dir / root_name

@@ -66,7 +66,7 @@ assert.equal(validPackage.fileKinds['main/CMakeLists.txt'], 'system')
 assert.equal(validPackage.fileKinds.__mainFile, 'metadata')
 assert.equal(validPackage.backendProjectFiles.__mainFile, 'main.c')
 assert.equal(validPackage.backendProjectFiles.__idfTarget, undefined)
-assert.equal(validPackage.backendProjectFiles.__selectedSkills, undefined)
+assert.deepEqual(validPackage.backendProjectFiles.__selectedSkills, [])
 
 const normalized = normalizeApplicationFiles({
   'main/main.c': 'void app_main(void) {}',
@@ -136,6 +136,7 @@ const audioPackage = createCompilePackage({
 })
 assert.equal(audioPackage.ok, true)
 assert.match(audioPackage.files['main/idf_component.yml'], /esp-audio-player/)
+assert.deepEqual(audioPackage.backendProjectFiles.__selectedSkills, ['audio', 'lvgl'])
 assert.match(audioPackage.files['partitions.csv'], /storage,\s+data,\s+spiffs/)
 
 console.log('compile package tests passed')

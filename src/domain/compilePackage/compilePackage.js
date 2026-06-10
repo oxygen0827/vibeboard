@@ -76,7 +76,7 @@ export function createCompilePackage({
 export function prepareCompilerServiceProjectFiles(files = {}, mainFile = 'main.c') {
   const result = {}
   for (const [path, content] of Object.entries(files || {})) {
-    if (path === '__mainFile') {
+    if (path === '__mainFile' || path === '__selectedSkills') {
       result[path] = content
     } else if (!String(path).startsWith('__')) {
       result[path] = content
