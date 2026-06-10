@@ -33,6 +33,7 @@ const modules = [
   'src/context/boards/szpi_esp32s3/skills/handheld.js',
   'src/context/boards/szpi_esp32s3/skills/index.js',
   'src/context/boards/szpi_esp32s3/driverContracts.js',
+  'src/context/boards/szpi_esp32s3/lvglDesignProfiles.js',
   'src/context/boards/szpi_esp32s3/definition.js',
   'src/context/boards/index.js',
   'src/context/index.js',
