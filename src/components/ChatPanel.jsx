@@ -9,17 +9,18 @@ import { compileFirmware } from '../utils/compiler'
 import { assembleCompileFiles } from '../utils/projectAssembly'
 import {
   buildBuildRepairMessages,
-  buildLvglDesignDraftMessages,
-  buildManifestCodeGenerationMessages,
   buildPreviewRepairMessages,
-  buildProgramManifestMessages,
-  buildScopeClarificationMessages,
   buildSourceContractRepairMessages,
   inferSkillsFromRequest,
   parseGeneratedFilesResponseWithOptions,
-  parseProgramManifestResponse,
-  parseScopeClarificationResponse,
 } from '../utils/codeGeneration'
+import {
+  runScopeStep,
+  runLvglDesignStep,
+  runManifestStep,
+  runSourceGenerationStep,
+} from '../domain/workflow/generationPipeline'
+import { createPipelineDeps } from '../domain/workflow/pipelineWiring'
 import {
   normalizeGeneratedSourceFiles,
   validateLvglPreviewContract,
@@ -351,37 +352,36 @@ export default function ChatPanel({
         onSkillsChange?.(inferredSkills)
       }
 
+      // Injected collaborators for the pure pipeline steps (no UI inside them).
+      const pipelineDeps = createPipelineDeps({
+        board,
+        runAgentTask: runVibeBoardAgentTask,
+        validateGeneratedFiles: normalizeAndValidateGeneratedFiles,
+      })
+
       setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'scope', WORKFLOW_STEP_STATUS.ACTIVE, '按当前板子外设/BSP/官方例程界定功能'))
-      const scopeResult = approvedPendingDesign
-        ? { ...pendingLvglDesign.scope, status: 'ready', ok: true }
-        : parseScopeClarificationResponse(await runVibeBoardAgentTask(
-            AGENT_TASK_TYPES.SCOPE_CLARIFICATION,
-            buildScopeClarificationMessages({
-              board,
-              selectedSkills: inferredSkills,
-              userRequest: text,
-              existingFiles: projectFiles,
-            }),
-            { userRequest: text, inferredSkills },
-          ))
-      if (!scopeResult.ok) {
-        setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'scope', WORKFLOW_STEP_STATUS.FAILED, scopeResult.errors.join(', ')))
+      const scopeStep = approvedPendingDesign
+        ? { ok: true, status: 'ready', scope: { ...pendingLvglDesign.scope, status: 'ready', ok: true }, skills: pendingLvglDesign.selectedSkills }
+        : await runScopeStep(pipelineDeps, { userRequest: text, inferredSkills, projectFiles })
+      if (!scopeStep.ok) {
+        setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'scope', WORKFLOW_STEP_STATUS.FAILED, scopeStep.errors.join(', ')))
         setMessages(prev => {
           const next = [...prev]
           next[next.length - 1] = {
             role: 'assistant',
-            content: `功能范围界定失败：${scopeResult.errors.join(', ')}`,
+            content: `功能范围界定失败：${scopeStep.errors.join(', ')}`,
             error: true,
           }
           return next
         })
         return
       }
-      const scopedSkills = scopeResult.selectedSkillIds.length > 0 ? scopeResult.selectedSkillIds : inferredSkills
+      const scopeResult = scopeStep.scope
+      const scopedSkills = scopeStep.skills
       if (scopedSkills.join(',') !== inferredSkills.join(',')) {
         onSkillsChange?.(scopedSkills)
       }
-      if (scopeResult.status === 'needs_clarification') {
+      if (scopeStep.status === 'needs_clarification') {
         setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'scope', WORKFLOW_STEP_STATUS.FAILED, '等待用户确认功能边界'))
         setMessages(prev => {
           const next = [...prev]
@@ -412,49 +412,22 @@ export default function ChatPanel({
           return next
         })
 
-        const designContent = await runVibeBoardAgentTask(
-          AGENT_TASK_TYPES.LVGL_DESIGN_DRAFT,
-          buildLvglDesignDraftMessages({
-            board,
-            selectedSkills: scopedSkills,
-            userRequest: effectiveUserRequest,
-            scope: scopeResult,
-            existingFiles: projectFiles,
-          }),
-          {
-            userRequest: effectiveUserRequest,
-            inferredSkills: scopedSkills,
-            scope: scopeResult,
-          },
-        )
-        const designParsed = parseGeneratedFilesResponseWithOptions(designContent, board, {
-          requireCompleteProject: false,
-          validateManifestFiles: false,
+        const designStep = await runLvglDesignStep(pipelineDeps, {
+          userRequest: effectiveUserRequest,
+          scopedSkills,
+          scope: scopeResult,
+          projectFiles,
         })
-        if (!designParsed.ok) {
-          const message = `LVGL 设计草稿未通过文件校验：${designParsed.errors.join(', ')}`
-          setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'design', WORKFLOW_STEP_STATUS.FAILED, designParsed.errors.join(', ')))
+        if (!designStep.ok) {
+          const message = designStep.stage === 'parse'
+            ? `LVGL 设计草稿未通过文件校验：${designStep.message}`
+            : `LVGL 设计草稿未通过预览契约：\n\n${designStep.message}`
+          setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'design', WORKFLOW_STEP_STATUS.FAILED, designStep.message))
           setMessages(prev => replaceLastAssistantMessage(prev, {
             role: 'assistant',
             content: message,
             error: true,
           }))
-          return
-        }
-        const designCheck = normalizeAndValidateGeneratedFiles(designParsed.files, scopedSkills, board, {
-          previewOnly: true,
-        })
-        if (!designCheck.ok) {
-          setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'design', WORKFLOW_STEP_STATUS.FAILED, designCheck.message))
-          setMessages(prev => {
-            const next = [...prev]
-            next[next.length - 1] = {
-              role: 'assistant',
-              content: `LVGL 设计草稿未通过预览契约：\n\n${designCheck.message}`,
-              error: true,
-            }
-            return next
-          })
           return
         }
 
@@ -463,7 +436,7 @@ export default function ChatPanel({
           selectedSkills: scopedSkills,
           scope: scopeResult,
         })
-        onInsertCode?.(designCheck.files, {
+        onInsertCode?.(designStep.files, {
           selectedSkills: scopedSkills,
           autoPreview: true,
           source: 'lvgl-design-draft',
@@ -500,26 +473,20 @@ export default function ChatPanel({
         shouldDraftDesign: () => false,
         generateManifest: async () => {
           setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'manifest', WORKFLOW_STEP_STATUS.ACTIVE, '生成 Program Manifest'))
-          const content = await runVibeBoardAgentTask(
-            AGENT_TASK_TYPES.PROGRAM_MANIFEST,
-            buildProgramManifestMessages({
-              board,
-              selectedSkills: scopedSkills,
-              userRequest: effectiveUserRequest,
-              existingFiles: projectFiles,
-            }),
-            { userRequest: effectiveUserRequest, inferredSkills: scopedSkills, scope: scopeResult },
-          )
-          setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'validate-manifest', WORKFLOW_STEP_STATUS.ACTIVE, '校验 Manifest'))
-          const manifestResult = parseProgramManifestResponse(content, board)
-          if (!manifestResult.ok) {
-            return { ok: false, message: `程序清单未通过校验：${manifestResult.errors.join(', ')}` }
+          const result = await runManifestStep(pipelineDeps, {
+            userRequest: effectiveUserRequest,
+            scopedSkills,
+            scope: scopeResult,
+            projectFiles,
+          })
+          if (!result.ok) {
+            return { ok: false, message: `程序清单未通过校验：${result.message}` }
           }
           setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'validate-manifest', WORKFLOW_STEP_STATUS.DONE, 'Manifest 已通过校验'))
-          if (manifestResult.manifest.skillIds?.length) {
-            onSkillsChange?.(manifestResult.manifest.skillIds)
+          if (result.manifest.skillIds?.length) {
+            onSkillsChange?.(result.manifest.skillIds)
           }
-          return { ok: true, manifest: manifestResult.manifest }
+          return { ok: true, manifest: result.manifest }
         },
         generateSource: async ({ manifest }) => {
           setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'generate-files', WORKFLOW_STEP_STATUS.ACTIVE, `生成 ${manifest.files.length} 个应用文件`))
@@ -528,20 +495,11 @@ export default function ChatPanel({
             content: `已生成程序清单，正在生成 ${manifest.files.length} 个应用文件...`,
             manifest,
           })
-          const fileContent = await runVibeBoardAgentTask(
-            AGENT_TASK_TYPES.GENERATE_CODE,
-            buildManifestCodeGenerationMessages({
-              board,
-              manifest,
-              userRequest: effectiveUserRequest,
-              existingFiles: projectFiles,
-            }),
-            { userRequest: effectiveUserRequest, manifest },
-          )
-          const parsed = parseGeneratedFilesResponseWithOptions(fileContent, board, { manifest })
-          if (!parsed.ok) return { ok: false, message: `生成结果未通过校验：${parsed.errors.join(', ')}` }
-          if (Object.keys(parsed.files).length === 0) return { ok: false, message: '生成结果没有可写入的应用源码文件。' }
-          return { ok: true, files: parsed.files }
+          return runSourceGenerationStep(pipelineDeps, {
+            userRequest: effectiveUserRequest,
+            manifest,
+            projectFiles,
+          })
         },
         validateSource: async (files, { manifest }) => {
           setGenerationWorkflow(prev => updateGenerationWorkflow(prev, 'validate-source', WORKFLOW_STEP_STATUS.ACTIVE, '校验生成文件'))
