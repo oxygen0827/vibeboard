@@ -4,10 +4,15 @@ POST /compile - compile ESP-IDF project, streams build log via SSE
 GET  /health  - health check
 """
 
-import os, sys, uuid, shutil, subprocess, logging, json, base64, re, time, hashlib, zlib, struct, fcntl
+import os, sys, uuid, shutil, subprocess, logging, json, base64, re, time, hashlib, zlib, struct
 from io import BytesIO
 from pathlib import Path, PurePosixPath
 from flask import Flask, request, Response, jsonify, send_file
+
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 
 try:
     from PIL import Image, ImageDraw, ImageFont
@@ -1557,7 +1562,8 @@ def with_build_dir_lock(job_id: str, build_dir: Path, events_factory):
         waiting = False
         while True:
             try:
-                fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                if fcntl is not None:
+                    fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 break
             except BlockingIOError:
                 if not waiting:
@@ -1567,7 +1573,8 @@ def with_build_dir_lock(job_id: str, build_dir: Path, events_factory):
         try:
             yield from events_factory()
         finally:
-            fcntl.flock(lock_file, fcntl.LOCK_UN)
+            if fcntl is not None:
+                fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
 def sse(obj):

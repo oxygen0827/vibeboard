@@ -11,7 +11,7 @@
     "test:code-generation": "node scripts/test-code-generation.mjs",
     "test:generation-pipeline": "node scripts/test-generation-pipeline.mjs",
     "test:board-platform": "node scripts/test-board-platform.mjs",
-    "test:compiler-security": "python3 backend/compiler-service/test_security.py",
+    "test:compiler-security": "node scripts/run-python-test.mjs backend/compiler-service/test_security.py",
     "test:file-placement": "node scripts/test-file-placement.mjs",
     "test:lvgl-preview-backend": "node scripts/test-lvgl-preview-backend.mjs",
     "test:official-examples-backend": "node scripts/test-official-examples-backend.mjs",
