@@ -30,6 +30,23 @@ export async function completeChat({ baseUrl, apiKey, model, messages }) {
   return completeOpenAIChat({ baseUrl, apiKey, model, messages })
 }
 
+async function readJsonResponse(res, label) {
+  const text = await res.text()
+  const contentType = res.headers.get('content-type') || ''
+  if (!contentType.includes('application/json')) {
+    const preview = text.trim().slice(0, 120)
+    const hint = preview.startsWith('<')
+      ? 'AI endpoint returned HTML. Check Settings: Base URL must be an OpenAI-compatible API endpoint such as https://api.openai.com/v1, not the VibeBoard page URL.'
+      : `AI endpoint returned ${contentType || 'unknown content type'}.`
+    throw new Error(`${label} returned non-JSON response: ${hint}`)
+  }
+  try {
+    return JSON.parse(text)
+  } catch (error) {
+    throw new Error(`${label} returned invalid JSON: ${error.message}`)
+  }
+}
+
 async function completeOpenAIChat({ baseUrl, apiKey, model, messages }) {
   const url = baseUrl.endsWith('/') ? baseUrl + 'chat/completions' : baseUrl + '/chat/completions'
   const res = await fetch(url, {
@@ -50,7 +67,7 @@ async function completeOpenAIChat({ baseUrl, apiKey, model, messages }) {
     const errText = await res.text()
     throw new Error(`API error ${res.status}: ${errText}`)
   }
-  const json = await res.json()
+  const json = await readJsonResponse(res, 'AI API')
   return json.choices?.[0]?.message?.content || ''
 }
 
@@ -83,7 +100,7 @@ async function completeAnthropicChat({ baseUrl, apiKey, model, messages }) {
     const errText = await res.text()
     throw new Error(`Anthropic API error ${res.status}: ${errText}`)
   }
-  const json = await res.json()
+  const json = await readJsonResponse(res, 'Anthropic API')
   return (json.content || []).map(part => part.text || '').join('')
 }
 
