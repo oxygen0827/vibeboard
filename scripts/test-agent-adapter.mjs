@@ -22,12 +22,20 @@ await copyModule('src/utils/aiApi.js')
 await copyModule('src/domain/agent/agentAdapter.js')
 
 const {
+  PROVIDER_PRESETS,
+} = await import(pathToFileURL(join(tmp, 'src/utils/aiApi.js')).href)
+
+const {
   AGENT_ADAPTERS,
   AGENT_EDITIONS,
   AGENT_TASK_TYPES,
   createAgentTask,
   runAgentTask,
 } = await import(pathToFileURL(join(tmp, 'src/domain/agent/agentAdapter.js')).href)
+
+const relayPreset = PROVIDER_PRESETS.find(provider => provider.name === 'GPT 中转平台')
+assert.equal(relayPreset?.baseUrl, 'https://rehdasu.cn')
+assert.equal(relayPreset?.models[0], 'gpt-5.5')
 
 const task = createAgentTask({
   taskType: AGENT_TASK_TYPES.REPAIR_BUILD,

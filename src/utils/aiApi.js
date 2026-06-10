@@ -225,6 +225,12 @@ export const PROVIDER_PRESETS = [
     keyPlaceholder: 'sk-...',
   },
   {
+    name: 'GPT 中转平台',
+    baseUrl: 'https://rehdasu.cn',
+    models: ['gpt-5.5'],
+    keyPlaceholder: 'sk-...',
+  },
+  {
     name: 'Anthropic',
     baseUrl: 'https://api.anthropic.com',
     models: ['claude-opus-4-7', 'claude-sonnet-4-6', 'claude-opus-4-6'],
