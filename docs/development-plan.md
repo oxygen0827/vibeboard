@@ -66,6 +66,8 @@ Goal: make the main SZPI ESP32-S3 flow dependable enough for repeated use.
    - Mount `/tmp/builds` from the `esp32-compiler` container to a host path.
    - Preserve AI project incremental builds, official example artifacts, OTA
      receiver artifacts, and BLE receiver artifacts across container rebuilds.
+   - Mount `/tmp/vibeboard-remote-ota` to preserve remote OTA firmware and job
+     state across container rebuilds.
    - Add deployment notes for cache location, cleanup, and backup policy.
 
 2. Harden compiler service inputs and outputs.

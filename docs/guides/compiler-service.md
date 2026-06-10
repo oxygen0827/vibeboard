@@ -13,18 +13,51 @@ and BLE OTA receiver firmware.
 
 ```bash
 cd backend/compiler-service
-docker build -t vibeboard-esp32-compiler .
-docker run -d --name esp32-compiler -p 8760:8760 vibeboard-esp32-compiler
+docker compose up -d --build
 ```
 
-For development, prefer mounting build cache and remote OTA state to host paths
-so container recreation does not erase useful artifacts.
+For one-off runs without Compose, mount the state directories explicitly:
+
+```bash
+docker build -t esp32-compiler .
+docker run -d --name esp32-compiler -p 8760:8760 \
+  -e BUILD_BASE=/tmp/builds \
+  -e REMOTE_OTA_DIR=/tmp/vibeboard-remote-ota \
+  -v "$PWD/.compiler-build-cache:/tmp/builds" \
+  -v "$PWD/.remote-ota-state:/tmp/vibeboard-remote-ota" \
+  esp32-compiler
+```
+
+Mount build cache and remote OTA state to host paths so container recreation
+does not erase useful artifacts.
 
 Important state paths:
 
 ```text
 /tmp/builds
 /tmp/vibeboard-remote-ota
+```
+
+The local Compose defaults are:
+
+```text
+backend/compiler-service/.compiler-build-cache -> /tmp/builds
+backend/compiler-service/.remote-ota-state     -> /tmp/vibeboard-remote-ota
+```
+
+The deploy Compose defaults are:
+
+```text
+/home/wq/vibeboard-build-cache -> /tmp/builds
+/home/wq/vibeboard-remote-ota  -> /tmp/vibeboard-remote-ota
+```
+
+Both can be overridden:
+
+```bash
+VIBEBOARD_BUILD_CACHE=/data/vibeboard/builds \
+VIBEBOARD_REMOTE_OTA_STATE=/data/vibeboard/remote-ota \
+docker compose up -d
 ```
 
 ## API Surface

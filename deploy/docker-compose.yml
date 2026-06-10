@@ -10,5 +10,9 @@ services:
     container_name: esp32-compiler
     restart: unless-stopped
     network_mode: host
+    environment:
+      BUILD_BASE: /tmp/builds
+      REMOTE_OTA_DIR: /tmp/vibeboard-remote-ota
     volumes:
       - ${VIBEBOARD_BUILD_CACHE:-/home/wq/vibeboard-build-cache}:/tmp/builds
+      - ${VIBEBOARD_REMOTE_OTA_STATE:-/home/wq/vibeboard-remote-ota}:/tmp/vibeboard-remote-ota

@@ -6,7 +6,13 @@ services:
     restart: unless-stopped
     ports:
       - "8760:8760"
-    # Compiler is CPU/memory heavy 鈥?limit resources
+    environment:
+      BUILD_BASE: /tmp/builds
+      REMOTE_OTA_DIR: /tmp/vibeboard-remote-ota
+    volumes:
+      - ${VIBEBOARD_BUILD_CACHE:-./.compiler-build-cache}:/tmp/builds
+      - ${VIBEBOARD_REMOTE_OTA_STATE:-./.remote-ota-state}:/tmp/vibeboard-remote-ota
+    # Compiler is CPU/memory heavy; limit resources.
     deploy:
       resources:
         limits:

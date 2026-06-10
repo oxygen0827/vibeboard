@@ -63,8 +63,14 @@ Current remote OTA state is stored by the compiler service under:
 /tmp/vibeboard-remote-ota
 ```
 
-Production deployment should persist this path or move the state into database
-and object storage.
+This path must be mounted to a host directory in deployment. The current deploy
+Compose file maps it to:
+
+```text
+${VIBEBOARD_REMOTE_OTA_STATE:-/home/wq/vibeboard-remote-ota}
+```
+
+Later production versions can move this state into database and object storage.
 
 ## BLE OTA
 
