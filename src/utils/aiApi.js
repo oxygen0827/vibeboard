@@ -226,7 +226,7 @@ export const PROVIDER_PRESETS = [
   },
   {
     name: 'GPT 中转平台',
-    baseUrl: 'https://rehdasu.cn',
+    baseUrl: 'https://rehdasu.cn/v1',
     models: ['gpt-5.5'],
     keyPlaceholder: 'sk-...',
   },

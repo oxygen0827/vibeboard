@@ -34,7 +34,7 @@ const {
 } = await import(pathToFileURL(join(tmp, 'src/domain/agent/agentAdapter.js')).href)
 
 const relayPreset = PROVIDER_PRESETS.find(provider => provider.name === 'GPT 中转平台')
-assert.equal(relayPreset?.baseUrl, 'https://rehdasu.cn')
+assert.equal(relayPreset?.baseUrl, 'https://rehdasu.cn/v1')
 assert.equal(relayPreset?.models[0], 'gpt-5.5')
 
 const task = createAgentTask({
