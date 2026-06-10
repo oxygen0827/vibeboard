@@ -41,7 +41,20 @@ REMOTE_OTA_DIR.mkdir(parents=True, exist_ok=True)
 (REMOTE_OTA_DIR / "state").mkdir(exist_ok=True)
 
 ALLOWED_SUFFIXES = {".c", ".cc", ".cpp", ".cxx", ".h", ".hpp", ".s", ".S"}
-ALLOWED_FILENAMES = {"CMakeLists.txt", "sdkconfig.defaults", "idf_component.yml", "partitions.csv"}
+# Files the FRONTEND is allowed to submit. These are L4-L5 application sources
+# only. Build-system files (CMakeLists.txt, sdkconfig, partitions.csv) are
+# deliberately NOT here: they can carry build-time code execution (CMake
+# execute_process, etc.), so their only trusted source is the server-side
+# board template. See SYSTEM_MANAGED_FILES below.
+ALLOWED_FILENAMES = {"idf_component.yml"}
+# L0-L3 system files owned by the board template. If the client submits any of
+# these we ignore them (and log) rather than writing client-controlled build
+# logic into the project. The template copied by setup_build_dir is the only
+# source of truth for them.
+SYSTEM_MANAGED_FILES = {"CMakeLists.txt", "sdkconfig.defaults", "sdkconfig", "partitions.csv"}
+# Application source must live under one of these roots. A bare top-level file
+# (e.g. a client trying to drop a root CMakeLists.txt) is rejected.
+ALLOWED_PROJECT_ROOTS = {"main", "components", "spiffs"}
 EXAMPLE_ID_RE = re.compile(r"^[0-9]{2}-[A-Za-z0-9_-]+$")
 DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_.:-]{0,96}$")
@@ -742,6 +755,17 @@ def render_lvgl_preview_with_fallback(project_files, selected_skills, manifest, 
     return png, "intent-lvgl-preview", diagnostics
 
 
+class SystemFileRejected(Exception):
+    """Raised when the client submits a server-managed system file.
+
+    This is not a hard error (we don't fail the build) — the caller catches it,
+    logs a warning, and skips the file so the template's trusted copy wins.
+    """
+    def __init__(self, rel_path: str):
+        self.rel_path = rel_path
+        super().__init__(f"system-managed file ignored: {rel_path}")
+
+
 def validate_project_path(build_dir: Path, rel_path: str) -> Path:
     if not isinstance(rel_path, str) or not rel_path.strip():
         raise ValueError("invalid project file path")
@@ -752,8 +776,21 @@ def validate_project_path(build_dir: Path, rel_path: str) -> Path:
         raise ValueError(f"unsafe project file path: {rel_path}")
 
     name = path.name
+
+    # Reject anything the board template owns. The client must never be able to
+    # inject build-system logic (CMake/sdkconfig/partitions) — that is the RCE
+    # surface. The template copied by setup_build_dir is the source of truth.
+    if name in SYSTEM_MANAGED_FILES:
+        raise SystemFileRejected(rel_path)
+
     if name not in ALLOWED_FILENAMES and path.suffix not in ALLOWED_SUFFIXES:
         raise ValueError(f"unsupported project file type: {rel_path}")
+
+    # Application sources must live under an allowed project root. This stops a
+    # client from dropping files at the project top level (where a stray
+    # CMakeLists or include could alter the build).
+    if len(path.parts) < 2 or path.parts[0] not in ALLOWED_PROJECT_ROOTS:
+        raise ValueError(f"project file must live under {sorted(ALLOWED_PROJECT_ROOTS)}: {rel_path}")
 
     target = (build_dir / Path(*path.parts)).resolve()
     root = build_dir.resolve()
@@ -806,7 +843,17 @@ def fixed_build_id(prefix: str, value: str) -> str:
 def sync_project_files(build_dir: Path, code: str, project_files: dict):
     main_file = project_files.get("__mainFile", "main.c")
     expected = set()
-    main_target = validate_project_path(build_dir / "main", main_file)
+    # The main entry file is special: it is named relative to main/ and is a
+    # plain source filename, so validate it directly (path-traversal + suffix)
+    # rather than through the application-root rule used for other files.
+    main_name = PurePosixPath(str(main_file).replace("\\", "/"))
+    if main_name.is_absolute() or ".." in main_name.parts or len(main_name.parts) != 1:
+        raise ValueError(f"invalid main file: {main_file}")
+    if main_name.suffix not in ALLOWED_SUFFIXES:
+        raise ValueError(f"unsupported main file type: {main_file}")
+    main_target = (build_dir / "main" / main_name.name).resolve()
+    if not str(main_target).startswith(str((build_dir / "main").resolve())):
+        raise ValueError(f"unsafe main file: {main_file}")
     main_target.parent.mkdir(parents=True, exist_ok=True)
     main_target.write_text(code)
     expected.add(main_target.resolve())
@@ -814,7 +861,13 @@ def sync_project_files(build_dir: Path, code: str, project_files: dict):
     for rel_path, content in project_files.items():
         if rel_path == "__mainFile":
             continue
-        target = validate_project_path(build_dir, rel_path)
+        try:
+            target = validate_project_path(build_dir, rel_path)
+        except SystemFileRejected as rejected:
+            # Client tried to supply a server-managed system file. Ignore it so
+            # the board template's trusted copy is used instead of client input.
+            log.warning(f"  ignored system-managed file from client: {rejected.rel_path}")
+            continue
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content)
         expected.add(target.resolve())
