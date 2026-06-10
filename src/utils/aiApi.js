@@ -202,12 +202,6 @@ async function streamAnthropicChat({ baseUrl, apiKey, model, messages, onChunk, 
 // Common model suggestions per provider
 export const PROVIDER_PRESETS = [
   {
-    name: '中转 GPT',
-    baseUrl: 'https://rehdasu.cn/v1',
-    models: ['gpt-5.5', 'gpt-4o', 'gpt-4.1', 'gpt-4o-mini'],
-    keyPlaceholder: 'sk-...',
-  },
-  {
     name: 'OpenAI',
     baseUrl: 'https://api.openai.com/v1',
     models: ['gpt-5.4', 'gpt-5.4-mini', 'gpt-5.2', 'gpt-4.1'],

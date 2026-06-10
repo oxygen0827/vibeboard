@@ -6,7 +6,10 @@ import CompilePanel from './components/CompilePanel'
 import ProjectEditor from './components/ProjectEditor'
 import HuangshanWorkspace from './components/HuangshanWorkspace'
 import { BOARDS, DEFAULT_BOARD_ID, getBoardList, getBoard } from './context/boards'
+import { listPlatformBoards, getPlatformBoard } from './context/boardPlatform'
+import { TOOLCHAINS } from './context/boardContract'
 import { providerKeyForBaseUrl } from './utils/aiApi'
+import { buildDefaultSettings } from './config/aiDefaults'
 import { buildGeneratedConfig } from './utils/projectAssembly'
 import { isSourcePath } from './utils/filePlacement'
 import { normalizeGeneratedSourceFiles } from './utils/projectValidation'
@@ -21,21 +24,10 @@ import './App.css'
 
 const STORAGE_KEY = 'esp32-vibe-coder-settings'
 const BOARD_STORAGE_KEY = 'esp32-vibe-coder-board'
-// Intentional hosted default so fresh deployments work without user setup.
-const DEFAULT_SETTINGS = {
-  baseUrl: 'https://rehdasu.cn/v1',
-  apiKey: 'sk-d55e0d8500404f752a39a2c5baced590b6475c3fcc8b6d84b9c1f000e6f00cd5',
-  model: 'gpt-5.5',
-  providerKeys: {
-    [providerKeyForBaseUrl('https://rehdasu.cn/v1')]: 'sk-d55e0d8500404f752a39a2c5baced590b6475c3fcc8b6d84b9c1f000e6f00cd5',
-  },
-}
 
-const LEGACY_DEFAULT_SETTINGS = {
-  baseUrl: 'https://api.minimax.chat/v1',
-  apiKey: 'sk-cp-gqDamnnNW1zvbls0aXsUkXzZoY8Tcv4scKA47FsN5Wb2al2fnV723JHNTMNak9mCJZZoijo6QAfrqXqYzrkMy7Gz72g5HBG3-lQlgTkvZ7dtVNhZll8Qft4',
-  model: 'MiniMax-M2.7',
-}
+// Default connection settings come from build-time env vars (see
+// src/config/aiDefaults.js and .env.example). No credentials live in source.
+const DEFAULT_SETTINGS = buildDefaultSettings()
 
 function withDefaultSettings(settings = {}) {
   const baseUrl = settings.baseUrl?.trim()
@@ -91,12 +83,7 @@ function loadSettings() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw) {
-      const parsed = JSON.parse(raw)
-      const isLegacyDefault =
-        parsed.baseUrl === LEGACY_DEFAULT_SETTINGS.baseUrl &&
-        parsed.apiKey === LEGACY_DEFAULT_SETTINGS.apiKey &&
-        parsed.model === LEGACY_DEFAULT_SETTINGS.model
-      return isLegacyDefault ? DEFAULT_SETTINGS : withDefaultSettings(parsed)
+      return withDefaultSettings(JSON.parse(raw))
     }
   } catch {}
   return DEFAULT_SETTINGS
@@ -141,6 +128,20 @@ export default function App() {
     setCompileSessionId(newCompileSessionId())
     setLatestCompileArtifact(null)
     localStorage.setItem(BOARD_STORAGE_KEY, id)
+  }
+
+  // Unified picker: a board's toolchain decides which workspace renders.
+  // SiFli/SCons boards (Huangshan) route to the Huangshan workspace; ESP-IDF
+  // boards stay in the main editor. This replaces the standalone mode toggle
+  // as the primary selection path while keeping both renderers intact.
+  function handlePlatformBoardChange(id) {
+    const platformBoard = getPlatformBoard(id)
+    if (platformBoard?.toolchain === TOOLCHAINS.SIFLI_SCONS) {
+      setWorkspaceMode('huangshan')
+      return
+    }
+    setWorkspaceMode('esp-idf')
+    handleBoardChange(id)
   }
 
   function handleSkillsChange(nextOrUpdater) {
@@ -255,10 +256,14 @@ export default function App() {
           </div>
           {workspaceMode === 'esp-idf' && (
             <div className="board-selector">
-              <select className="board-select-input" value={boardId} onChange={e => handleBoardChange(e.target.value)}>
-                {getBoardList().map(b => (
+              <select
+                className="board-select-input"
+                value={boardId}
+                onChange={e => handlePlatformBoardChange(e.target.value)}
+              >
+                {listPlatformBoards().map(b => (
                   <option key={b.id} value={b.id}>
-                    [ESP-IDF] {b.name} ({b.chip})
+                    [{b.toolchain === 'esp-idf' ? 'ESP-IDF' : 'SiFli'}] {b.name} ({b.chip})
                   </option>
                 ))}
               </select>
