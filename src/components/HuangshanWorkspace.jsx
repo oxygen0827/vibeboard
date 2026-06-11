@@ -39,6 +39,11 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
   const [appDisplayName, setAppDisplayName] = useState('传感器仪表盘')
   const [description, setDescription] = useState('显示黄山派真实传感器和 ADC 读数。')
   const [aiPrompt, setAiPrompt] = useState('做一个黄山派传感器仪表盘，显示环境光、IMU 加速度、电池 ADC、PA34 ADC，并提供 LED 测试按钮。')
+  const [chatMessages, setChatMessages] = useState(() => [{
+    role: 'assistant',
+    content: '先描述你想做的黄山派应用。我会先给出界面和能力方案，标清真实例程来源与占位能力；你确认后再生成代码。',
+  }])
+  const [pendingConfig, setPendingConfig] = useState(null)
   const [aiState, setAiState] = useState('idle')
   const [aiError, setAiError] = useState('')
   const [builderConfig, setBuilderConfig] = useState(() => normalizeHuangshanBuilderConfig(createDefaultHuangshanBuilderConfig({
@@ -111,6 +116,18 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
     setStatus(`已生成 ${appName}`)
   }
 
+  function applyBuilderConfig(normalized, statusText = null) {
+    const next = createHuangshanAppFilesFromBuilder(normalized)
+    setAppDisplayName(normalized.displayName)
+    setDescription(normalized.description)
+    setBuilderConfig(normalized)
+    setFiles(next)
+    setActiveFile(Object.keys(next)[0])
+    setPendingConfig(null)
+    resetGeneratedState()
+    setStatus(statusText || `已生成 ${normalizeHuangshanAppName(normalized.displayName)}`)
+  }
+
   function handleGenerateBuilderApp() {
     const normalized = normalizeHuangshanBuilderConfig({
       ...builderConfig,
@@ -118,40 +135,52 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
       description,
       components: builderConfig.components.filter(component => component.enabled !== false),
     })
-    const next = createHuangshanAppFilesFromBuilder(normalized)
-    setBuilderConfig(normalized)
-    setFiles(next)
-    setActiveFile(Object.keys(next)[0])
-    resetGeneratedState()
-    setStatus(`已生成 ${normalizeHuangshanAppName(normalized.displayName)}`)
+    applyBuilderConfig(normalized)
   }
 
   async function handleGenerateWithAi() {
+    const prompt = aiPrompt.trim()
+    if (!prompt) return
     setAiState('generating')
     setAiError('')
-    setStatus('正在生成黄山派应用...')
+    setStatus('正在分析需求并生成方案草稿...')
+    setChatMessages(prev => [...prev, { role: 'user', content: prompt }])
     try {
       const generated = await generateHuangshanBuilderConfig({
         settings,
-        userPrompt: aiPrompt,
+        userPrompt: prompt,
         displayName: appDisplayName,
         description,
       })
       const normalized = normalizeHuangshanBuilderConfig(generated.config)
-      const next = createHuangshanAppFilesFromBuilder(normalized)
-      setAppDisplayName(normalized.displayName)
-      setDescription(normalized.description)
-      setBuilderConfig(normalized)
-      setFiles(next)
-      setActiveFile(Object.keys(next)[0])
-      resetGeneratedState()
+      setPendingConfig(normalized)
       setAiState('ok')
-      setStatus(`已生成 ${normalizeHuangshanAppName(normalized.displayName)}`)
+      setStatus('方案草稿已生成，确认后再写入代码。')
+      setChatMessages(prev => [...prev, { role: 'assistant', content: createDraftMessage(normalized) }])
     } catch (error) {
       setAiState('error')
       setAiError(error.message || 'AI 生成失败')
       setStatus(error.message || 'AI 生成失败')
+      setChatMessages(prev => [...prev, { role: 'assistant', content: `方案生成失败：${error.message || 'AI 生成失败'}` }])
     }
+  }
+
+  function handleApplyPendingConfig() {
+    if (!pendingConfig) return
+    applyBuilderConfig(pendingConfig, `已按方案生成 ${normalizeHuangshanAppName(pendingConfig.displayName)}`)
+    setChatMessages(prev => [...prev, {
+      role: 'assistant',
+      content: '代码已写入工程文件。现在可以先预览界面，再编译；编译产物和串口日志会进入真实性报告。',
+    }])
+  }
+
+  function handleClearChat() {
+    setPendingConfig(null)
+    setAiError('')
+    setChatMessages([{
+      role: 'assistant',
+      content: '对话已重置。请重新描述你想做的黄山派应用，我会先给出方案再生成代码。',
+    }])
   }
 
   function updateBuilderComponent(componentId, patch) {
@@ -291,42 +320,46 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
           </div>
         </div>
 
-        <div className="huangshan-prompt-panel">
-          <label>
-            描述你要做的功能
-            <textarea
-              value={aiPrompt}
-              onChange={event => setAiPrompt(event.target.value)}
-              placeholder="例：做一个传感器仪表盘，显示环境光、加速度、电池 ADC，并提供 LED 测试按钮。"
-            />
-          </label>
-          <div className="huangshan-main-actions">
-            <button
-              className="huangshan-primary"
-              onClick={handleGenerateWithAi}
-              disabled={aiState === 'generating'}
-            >
-              {aiState === 'generating' ? '生成中...' : 'AI 生成代码'}
+        <div className="huangshan-chat-panel">
+          <div className="huangshan-chat-header">
+            <div>
+              <div className="huangshan-heading">需求对话</div>
+              <strong>先定方案，再生成代码</strong>
+            </div>
+            <button className="huangshan-icon-button" onClick={handleClearChat} title="清空对话">清空</button>
+          </div>
+          <div className="huangshan-chat-messages">
+            {chatMessages.map((message, index) => (
+              <div key={`${message.role}-${index}`} className={`huangshan-message ${message.role}`}>
+                <div className="huangshan-message-role">{message.role === 'user' ? '你' : 'AI'}</div>
+                <div className="huangshan-message-content">{message.content}</div>
+              </div>
+            ))}
+          </div>
+          <div className="huangshan-quick-prompts">
+            {[
+              '做一个传感器首页，显示环境光、IMU、电池和 PA34 ADC。',
+              '做一个 GPIO/UART 调试页，可以触发 GPIO20 和 UART2 心跳。',
+              '做一个 LED 测试页，按立创 WS2812 例程点亮绿色。',
+            ].map(prompt => (
+              <button key={prompt} onClick={() => setAiPrompt(prompt)}>{prompt}</button>
+            ))}
+          </div>
+          <textarea
+            className="huangshan-chat-input"
+            value={aiPrompt}
+            onChange={event => setAiPrompt(event.target.value)}
+            placeholder="描述需求，AI 会先返回界面方案和真实能力边界..."
+          />
+          <div className="huangshan-chat-actions">
+            <button className="huangshan-primary" onClick={handleGenerateWithAi} disabled={aiState === 'generating' || !aiPrompt.trim()}>
+              {aiState === 'generating' ? '分析中...' : '发送给 AI'}
             </button>
-            <button
-              className="huangshan-secondary"
-              onClick={() => handleRenderPreview()}
-              disabled={renderState === 'rendering'}
-            >
-              {renderState === 'rendering' ? '预览中...' : '预览'}
+            <button className="huangshan-build" onClick={handleApplyPendingConfig} disabled={!pendingConfig}>
+              按方案生成代码
             </button>
           </div>
-          <div className="huangshan-main-actions">
-            <button className="huangshan-build" onClick={handleBuild} disabled={buildState === 'building'}>
-              {buildState === 'building' ? '编译中...' : '编译'}
-            </button>
-            <button className="huangshan-flash" onClick={handleFlash} disabled={!canFlash}>
-              {flashState === 'flashing' ? '烧录中...' : '烧录'}
-            </button>
-          </div>
-          <button className="huangshan-secondary" onClick={onOpenSettings} type="button">
-            AI 设置
-          </button>
+          <button className="huangshan-secondary" onClick={onOpenSettings} type="button">AI 设置</button>
           {aiError && <div className="huangshan-ai-error">{aiError}</div>}
         </div>
 
@@ -371,6 +404,20 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
               {status || '描述功能后点击 AI 生成代码。'}
             </div>
             <TruthReportPanel report={truthReport} />
+            {pendingConfig && (
+              <DraftPlanPanel config={pendingConfig} onApply={handleApplyPendingConfig} />
+            )}
+            <div className="huangshan-stage-actions">
+              <button className="huangshan-secondary" onClick={() => handleRenderPreview()} disabled={renderState === 'rendering'}>
+                {renderState === 'rendering' ? '预览中...' : '预览'}
+              </button>
+              <button className="huangshan-build" onClick={handleBuild} disabled={buildState === 'building'}>
+                {buildState === 'building' ? '编译中...' : '编译'}
+              </button>
+              <button className="huangshan-flash" onClick={handleFlash} disabled={!canFlash}>
+                {flashState === 'flashing' ? '烧录中...' : '烧录'}
+              </button>
+            </div>
             {buildEvidence?.artifactSummary?.artifacts?.length > 0 && (
               <div className="huangshan-artifacts compact">
                 {buildEvidence.artifactSummary.artifacts.map(item => (
@@ -539,12 +586,49 @@ function TruthReportPanel({ report }) {
   )
 }
 
+function DraftPlanPanel({ config, onApply }) {
+  const components = Array.isArray(config.components) ? config.components.filter(component => component.enabled !== false) : []
+  return (
+    <div className="huangshan-draft-plan">
+      <div className="huangshan-heading">方案草稿</div>
+      <strong>{config.displayName}</strong>
+      <p>{config.description}</p>
+      <div className="huangshan-draft-list">
+        {components.map(component => (
+          <span key={component.id || `${component.type}-${component.label}`}>
+            {component.label} / {component.capability}
+          </span>
+        ))}
+      </div>
+      <button className="huangshan-build" onClick={onApply}>按这个方案生成代码</button>
+    </div>
+  )
+}
+
 function truthBadge(item) {
   if (item.canClaimVerified) return '已验证'
   if (item.canClaimReal) return '已编译'
   if (item.implementation === 'real') return '真实'
   if (item.implementation === 'placeholder') return '占位'
   return '仅界面'
+}
+
+function createDraftMessage(config) {
+  const components = Array.isArray(config.components) ? config.components.filter(component => component.enabled !== false) : []
+  const real = components
+    .filter(component => !['bluetooth', 'motor', 'status'].includes(component.capability))
+    .map(component => `${component.label}(${component.capability})`)
+  const placeholders = components
+    .filter(component => ['bluetooth', 'motor'].includes(component.capability))
+    .map(component => `${component.label}(${component.capability})`)
+
+  return [
+    `方案草稿：${config.displayName}`,
+    config.description,
+    real.length ? `真实例程能力：${real.join('、')}` : '真实例程能力：暂无，需要继续明确。',
+    placeholders.length ? `占位能力：${placeholders.join('、')}，不会在真实性报告里冒充已验证。` : '占位能力：无。',
+    '下一步：确认方案后点击“按方案生成代码”，再预览、编译、烧录。',
+  ].join('\n')
 }
 
 function HuangshanDevicePreview({ preview, realPreview, renderError, onRender }) {

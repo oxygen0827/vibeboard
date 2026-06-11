@@ -16,7 +16,7 @@
 }
 
 .huangshan-board-card,
-.huangshan-prompt-panel,
+.huangshan-chat-panel,
 .huangshan-device-compact {
   border: 1px solid var(--border-muted);
   background: var(--bg-primary);
@@ -45,7 +45,7 @@
 }
 
 .huangshan-board-card p,
-.huangshan-prompt-panel p {
+.huangshan-chat-panel p {
   margin: 0;
   color: var(--text-secondary);
   font-size: 12px;
@@ -73,7 +73,6 @@
   color: var(--red);
 }
 
-.huangshan-prompt-panel label,
 .huangshan-device-compact label,
 .huangshan-section label {
   display: flex;
@@ -84,9 +83,6 @@
   font-size: 12px;
 }
 
-.huangshan-prompt-panel input,
-.huangshan-prompt-panel textarea,
-.huangshan-prompt-panel select,
 .huangshan-device-compact select,
 .huangshan-section input,
 .huangshan-section textarea,
@@ -101,15 +97,140 @@
   font: inherit;
 }
 
-.huangshan-prompt-panel textarea {
-  min-height: 180px;
-  resize: vertical;
-  line-height: 1.55;
-}
-
 .huangshan-section textarea {
   min-height: 70px;
   resize: vertical;
+}
+
+.huangshan-chat-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.huangshan-chat-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.huangshan-chat-header strong {
+  display: block;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.huangshan-icon-button {
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border-radius: 6px;
+  padding: 5px 9px;
+  font-size: 12px;
+}
+
+.huangshan-chat-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 300px;
+  overflow: auto;
+  padding: 2px 2px 8px;
+}
+
+.huangshan-message {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.huangshan-message.user {
+  grid-template-columns: minmax(0, 1fr) 28px;
+}
+
+.huangshan-message-role {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  border: 1px solid var(--border-muted);
+}
+
+.huangshan-message.user .huangshan-message-role {
+  grid-column: 2;
+  grid-row: 1;
+  background: var(--accent-muted);
+  color: var(--accent-hover);
+}
+
+.huangshan-message-content {
+  white-space: pre-wrap;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-muted);
+  border-radius: 8px;
+  padding: 9px 10px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.huangshan-message.user .huangshan-message-content {
+  grid-column: 1;
+  grid-row: 1;
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.huangshan-quick-prompts {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.huangshan-quick-prompts button {
+  text-align: left;
+  border: 1px solid var(--border-muted);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border-radius: 6px;
+  padding: 8px 9px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.huangshan-chat-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 96px;
+  resize: vertical;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: 8px;
+  padding: 10px;
+  font: inherit;
+  line-height: 1.55;
+}
+
+.huangshan-chat-actions,
+.huangshan-stage-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.huangshan-stage-actions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 10px;
 }
 
 .huangshan-main-actions {
@@ -146,7 +267,7 @@
   color: var(--text-secondary);
 }
 
-.huangshan-prompt-panel > .huangshan-secondary {
+.huangshan-chat-panel > .huangshan-secondary {
   margin-top: 8px;
 }
 
@@ -334,7 +455,8 @@
 .huangshan-artifacts,
 .huangshan-log-lines,
 .huangshan-error,
-.huangshan-truth {
+.huangshan-truth,
+.huangshan-draft-plan {
   margin: 10px 0 0;
   padding: 10px;
   background: var(--bg-primary);
@@ -351,6 +473,40 @@
 .huangshan-truth {
   font-family: inherit;
   white-space: normal;
+}
+
+.huangshan-draft-plan {
+  font-family: inherit;
+  white-space: normal;
+}
+
+.huangshan-draft-plan strong {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.huangshan-draft-plan p {
+  margin: 0 0 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.huangshan-draft-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.huangshan-draft-list span {
+  padding: 4px 7px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 11px;
 }
 
 .huangshan-truth-summary {
