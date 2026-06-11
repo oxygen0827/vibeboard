@@ -21,33 +21,33 @@ import { generateHuangshanBuilderConfig } from '../utils/huangshanAi'
 import './HuangshanWorkspace.css'
 
 const HUANGSHAN_CAPABILITY_OPTIONS = [
-  { value: 'status', label: 'Status' },
-  { value: 'ambient_light', label: 'Light' },
+  { value: 'status', label: '状态' },
+  { value: 'ambient_light', label: '环境光' },
   { value: 'imu', label: 'IMU' },
-  { value: 'magnetometer', label: 'Compass' },
+  { value: 'magnetometer', label: '磁力计' },
   { value: 'adc_gpio', label: 'ADC' },
-  { value: 'battery', label: 'Battery' },
+  { value: 'battery', label: '电池' },
   { value: 'bluetooth', label: 'BLE' },
-  { value: 'key', label: 'Key' },
+  { value: 'key', label: '按键' },
   { value: 'led', label: 'LED' },
   { value: 'gpio_output', label: 'GPIO' },
   { value: 'uart2', label: 'UART2' },
-  { value: 'motor', label: 'Motor' },
+  { value: 'motor', label: '马达' },
 ]
 
 export default function HuangshanWorkspace({ settings, onOpenSettings }) {
-  const [appDisplayName, setAppDisplayName] = useState('Sensor Dashboard')
-  const [description, setDescription] = useState('Show real Huangshan Pi sensor and ADC readings.')
-  const [aiPrompt, setAiPrompt] = useState('Create a Huangshan Pi sensor dashboard with ambient light, IMU acceleration, battery ADC, PA34 ADC, and an LED test button.')
+  const [appDisplayName, setAppDisplayName] = useState('传感器仪表盘')
+  const [description, setDescription] = useState('显示黄山派真实传感器和 ADC 读数。')
+  const [aiPrompt, setAiPrompt] = useState('做一个黄山派传感器仪表盘，显示环境光、IMU 加速度、电池 ADC、PA34 ADC，并提供 LED 测试按钮。')
   const [aiState, setAiState] = useState('idle')
   const [aiError, setAiError] = useState('')
   const [builderConfig, setBuilderConfig] = useState(() => normalizeHuangshanBuilderConfig(createDefaultHuangshanBuilderConfig({
-    displayName: 'Sensor Dashboard',
-    description: 'Show real Huangshan Pi sensor and ADC readings.',
+    displayName: '传感器仪表盘',
+    description: '显示黄山派真实传感器和 ADC 读数。',
   })))
   const [files, setFiles] = useState(() => createHuangshanAppFiles({
-    displayName: 'Sensor Dashboard',
-    description: 'Show real Huangshan Pi sensor and ADC readings.',
+    displayName: '传感器仪表盘',
+    description: '显示黄山派真实传感器和 ADC 读数。',
   }))
   const [activeFile, setActiveFile] = useState(() => Object.keys(files)[0])
   const [health, setHealth] = useState(null)
@@ -108,7 +108,7 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
     setFiles(next)
     setActiveFile(Object.keys(next)[0])
     resetGeneratedState()
-    setStatus(`Generated ${appName}`)
+    setStatus(`已生成 ${appName}`)
   }
 
   function handleGenerateBuilderApp() {
@@ -123,13 +123,13 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
     setFiles(next)
     setActiveFile(Object.keys(next)[0])
     resetGeneratedState()
-    setStatus(`Generated ${normalizeHuangshanAppName(normalized.displayName)}`)
+    setStatus(`已生成 ${normalizeHuangshanAppName(normalized.displayName)}`)
   }
 
   async function handleGenerateWithAi() {
     setAiState('generating')
     setAiError('')
-    setStatus('Generating Huangshan app...')
+    setStatus('正在生成黄山派应用...')
     try {
       const generated = await generateHuangshanBuilderConfig({
         settings,
@@ -146,11 +146,11 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
       setActiveFile(Object.keys(next)[0])
       resetGeneratedState()
       setAiState('ok')
-      setStatus(`Generated ${normalizeHuangshanAppName(normalized.displayName)}`)
+      setStatus(`已生成 ${normalizeHuangshanAppName(normalized.displayName)}`)
     } catch (error) {
       setAiState('error')
-      setAiError(error.message || 'AI generation failed')
-      setStatus(error.message || 'AI generation failed')
+      setAiError(error.message || 'AI 生成失败')
+      setStatus(error.message || 'AI 生成失败')
     }
   }
 
@@ -180,18 +180,18 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
       : null
     setRenderState('rendering')
     setRenderError('')
-    setStatus(safeTap ? `Rendering tap ${safeTap.x}, ${safeTap.y}...` : 'Rendering LVGL preview...')
+    setStatus(safeTap ? `正在渲染点击 ${safeTap.x}, ${safeTap.y}...` : '正在渲染 LVGL 预览...')
     try {
       const rendered = await renderHuangshanLvglPreview({ displayName: appDisplayName, description, files, tap: safeTap })
       setRealPreview(rendered)
       setRenderState('ok')
-      const cacheText = rendered.cache?.hit ? 'cache hit' : 'compiled'
-      setStatus(`Preview ready: ${rendered.viewport.width}x${rendered.viewport.height} / ${cacheText}`)
+      const cacheText = rendered.cache?.hit ? '命中缓存' : '已编译'
+      setStatus(`预览就绪：${rendered.viewport.width}x${rendered.viewport.height} / ${cacheText}`)
     } catch (error) {
       setRealPreview(null)
       setRenderState('error')
-      setRenderError(error.message || 'LVGL preview failed')
-      setStatus(error.message || 'LVGL preview failed')
+      setRenderError(error.message || 'LVGL 预览失败')
+      setStatus(error.message || 'LVGL 预览失败')
     }
   }
 
@@ -200,7 +200,7 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
     setBuildLog([])
     setSerialLog([])
     setBuildEvidence(null)
-    setStatus('Building Huangshan project...')
+    setStatus('正在编译黄山派工程...')
     try {
       const evidence = await buildHuangshanWorkspace({
         files,
@@ -209,18 +209,18 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
       })
       setBuildEvidence(evidence)
       setBuildState('ok')
-      setStatus('Build succeeded. Ready to flash.')
+      setStatus('编译成功，可以烧录。')
     } catch (error) {
       setBuildEvidence(error.buildEvidence || null)
       setBuildState('error')
-      setStatus(error.message || 'Build failed')
+      setStatus(error.message || '编译失败')
     }
   }
 
   async function handleFlash() {
     setFlashState('flashing')
     setBuildLog([])
-    setStatus(`Flashing ${selectedPort}...`)
+    setStatus(`正在烧录 ${selectedPort}...`)
     try {
       await flashHuangshanWorkspace({
         port: selectedPort,
@@ -228,10 +228,10 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
         onLog: line => setBuildLog(prev => [...prev, line]),
       })
       setFlashState('ok')
-      setStatus('Flash succeeded')
+      setStatus('烧录成功')
     } catch (error) {
       setFlashState('error')
-      setStatus(error.message || 'Flash failed')
+      setStatus(error.message || '烧录失败')
     }
   }
 
@@ -255,9 +255,9 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
       setMonitorAbort(null)
     }).catch(error => {
       if (error.name === 'AbortError') {
-        setStatus('Serial monitor stopped')
+        setStatus('串口监视已停止')
       } else {
-        setStatus(error.message || 'Serial monitor failed')
+        setStatus(error.message || '串口监视失败')
         setMonitorState('error')
       }
       setMonitorAbort(null)
@@ -268,7 +268,7 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
     monitorAbort?.abort()
     setMonitorState('idle')
     setMonitorAbort(null)
-    setStatus('Serial monitor stopped')
+    setStatus('串口监视已停止')
   }
 
   const filePaths = Object.keys(files)
@@ -287,17 +287,17 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
             <p>{HUANGSHAN_BOARD_PROFILE.chip} - {HUANGSHAN_BOARD_PROFILE.framework}</p>
           </div>
           <div className={`huangshan-health ${health?.ok ? 'ok' : 'error'}`}>
-            {health ? (health.ok ? 'Build service connected' : `Service unavailable: ${health.error || 'environment check failed'}`) : 'Checking build service...'}
+            {health ? (health.ok ? '编译服务已连接' : `服务不可用：${health.error || '环境检查失败'}`) : '正在检查编译服务...'}
           </div>
         </div>
 
         <div className="huangshan-prompt-panel">
           <label>
-            Describe the feature
+            描述你要做的功能
             <textarea
               value={aiPrompt}
               onChange={event => setAiPrompt(event.target.value)}
-              placeholder="Example: create a sensor dashboard with light, acceleration, battery ADC, and an LED test button."
+              placeholder="例：做一个传感器仪表盘，显示环境光、加速度、电池 ADC，并提供 LED 测试按钮。"
             />
           </label>
           <div className="huangshan-main-actions">
@@ -306,33 +306,33 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
               onClick={handleGenerateWithAi}
               disabled={aiState === 'generating'}
             >
-              {aiState === 'generating' ? 'Generating...' : 'AI generate'}
+              {aiState === 'generating' ? '生成中...' : 'AI 生成代码'}
             </button>
             <button
               className="huangshan-secondary"
               onClick={() => handleRenderPreview()}
               disabled={renderState === 'rendering'}
             >
-              {renderState === 'rendering' ? 'Previewing...' : 'Preview'}
+              {renderState === 'rendering' ? '预览中...' : '预览'}
             </button>
           </div>
           <div className="huangshan-main-actions">
             <button className="huangshan-build" onClick={handleBuild} disabled={buildState === 'building'}>
-              {buildState === 'building' ? 'Building...' : 'Build'}
+              {buildState === 'building' ? '编译中...' : '编译'}
             </button>
             <button className="huangshan-flash" onClick={handleFlash} disabled={!canFlash}>
-              {flashState === 'flashing' ? 'Flashing...' : 'Flash'}
+              {flashState === 'flashing' ? '烧录中...' : '烧录'}
             </button>
           </div>
           <button className="huangshan-secondary" onClick={onOpenSettings} type="button">
-            AI settings
+            AI 设置
           </button>
           {aiError && <div className="huangshan-ai-error">{aiError}</div>}
         </div>
 
         <div className="huangshan-device-compact">
           <label>
-            Serial port
+            串口
             <select value={selectedPort} onChange={event => setSelectedPort(event.target.value)}>
               {serialPorts.length === 0 && <option value={selectedPort}>{selectedPort}</option>}
               {serialPorts.map(port => (
@@ -341,16 +341,16 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
             </select>
           </label>
           {monitorState === 'monitoring' ? (
-            <button className="huangshan-monitor" onClick={handleStopMonitor}>Stop serial</button>
+            <button className="huangshan-monitor" onClick={handleStopMonitor}>停止串口</button>
           ) : (
             <button className="huangshan-monitor" onClick={handleStartMonitor} disabled={!canMonitor}>
-              Monitor serial
+              监视串口
             </button>
           )}
         </div>
 
         <button className="huangshan-advanced-toggle" onClick={() => setShowAdvanced(prev => !prev)}>
-          {showAdvanced ? 'Hide code and logs' : 'Show code and logs'}
+          {showAdvanced ? '隐藏代码和日志' : '查看代码和日志'}
         </button>
       </section>
 
@@ -366,9 +366,9 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
             />
           </div>
           <div className="huangshan-stage-status">
-            <div className="huangshan-heading">Status</div>
+            <div className="huangshan-heading">状态</div>
             <div className={`huangshan-status ${logState}`}>
-              {status || 'Describe a feature, then click AI generate.'}
+              {status || '描述功能后点击 AI 生成代码。'}
             </div>
             <TruthReportPanel report={truthReport} />
             {buildEvidence?.artifactSummary?.artifacts?.length > 0 && (
@@ -391,9 +391,9 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
           <div className="huangshan-advanced">
             <div className="huangshan-advanced-config">
               <div className="huangshan-section">
-                <div className="huangshan-heading">App</div>
+                <div className="huangshan-heading">应用</div>
                 <label>
-                  Name
+                  名称
                   <input value={appDisplayName} onChange={event => {
                     setAppDisplayName(event.target.value)
                     setBuilderConfig(prev => ({ ...prev, displayName: event.target.value }))
@@ -401,19 +401,19 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
                   }} />
                 </label>
                 <label>
-                  Description
+                  描述
                   <textarea value={description} onChange={event => {
                     setDescription(event.target.value)
                     setBuilderConfig(prev => ({ ...prev, description: event.target.value }))
                     setRealPreview(null)
                   }} />
                 </label>
-                <button className="huangshan-secondary" onClick={regenerateTemplate}>Generate blank template</button>
-                <button className="huangshan-secondary" onClick={handleGenerateBuilderApp}>Rebuild from components</button>
+                <button className="huangshan-secondary" onClick={regenerateTemplate}>生成空模板</button>
+                <button className="huangshan-secondary" onClick={handleGenerateBuilderApp}>按组件重新生成</button>
               </div>
 
               <div className="huangshan-section">
-                <div className="huangshan-heading">Components</div>
+                <div className="huangshan-heading">组件</div>
                 <div className="huangshan-builder-list">
                   {builderConfig.components.map(component => (
                     <div key={component.id || `${component.type}-${component.label}`} className={`huangshan-builder-item ${component.enabled === false ? 'disabled' : ''}`}>
@@ -450,9 +450,9 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
               </div>
 
               <div className="huangshan-section">
-                <div className="huangshan-heading">Device</div>
+                <div className="huangshan-heading">设备</div>
                 <label>
-                  Baud
+                  波特率
                   <select value={monitorBaud} onChange={event => setMonitorBaud(Number(event.target.value))}>
                     <option value={921600}>921600</option>
                     <option value={115200}>115200</option>
@@ -497,7 +497,7 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
               </div>
 
               <aside className="huangshan-log">
-                <div className="huangshan-heading">Build log</div>
+                <div className="huangshan-heading">编译日志</div>
                 {buildEvidence?.firstError && (
                   <pre className="huangshan-error">{buildEvidence.firstError.context.join('\n')}</pre>
                 )}
@@ -518,11 +518,11 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
 function TruthReportPanel({ report }) {
   return (
     <div className="huangshan-truth">
-      <div className="huangshan-heading">Truth report</div>
+      <div className="huangshan-heading">真实性报告</div>
       <div className="huangshan-truth-summary">
-        <span>real {report.realCount}</span>
-        <span>placeholder {report.placeholderCount}</span>
-        <span>verified {report.verifiedCount}</span>
+        <span>真实 {report.realCount}</span>
+        <span>占位 {report.placeholderCount}</span>
+        <span>已验证 {report.verifiedCount}</span>
       </div>
       <div className="huangshan-truth-list">
         {report.items.map(item => (
@@ -540,9 +540,11 @@ function TruthReportPanel({ report }) {
 }
 
 function truthBadge(item) {
-  if (item.canClaimVerified) return 'verified'
-  if (item.canClaimReal) return 'built'
-  return item.implementation
+  if (item.canClaimVerified) return '已验证'
+  if (item.canClaimReal) return '已编译'
+  if (item.implementation === 'real') return '真实'
+  if (item.implementation === 'placeholder') return '占位'
+  return '仅界面'
 }
 
 function HuangshanDevicePreview({ preview, realPreview, renderError, onRender }) {
@@ -577,9 +579,9 @@ function HuangshanDevicePreview({ preview, realPreview, renderError, onRender })
       </div>
       <div className="huangshan-preview-meta">
         <span>{preview.viewport.width} x {preview.viewport.height}</span>
-        <span>{hasRealPreview ? realPreview.renderer : 'semantic preview'}</span>
-        {hasRealPreview && <span>{realPreview.cache?.hit ? 'cache hit' : 'compiled'}</span>}
-        {realPreview?.tap && <span>tap {realPreview.tap.x},{realPreview.tap.y}</span>}
+        <span>{hasRealPreview ? realPreview.renderer : '语义预览'}</span>
+        {hasRealPreview && <span>{realPreview.cache?.hit ? '命中缓存' : '已编译'}</span>}
+        {realPreview?.tap && <span>点击 {realPreview.tap.x},{realPreview.tap.y}</span>}
       </div>
       {renderError && <div className="huangshan-render-error">{renderError}</div>}
     </div>
