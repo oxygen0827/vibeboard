@@ -94,6 +94,7 @@ assert.match(main, /lv_timer_create\(huangshan_capability_poll, 1000, RT_NULL\)/
 assert.match(main, /static int app_main\(intent_t i\)/)
 assert.match(main, /gui_app_regist_msg_handler\(APP_ID, msg_handler\)/)
 assert.match(main, /BUILTIN_APP_EXPORT\(LV_EXT_STR_ID\(lckfb\), LV_EXT_IMG_GET\(img_LiChuang\), APP_ID, app_main\);/)
+assert.match(main, /#define APP_ID "fitness_watch"/)
 
 const ioFiles = createHuangshanAppFilesFromBuilder({
   displayName: 'IO Console',
@@ -113,5 +114,15 @@ assert.match(ioMain, /HAL_PIN_Set\(PAD_PA19, USART2_TXD, PIN_PULLUP, 1\)/)
 assert.match(ioMain, /GPIO%d pulse/)
 assert.match(ioMain, /UART2 heartbeat sent/)
 assert.match(ioProjectConfig, /CONFIG_BSP_USING_UART2=y/)
+
+const longNameFiles = createHuangshanAppFilesFromBuilder({
+  displayName: 'Very Long Huangshan Sensor Dashboard',
+  description: 'APP_ID must stay inside the launcher id buffer.',
+  components: [{ type: 'status', label: 'Status', value: 'Ready' }],
+})
+assert.match(
+  longNameFiles['src/gui_apps/Very_Long_Huangshan_Sensor_Dashboard/main.c'],
+  /#define APP_ID "[a-z0-9_]{1,15}"/,
+)
 
 console.log('huangshan app builder tests passed')

@@ -1,20 +1,15 @@
-import { normalizeHuangshanAppId, normalizeHuangshanAppName } from './appTemplate.js'
+import { normalizeHuangshanAppName } from './appTemplate.js'
+import {
+  createHuangshanAppCapsule,
+  validateHuangshanAppCapsule,
+} from './appCapsule.js'
+import {
+  HUANGSHAN_CAPABILITY_IDS,
+  collectHuangshanContractValues,
+} from './capabilityContracts.js'
 
 const COMPONENT_TYPES = new Set(['status', 'metric', 'battery', 'bluetooth', 'action'])
-const CAPABILITY_TYPES = new Set([
-  'status',
-  'ambient_light',
-  'imu',
-  'magnetometer',
-  'battery',
-  'adc_gpio',
-  'bluetooth',
-  'key',
-  'gpio_output',
-  'led',
-  'motor',
-  'uart2',
-])
+const CAPABILITY_TYPES = new Set(HUANGSHAN_CAPABILITY_IDS)
 
 function defaultCapabilityForType(type) {
   if (type === 'battery') return 'battery'
@@ -79,19 +74,10 @@ export function normalizeHuangshanBuilderConfig(config = {}) {
   }
 }
 
-function createSconscript(config = {}) {
-  const capabilities = new Set((config.components || []).map(component => component.capability))
-  const needsSensor = capabilities.has('ambient_light') || capabilities.has('imu') || capabilities.has('magnetometer')
-  const needsLed = capabilities.has('led')
-  const needsUart = capabilities.has('uart2')
+function createSconscript(capsule = {}) {
   const extraIncludes = [
     "os.path.join(rtconfig.SIFLI_SDK, 'rtos/rtthread/components/drivers/include')",
-    needsSensor ? "os.path.join(rtconfig.SIFLI_SDK, 'rtos/rtthread/components/drivers/sensors')" : null,
-    capabilities.has('ambient_light') ? "os.path.join(rtconfig.SIFLI_SDK, 'customer/peripherals/sensor/LTR303')" : null,
-    capabilities.has('imu') ? "os.path.join(rtconfig.SIFLI_SDK, 'customer/peripherals/sensor/LSM6DSL')" : null,
-    capabilities.has('magnetometer') ? "os.path.join(rtconfig.SIFLI_SDK, 'customer/peripherals/sensor/MMC56x3')" : null,
-    needsLed ? "os.path.join(rtconfig.SIFLI_SDK, 'drivers/Include')" : null,
-    needsUart ? "os.path.join(rtconfig.SIFLI_SDK, 'rtos/rtthread/components/drivers/serial')" : null,
+    ...collectHuangshanContractValues(capsule.capabilities || [], 'includePaths'),
   ].filter(Boolean)
 
   return `from building import *
@@ -114,48 +100,20 @@ Return('group')
 `
 }
 
-function createProjectConfig(config = {}) {
-  const capabilities = new Set((config.components || []).map(component => component.capability))
+function createProjectConfig(capsule = {}) {
   const lines = ['# VibeBoard Huangshan generated capability config']
-  if (capabilities.has('ambient_light') || capabilities.has('imu') || capabilities.has('magnetometer')) {
-    lines.push('CONFIG_BSP_USING_I2C3=y')
-  }
-  if (capabilities.has('ambient_light')) {
-    lines.push('CONFIG_SENSOR_USING_ASL=y')
-    lines.push('CONFIG_ASL_USING_LTR303=y')
-  }
-  if (capabilities.has('imu')) {
-    lines.push('CONFIG_SENSOR_USING_6D=y')
-    lines.push('CONFIG_ACC_USING_LSM6DSL=y')
-  }
-  if (capabilities.has('magnetometer')) {
-    lines.push('CONFIG_SENSOR_USING_MAG=y')
-    lines.push('CONFIG_MAG_USING_MMC56X3=y')
-  }
-  if (capabilities.has('battery') || capabilities.has('adc_gpio')) {
-    lines.push('CONFIG_BSP_USING_ADC1=y')
-  }
-  if (capabilities.has('uart2')) {
-    lines.push('CONFIG_BSP_USING_UART2=y')
-  }
-  if (capabilities.has('led')) {
-    lines.push('CONFIG_BSP_PWM3_CC1_USING_DMA=y')
-    lines.push('CONFIG_RGB_SK6812MINI_HS_ENABLE=y')
-    lines.push('CONFIG_RGB_USING_SK6812MINI_HS_DEV_NAME=y')
-    lines.push('CONFIG_RGB_USING_SK6812MINI_HS_PWM_DEV_NAME="pwm3"')
-    lines.push('CONFIG_BSP_USING_RGBLED_CH=1')
-  }
+  lines.push(...(capsule.projConfDelta || []))
   return `${lines.join('\n')}\n`
 }
 
-function createMainSource(config) {
-  const appName = normalizeHuangshanAppName(config.displayName)
-  const appId = normalizeHuangshanAppId(config.displayName)
-  const safeTitle = cStringLiteral(config.displayName)
-  const safeDescription = cStringLiteral(config.description)
-  const infoComponents = config.components.filter(component => component.type !== 'action')
-  const actionComponents = config.components.filter(component => component.type === 'action')
-  const capabilities = new Set(config.components.map(component => component.capability))
+function createMainSource(capsule) {
+  const appName = capsule.app.appName
+  const appId = capsule.app.appId
+  const safeTitle = cStringLiteral(capsule.app.displayName)
+  const safeDescription = cStringLiteral(capsule.app.description)
+  const infoComponents = capsule.components.filter(component => component.type !== 'action')
+  const actionComponents = capsule.components.filter(component => component.type === 'action')
+  const capabilities = new Set(capsule.capabilities)
   const hasAmbientLight = capabilities.has('ambient_light')
   const hasImu = capabilities.has('imu')
   const hasMagnetometer = capabilities.has('magnetometer')
@@ -538,11 +496,21 @@ BUILTIN_APP_EXPORT(LV_EXT_STR_ID(lckfb), LV_EXT_IMG_GET(img_LiChuang), APP_ID, a
 
 export function createHuangshanAppFilesFromBuilder(config = {}) {
   const normalized = normalizeHuangshanBuilderConfig(config)
-  const appName = normalizeHuangshanAppName(normalized.displayName)
-  const baseDir = `src/gui_apps/${appName}`
+  const capsule = createHuangshanAppCapsule(normalized)
+  return createHuangshanAppFilesFromCapsule(capsule)
+}
+
+export function createHuangshanAppFilesFromCapsule(capsule = {}) {
+  const validation = validateHuangshanAppCapsule(capsule)
+  if (!validation.ok) {
+    throw new Error(validation.message || 'Invalid Huangshan app capsule.')
+  }
+  const baseDir = capsule.app.slotPath
   return {
-    [`${baseDir}/SConscript`]: createSconscript(normalized),
-    [`${baseDir}/main.c`]: createMainSource(normalized),
-    'project/proj.conf': createProjectConfig(normalized),
+    [`${baseDir}/SConscript`]: createSconscript(capsule),
+    [`${baseDir}/main.c`]: createMainSource(capsule),
+    'project/proj.conf': createProjectConfig(capsule),
   }
 }
+
+export { createHuangshanAppCapsule, validateHuangshanAppCapsule }

@@ -86,6 +86,7 @@ More focused test groups are listed in
 ## Hardware And Delivery Guides
 
 - [Huangshan Pi natural-language flow](./docs/huangshan-natural-language-flow.md)
+- [Huangshan Pi native architecture](./docs/huangshan-native-architecture.md)
 - [USB flashing](./docs/guides/flashing.md)
 - [WiFi, remote, and BLE OTA](./docs/guides/ota.md)
 - [Compiler service](./docs/guides/compiler-service.md)

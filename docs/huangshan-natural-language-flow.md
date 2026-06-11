@@ -3,7 +3,9 @@
 This document defines the current Huangshan Pi path inside VibeBoard. Huangshan
 uses the SiFli SDK, RT-Thread, and SCons, so VibeBoard keeps a separate
 workspace boundary while sharing the same product loop: describe, generate,
-preview, build, flash, and inspect evidence.
+preview, build, flash, and inspect evidence. The architecture is native to the
+SiFli board/app split; it is not a direct copy of the ESP-IDF `main/` and CMake
+model. See [Huangshan Pi Native Architecture](./huangshan-native-architecture.md).
 
 ## Source Workspaces
 
@@ -29,7 +31,8 @@ SiFli SDK. On macOS and Linux it runs `scripts/build.sh` and expects `export.sh`
 ## Generation Contract
 
 Natural-language requests are first converted into a small Huangshan Builder JSON
-object, not raw C code:
+object, not raw C code. The next architecture step is to compile this Builder
+JSON into a Huangshan App Capsule before file generation:
 
 ```json
 {
@@ -50,7 +53,8 @@ status, metric, battery, bluetooth, action
 Allowed capability values:
 
 ```text
-status, ambient_light, imu, battery, bluetooth, key, led, motor
+status, ambient_light, imu, magnetometer, battery, adc_gpio, bluetooth, key,
+gpio_output, led, motor, uart2
 ```
 
 The Builder then generates only these workspace files:
