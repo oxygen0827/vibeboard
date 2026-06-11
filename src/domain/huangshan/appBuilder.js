@@ -1,7 +1,20 @@
 import { normalizeHuangshanAppId, normalizeHuangshanAppName } from './appTemplate.js'
 
 const COMPONENT_TYPES = new Set(['status', 'metric', 'battery', 'bluetooth', 'action'])
-const CAPABILITY_TYPES = new Set(['status', 'ambient_light', 'imu', 'battery', 'bluetooth', 'key', 'led', 'motor'])
+const CAPABILITY_TYPES = new Set([
+  'status',
+  'ambient_light',
+  'imu',
+  'magnetometer',
+  'battery',
+  'adc_gpio',
+  'bluetooth',
+  'key',
+  'gpio_output',
+  'led',
+  'motor',
+  'uart2',
+])
 
 function defaultCapabilityForType(type) {
   if (type === 'battery') return 'battery'
@@ -43,6 +56,7 @@ export function createDefaultHuangshanBuilderConfig({
       { type: 'status', label: 'Status', value: 'Ready' },
       { type: 'metric', capability: 'ambient_light', label: 'Light', value: '128 lx' },
       { type: 'metric', capability: 'imu', label: 'Motion', value: 'Stable' },
+      { type: 'metric', capability: 'magnetometer', label: 'Compass', value: 'Ready' },
       { type: 'battery', capability: 'battery', label: 'Battery', value: '86%' },
       { type: 'bluetooth', capability: 'bluetooth', label: 'BLE', value: 'Connected' },
       { type: 'action', capability: 'key', label: 'Start', value: 'Action selected' },
@@ -67,14 +81,17 @@ export function normalizeHuangshanBuilderConfig(config = {}) {
 
 function createSconscript(config = {}) {
   const capabilities = new Set((config.components || []).map(component => component.capability))
-  const needsSensor = capabilities.has('ambient_light') || capabilities.has('imu')
+  const needsSensor = capabilities.has('ambient_light') || capabilities.has('imu') || capabilities.has('magnetometer')
   const needsLed = capabilities.has('led')
+  const needsUart = capabilities.has('uart2')
   const extraIncludes = [
     "os.path.join(rtconfig.SIFLI_SDK, 'rtos/rtthread/components/drivers/include')",
     needsSensor ? "os.path.join(rtconfig.SIFLI_SDK, 'rtos/rtthread/components/drivers/sensors')" : null,
     capabilities.has('ambient_light') ? "os.path.join(rtconfig.SIFLI_SDK, 'customer/peripherals/sensor/LTR303')" : null,
     capabilities.has('imu') ? "os.path.join(rtconfig.SIFLI_SDK, 'customer/peripherals/sensor/LSM6DSL')" : null,
+    capabilities.has('magnetometer') ? "os.path.join(rtconfig.SIFLI_SDK, 'customer/peripherals/sensor/MMC56x3')" : null,
     needsLed ? "os.path.join(rtconfig.SIFLI_SDK, 'drivers/Include')" : null,
+    needsUart ? "os.path.join(rtconfig.SIFLI_SDK, 'rtos/rtthread/components/drivers/serial')" : null,
   ].filter(Boolean)
 
   return `from building import *
@@ -100,7 +117,7 @@ Return('group')
 function createProjectConfig(config = {}) {
   const capabilities = new Set((config.components || []).map(component => component.capability))
   const lines = ['# VibeBoard Huangshan generated capability config']
-  if (capabilities.has('ambient_light') || capabilities.has('imu')) {
+  if (capabilities.has('ambient_light') || capabilities.has('imu') || capabilities.has('magnetometer')) {
     lines.push('CONFIG_BSP_USING_I2C3=y')
   }
   if (capabilities.has('ambient_light')) {
@@ -111,8 +128,15 @@ function createProjectConfig(config = {}) {
     lines.push('CONFIG_SENSOR_USING_6D=y')
     lines.push('CONFIG_ACC_USING_LSM6DSL=y')
   }
-  if (capabilities.has('battery')) {
+  if (capabilities.has('magnetometer')) {
+    lines.push('CONFIG_SENSOR_USING_MAG=y')
+    lines.push('CONFIG_MAG_USING_MMC56X3=y')
+  }
+  if (capabilities.has('battery') || capabilities.has('adc_gpio')) {
     lines.push('CONFIG_BSP_USING_ADC1=y')
+  }
+  if (capabilities.has('uart2')) {
+    lines.push('CONFIG_BSP_USING_UART2=y')
   }
   if (capabilities.has('led')) {
     lines.push('CONFIG_BSP_PWM3_CC1_USING_DMA=y')
@@ -134,11 +158,15 @@ function createMainSource(config) {
   const capabilities = new Set(config.components.map(component => component.capability))
   const hasAmbientLight = capabilities.has('ambient_light')
   const hasImu = capabilities.has('imu')
+  const hasMagnetometer = capabilities.has('magnetometer')
   const hasBattery = capabilities.has('battery')
+  const hasAdcGpio = capabilities.has('adc_gpio')
   const hasBluetooth = capabilities.has('bluetooth')
   const hasKey = capabilities.has('key')
+  const hasGpioOutput = capabilities.has('gpio_output')
   const hasLed = capabilities.has('led')
   const hasMotor = capabilities.has('motor')
+  const hasUart2 = capabilities.has('uart2')
 
   const infoCalls = infoComponents.map((component, index) => {
     const column = index % 2
@@ -169,13 +197,17 @@ function createMainSource(config) {
 
 ${hasAmbientLight ? '#include "sensor_liteon_ltr303.h"' : ''}
 ${hasImu ? '#include "st_lsm6dsl_sensor_v1.h"' : ''}
-${hasBattery ? '#include "bf0_sys_cfg.h"' : ''}
+${hasMagnetometer ? '#include "sensor_memsic_mmc56x3.h"' : ''}
+${hasBattery || hasAdcGpio ? '#include "bf0_sys_cfg.h"' : ''}
 ${hasLed ? '#include "drivers/rt_drv_pwm.h"' : ''}
 
 #define APP_ID "${appId}"
 ${hasBattery ? '#define HUANGSHAN_BAT_CHANNEL 7' : ''}
+${hasAdcGpio ? '#define HUANGSHAN_ADC_GPIO_CHANNEL 6 /* PA34 ADC channel from LCKFB ADC example */' : ''}
 ${hasKey ? '#define HUANGSHAN_KEY2_PIN 43 /* KEY2 / PA43: verified by LCKFB GPIO example */' : ''}
+${hasGpioOutput ? '#define HUANGSHAN_GPIO_OUTPUT_PIN 20 /* GPIO output pin from LCKFB GPIO example */' : ''}
 ${hasLed ? '#define RGBLED_NAME "rgbled"' : ''}
+${hasUart2 ? '#define UART2_NAME "uart2"' : ''}
 
 typedef struct
 {
@@ -184,7 +216,9 @@ typedef struct
     lv_timer_t *poll_timer;
     rt_device_t ambient_light_dev;
     rt_device_t imu_acce_dev;
+    rt_device_t magnetometer_dev;
     rt_device_t battery_dev;
+    rt_device_t uart2_dev;
     rt_device_t rgbled_dev;
 } ${appId}_state_t;
 
@@ -212,6 +246,22 @@ static void huangshan_motor_pulse_hook(void)
 ${hasMotor ? `    rt_kprintf("[${appName}] motor pulse hook selected; bind board motor driver after pin verification\\n");` : `    rt_kprintf("[${appName}] motor capability not enabled\\n");`}
 }
 
+static void huangshan_gpio_output_pulse(void)
+{
+${hasGpioOutput ? `    rt_pin_write(HUANGSHAN_GPIO_OUTPUT_PIN, PIN_HIGH);
+    rt_thread_mdelay(10);
+    rt_pin_write(HUANGSHAN_GPIO_OUTPUT_PIN, PIN_LOW);
+    rt_kprintf("[${appName}] GPIO%d pulse\\n", HUANGSHAN_GPIO_OUTPUT_PIN);` : `    rt_kprintf("[${appName}] GPIO output capability not enabled\\n");`}
+}
+
+static void huangshan_uart2_send_heartbeat(void)
+{
+${hasUart2 ? `    static const char heartbeat[] = "${appName} uart2 heartbeat\\\\n";
+    if (!g_state.uart2_dev) return;
+    rt_device_write(g_state.uart2_dev, 0, heartbeat, sizeof(heartbeat) - 1);
+    rt_kprintf("[${appName}] UART2 heartbeat sent\\n");` : `    rt_kprintf("[${appName}] UART2 capability not enabled\\n");`}
+}
+
 static void action_event_cb(lv_event_t *event)
 {
     if (LV_EVENT_CLICKED == lv_event_get_code(event) && g_state.status_label)
@@ -220,6 +270,8 @@ static void action_event_cb(lv_event_t *event)
         huangshan_set_status(status_text);
 ${hasLed ? `        if (status_text && strstr(status_text, "LED")) huangshan_led_set_color_hook(0x000F00);` : ''}
 ${hasMotor ? `        if (status_text && strstr(status_text, "Motor")) huangshan_motor_pulse_hook();` : ''}
+${hasGpioOutput ? `        if (status_text && strstr(status_text, "GPIO")) huangshan_gpio_output_pulse();` : ''}
+${hasUart2 ? `        if (status_text && strstr(status_text, "UART")) huangshan_uart2_send_heartbeat();` : ''}
     }
 }
 
@@ -293,13 +345,46 @@ ${hasImu ? `    struct rt_sensor_config imu_cfg;
         rt_device_control(g_state.imu_acce_dev, RT_SENSOR_CTRL_SET_ODR, (void *)1660);
     }
 ` : ''}
+${hasMagnetometer ? `    struct rt_sensor_config mag_cfg;
+    rt_memset(&mag_cfg, 0, sizeof(mag_cfg));
+    mag_cfg.intf.dev_name = "i2c3";
+    HAL_PIN_Set(PAD_PA40, I2C3_SCL, PIN_PULLUP, 1);
+    HAL_PIN_Set(PAD_PA39, I2C3_SDA, PIN_PULLUP, 1);
+    rt_hw_mmc56x3_init("mmc56x3", &mag_cfg);
+    g_state.magnetometer_dev = rt_device_find("mag_mmc56x3");
+    if (g_state.magnetometer_dev)
+    {
+        rt_device_open(g_state.magnetometer_dev, RT_DEVICE_FLAG_RDONLY);
+    }
+` : ''}
 ${hasBattery ? `    g_state.battery_dev = rt_device_find("bat1");
 ` : ''}
+${hasAdcGpio ? `    if (!g_state.battery_dev)
+    {
+        g_state.battery_dev = rt_device_find("bat1");
+    }
+    HAL_PIN_Set_Analog(PAD_PA34, 1);
+` : ''}
 ${hasKey ? `    rt_pin_mode(HUANGSHAN_KEY2_PIN, PIN_MODE_INPUT);
+` : ''}
+${hasGpioOutput ? `    rt_pin_mode(HUANGSHAN_GPIO_OUTPUT_PIN, PIN_MODE_OUTPUT);
+    rt_pin_write(HUANGSHAN_GPIO_OUTPUT_PIN, PIN_LOW);
 ` : ''}
 ${hasLed ? `    HAL_PMU_ConfigPeriLdo(PMU_PERI_LDO3_3V3, true, true);
     HAL_PIN_Set(PAD_PA32, GPTIM2_CH1, PIN_NOPULL, 1);
     g_state.rgbled_dev = rt_device_find(RGBLED_NAME);
+` : ''}
+${hasUart2 ? `    HAL_PIN_Set(PAD_PA18, USART2_RXD, PIN_PULLUP, 1);
+    HAL_PIN_Set(PAD_PA19, USART2_TXD, PIN_PULLUP, 1);
+    g_state.uart2_dev = rt_device_find(UART2_NAME);
+    if (g_state.uart2_dev)
+    {
+        struct serial_configure config = RT_SERIAL_CONFIG_DEFAULT;
+        config.baud_rate = 1000000;
+        rt_device_control(g_state.uart2_dev, RT_DEVICE_CTRL_CONFIG, &config);
+        rt_device_open(g_state.uart2_dev, RT_DEVICE_OFLAG_RDWR);
+        huangshan_uart2_send_heartbeat();
+    }
 ` : ''}
 ${hasBluetooth ? `    rt_kprintf("[${appName}] BLE capability requested; generate service binding in next slice\\n");
 ` : ''}
@@ -326,12 +411,29 @@ ${hasImu ? `    if (g_state.imu_acce_dev)
         }
     }
 ` : ''}
+${hasMagnetometer ? `    if (g_state.magnetometer_dev)
+    {
+        struct rt_sensor_data mag;
+        if (rt_device_read(g_state.magnetometer_dev, 0, &mag, 1) == 1)
+        {
+            rt_kprintf("[${appName}] mag: %d,%d,%d\\n", mag.data.mag.x, mag.data.mag.y, mag.data.mag.z);
+        }
+    }
+` : ''}
 ${hasBattery ? `    if (g_state.battery_dev)
     {
         rt_adc_enable((rt_adc_device_t)g_state.battery_dev, HUANGSHAN_BAT_CHANNEL);
         rt_uint32_t vbat = rt_adc_read((rt_adc_device_t)g_state.battery_dev, HUANGSHAN_BAT_CHANNEL);
         rt_adc_disable((rt_adc_device_t)g_state.battery_dev, HUANGSHAN_BAT_CHANNEL);
         rt_kprintf("[${appName}] VBAT read value: %u\\n", vbat);
+    }
+` : ''}
+${hasAdcGpio ? `    if (g_state.battery_dev)
+    {
+        rt_adc_enable((rt_adc_device_t)g_state.battery_dev, HUANGSHAN_ADC_GPIO_CHANNEL);
+        rt_uint32_t gpio_adc = rt_adc_read((rt_adc_device_t)g_state.battery_dev, HUANGSHAN_ADC_GPIO_CHANNEL);
+        rt_adc_disable((rt_adc_device_t)g_state.battery_dev, HUANGSHAN_ADC_GPIO_CHANNEL);
+        rt_kprintf("[${appName}] PA34 ADC read value: %u\\n", gpio_adc);
     }
 ` : ''}
 }

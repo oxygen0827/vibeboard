@@ -1,6 +1,7 @@
 import http from 'node:http'
 import { spawn } from 'node:child_process'
 import { createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { renderHuangshanLvglPreview } from './lvglRender.mjs'
@@ -10,6 +11,7 @@ const DEFAULT_SDK = '/Users/wq/huangshan-pi-workspace/sifli-sdk'
 const PORT = Number(process.env.HUANGSHAN_SERVICE_PORT || 8771)
 const SERVICE_DIR = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = resolve(SERVICE_DIR, '../..')
+const REPO_PARENT = resolve(REPO_ROOT, '..')
 const PREVIEW_RUNNER_DIR = join(REPO_ROOT, 'backend/compiler-service/preview_runner')
 
 function json(res, status, payload) {
@@ -43,14 +45,29 @@ function readJson(req) {
   })
 }
 
-function resolveWorkspace() {
-  const workspace = resolve(process.env.HUANGSHAN_WORKSPACE || DEFAULT_WORKSPACE)
-  const sdk = resolve(process.env.SIFLI_SDK_PATH || DEFAULT_SDK)
+function firstExistingPath(candidates) {
+  return candidates.find(candidate => candidate && existsSync(candidate)) || candidates.find(Boolean)
+}
+
+function resolveWorkspace({ env = process.env, platform = process.platform } = {}) {
+  const home = homedir()
+  const workspace = resolve(env.HUANGSHAN_WORKSPACE || firstExistingPath([
+    join(REPO_PARENT, 'huangshan-pi-sf32-dev'),
+    join(home, 'huangshan-pi-workspace', 'huangshan-pi-sf32-dev'),
+    DEFAULT_WORKSPACE,
+  ]))
+  const sdk = resolve(env.SIFLI_SDK_PATH || firstExistingPath([
+    join(REPO_PARENT, 'sifli-sdk'),
+    join(home, 'huangshan-pi-workspace', 'sifli-sdk'),
+    DEFAULT_SDK,
+  ]))
+  const isWindows = platform === 'win32'
   return {
     workspace,
     sdk,
-    buildScript: join(workspace, 'scripts/build.sh'),
-    sdkExport: join(sdk, 'export.sh'),
+    buildScript: join(workspace, isWindows ? 'scripts/build.ps1' : 'scripts/build.sh'),
+    sdkExport: join(sdk, isWindows ? 'export.ps1' : 'export.sh'),
+    platform,
   }
 }
 
@@ -283,6 +300,31 @@ function runChildAsSse(res, child, { startedAt, command, successPayload = {} }) 
   })
 }
 
+function createHuangshanBuildCommand(paths) {
+  if (paths.platform === 'win32') {
+    return {
+      command: 'powershell.exe',
+      args: [
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        paths.buildScript,
+        '-SdkPath',
+        paths.sdk,
+      ],
+      cwd: paths.workspace,
+      label: '.\\scripts\\build.ps1',
+    }
+  }
+  return {
+    command: paths.buildScript,
+    args: [],
+    cwd: paths.workspace,
+    label: './scripts/build.sh',
+  }
+}
+
 function runBuild(res, { files } = {}) {
   const paths = resolveWorkspace()
   if (!existsSync(paths.buildScript) || !existsSync(paths.sdkExport)) {
@@ -301,8 +343,9 @@ function runBuild(res, { files } = {}) {
   }
 
   const startedAt = Date.now()
-  const child = spawn(paths.buildScript, [], {
-    cwd: paths.workspace,
+  const build = createHuangshanBuildCommand(paths)
+  const child = spawn(build.command, build.args, {
+    cwd: build.cwd,
     env: {
       ...process.env,
       SIFLI_SDK_PATH: paths.sdk,
@@ -311,7 +354,7 @@ function runBuild(res, { files } = {}) {
 
   runChildAsSse(res, child, {
     startedAt,
-    command: './scripts/build.sh',
+    command: build.label,
     successPayload: {
       artifactSummary: createHuangshanArtifactSummary(paths),
       workspaceFiles: fileResult,
@@ -466,6 +509,7 @@ if (isMain) {
 export {
   applyHuangshanWorkspaceFiles,
   createHuangshanArtifactSummary,
+  createHuangshanBuildCommand,
   createHuangshanFlashCommand,
   createHuangshanMonitorSetupCommand,
   createServer,

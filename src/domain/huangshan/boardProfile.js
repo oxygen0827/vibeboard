@@ -1,9 +1,19 @@
 export const HUANGSHAN_BOARD_ID = 'huangshan_pi_sf32lb52'
 
+const DEFAULT_WORKSPACE = typeof process !== 'undefined' && process.env?.HUANGSHAN_WORKSPACE
+  ? process.env.HUANGSHAN_WORKSPACE
+  : '/Users/wq/huangshan-pi-workspace/huangshan-pi-sf32-dev'
+const DEFAULT_SDK = typeof process !== 'undefined' && process.env?.SIFLI_SDK_PATH
+  ? process.env.SIFLI_SDK_PATH
+  : '/Users/wq/huangshan-pi-workspace/sifli-sdk'
+const DEFAULT_EXAMPLES = typeof process !== 'undefined' && process.env?.HUANGSHAN_EXAMPLES_PATH
+  ? process.env.HUANGSHAN_EXAMPLES_PATH
+  : '/Users/wq/huangshan-pi-workspace/lckfb-hspi-ulp_example'
+
 export const HUANGSHAN_SOURCE_PATHS = {
-  workspace: '/Users/wq/huangshan-pi-workspace/huangshan-pi-sf32-dev',
-  sdk: '/Users/wq/huangshan-pi-workspace/sifli-sdk',
-  examples: '/Users/wq/huangshan-pi-workspace/lckfb-hspi-ulp_example',
+  workspace: DEFAULT_WORKSPACE,
+  sdk: DEFAULT_SDK,
+  examples: DEFAULT_EXAMPLES,
 }
 
 export const HUANGSHAN_BOARD_PROFILE = {
@@ -127,6 +137,44 @@ const CAPABILITIES = [
   },
 ]
 
+const EXAMPLE_RECIPES = [
+  {
+    id: 'gpio_key2_pa43_pin20',
+    title: 'GPIO KEY2 and output pin',
+    sourcePath: 'gpio/src/main.c',
+    capabilities: ['key', 'gpio_output'],
+    facts: ['KEY2 is PA43/GPIO43', 'example output pin is GPIO20', 'KEY2 uses rising/falling IRQ'],
+  },
+  {
+    id: 'adc_vbat_pa34',
+    title: 'ADC VBAT and PA34',
+    sourcePath: 'adc/src/main.c',
+    capabilities: ['battery', 'adc_gpio'],
+    facts: ['ADC device is bat1', 'VBAT channel is 7', 'PA34 ADC channel is 6'],
+  },
+  {
+    id: 'ws2812_pa32_rgbled',
+    title: 'WS2812 RGB LED',
+    sourcePath: 'ws2812/src/main.c',
+    capabilities: ['led'],
+    facts: ['RGB LED device is rgbled', 'PA32 maps to GPTIM2_CH1', 'enable peripheral LDO3 3V3 before use'],
+  },
+  {
+    id: 'uart2_pa18_pa19',
+    title: 'UART2 external serial',
+    sourcePath: 'uart/src/main.c',
+    capabilities: ['uart2'],
+    facts: ['UART2 RX is PA18', 'UART2 TX is PA19', 'UART2 is separate from the debug console'],
+  },
+  {
+    id: 'i2c3_sensors',
+    title: 'I2C3 onboard sensors',
+    sourcePath: 'RT-Device/sensor/README.md',
+    capabilities: ['ambient_light', 'imu', 'magnetometer'],
+    facts: ['I2C3 SCL is PA40', 'I2C3 SDA is PA39', 'devices include LTR303, LSM6DSL, and MMC56X3'],
+  },
+]
+
 export function listHuangshanCapabilities() {
   return CAPABILITIES.map(item => ({ ...item, referencePaths: [...item.referencePaths] }))
 }
@@ -134,4 +182,12 @@ export function listHuangshanCapabilities() {
 export function getHuangshanCapability(id) {
   const capability = CAPABILITIES.find(item => item.id === id)
   return capability ? { ...capability, referencePaths: [...capability.referencePaths] } : null
+}
+
+export function listHuangshanExampleRecipes() {
+  return EXAMPLE_RECIPES.map(item => ({
+    ...item,
+    capabilities: [...item.capabilities],
+    facts: [...item.facts],
+  }))
 }

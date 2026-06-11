@@ -23,10 +23,14 @@ const HUANGSHAN_CAPABILITY_OPTIONS = [
   { value: 'status', label: '状态' },
   { value: 'ambient_light', label: '环境光' },
   { value: 'imu', label: 'IMU' },
+  { value: 'magnetometer', label: 'Mag' },
+  { value: 'adc_gpio', label: 'ADC' },
   { value: 'battery', label: '电池' },
   { value: 'bluetooth', label: '蓝牙' },
   { value: 'key', label: '按键' },
   { value: 'led', label: 'LED' },
+  { value: 'gpio_output', label: 'GPIO' },
+  { value: 'uart2', label: 'UART2' },
   { value: 'motor', label: '马达' },
 ]
 

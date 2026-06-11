@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
 import {
+  createHuangshanBuildCommand,
   createHuangshanFlashCommand,
   createHuangshanMonitorSetupCommand,
   listHuangshanSerialPorts,
+  resolveWorkspace,
 } from '../backend/huangshan-service/server.mjs'
 
 const ports = listHuangshanSerialPorts({
@@ -46,6 +48,20 @@ const linuxMonitor = createHuangshanMonitorSetupCommand({
   platform: 'linux',
 })
 assert.deepEqual(linuxMonitor.args, ['-F', '/dev/ttyUSB0', '1000000', 'raw', '-echo'])
+
+const windowsPaths = resolveWorkspace({
+  env: {
+    HUANGSHAN_WORKSPACE: 'C:\\Users\\100448405\\huangshan-pi-sf32-dev',
+    SIFLI_SDK_PATH: 'C:\\Users\\100448405\\sifli-sdk',
+  },
+  platform: 'win32',
+})
+assert.match(windowsPaths.buildScript, /scripts[\\/]build\.ps1$/)
+assert.match(windowsPaths.sdkExport, /export\.ps1$/)
+const windowsBuild = createHuangshanBuildCommand(windowsPaths)
+assert.equal(windowsBuild.command, 'powershell.exe')
+assert.deepEqual(windowsBuild.args.slice(0, 4), ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File'])
+assert.equal(windowsBuild.label, '.\\scripts\\build.ps1')
 
 assert.throws(() => createHuangshanFlashCommand({
   port: '../bad',

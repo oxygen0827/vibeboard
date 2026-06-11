@@ -5,6 +5,7 @@ import {
   HUANGSHAN_SOURCE_PATHS,
   getHuangshanCapability,
   listHuangshanCapabilities,
+  listHuangshanExampleRecipes,
 } from '../src/domain/huangshan/boardProfile.js'
 
 assert.equal(HUANGSHAN_BOARD_ID, 'huangshan_pi_sf32lb52')
@@ -25,8 +26,25 @@ assert.equal(getHuangshanCapability('lvgl_app').referencePaths[0], 'lvgl/watch')
 assert.equal(getHuangshanCapability('audio').priority, 'later')
 assert.equal(getHuangshanCapability('missing'), null)
 
-assert.equal(HUANGSHAN_SOURCE_PATHS.workspace, '/Users/wq/huangshan-pi-workspace/huangshan-pi-sf32-dev')
-assert.equal(HUANGSHAN_SOURCE_PATHS.sdk, '/Users/wq/huangshan-pi-workspace/sifli-sdk')
-assert.equal(HUANGSHAN_SOURCE_PATHS.examples, '/Users/wq/huangshan-pi-workspace/lckfb-hspi-ulp_example')
+const recipes = listHuangshanExampleRecipes()
+assert.equal(recipes.length >= 5, true)
+assert.equal(recipes.find(recipe => recipe.id === 'gpio_key2_pa43_pin20').sourcePath, 'gpio/src/main.c')
+assert.deepEqual(recipes.find(recipe => recipe.id === 'adc_vbat_pa34').capabilities, ['battery', 'adc_gpio'])
+assert.equal(recipes.find(recipe => recipe.id === 'ws2812_pa32_rgbled').facts.includes('RGB LED device is rgbled'), true)
+assert.equal(recipes.find(recipe => recipe.id === 'uart2_pa18_pa19').facts.includes('UART2 RX is PA18'), true)
+assert.equal(recipes.find(recipe => recipe.id === 'i2c3_sensors').capabilities.includes('magnetometer'), true)
+
+assert.equal(
+  HUANGSHAN_SOURCE_PATHS.workspace,
+  process.env.HUANGSHAN_WORKSPACE || '/Users/wq/huangshan-pi-workspace/huangshan-pi-sf32-dev',
+)
+assert.equal(
+  HUANGSHAN_SOURCE_PATHS.sdk,
+  process.env.SIFLI_SDK_PATH || '/Users/wq/huangshan-pi-workspace/sifli-sdk',
+)
+assert.equal(
+  HUANGSHAN_SOURCE_PATHS.examples,
+  process.env.HUANGSHAN_EXAMPLES_PATH || '/Users/wq/huangshan-pi-workspace/lckfb-hspi-ulp_example',
+)
 
 console.log('huangshan capability profile tests passed')

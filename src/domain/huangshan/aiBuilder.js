@@ -2,7 +2,7 @@ import { HUANGSHAN_BOARD_PROFILE } from './boardProfile.js'
 import { normalizeHuangshanBuilderConfig } from './appBuilder.js'
 
 const COMPONENT_TYPES = ['status', 'metric', 'battery', 'bluetooth', 'action']
-const CAPABILITY_TYPES = ['status', 'ambient_light', 'imu', 'battery', 'bluetooth', 'key', 'led', 'motor']
+const CAPABILITY_TYPES = ['status', 'ambient_light', 'imu', 'magnetometer', 'battery', 'adc_gpio', 'bluetooth', 'key', 'gpio_output', 'led', 'motor', 'uart2']
 
 function trimText(value) {
   return String(value || '').trim()
@@ -20,10 +20,11 @@ export function createHuangshanAiBuilderMessages({
         'You generate Huangshan Pi SF32LB52 watch UI builder JSON.',
         'Return ONLY one JSON object. Do not include markdown or prose.',
         'Allowed component types: status, metric, battery, bluetooth, action.',
-        'Allowed capability values: status, ambient_light, imu, battery, bluetooth, key, led, motor.',
+        'Allowed capability values: status, ambient_light, imu, magnetometer, battery, adc_gpio, bluetooth, key, gpio_output, led, motor, uart2.',
         'The output schema is: {"displayName": string, "description": string, "components": [{"type": string, "capability": string, "label": string, "value": string, "enabled": boolean}]}',
         'Use concise labels and values that fit a 390x450 round-corner AMOLED watch screen.',
         'Do not return C code, JavaScript, HTML, CSS, shell commands, paths, or unsupported component types.',
+        'Use verified Huangshan examples: KEY2=PA43, GPIO output=GPIO20, VBAT ADC=bat1 channel 7, PA34 ADC channel 6, WS2812 rgbled=PA32/GPTIM2_CH1, UART2 RX/TX=PA18/PA19, sensors on I2C3 PA39/PA40.',
       ].join('\n'),
     },
     {
@@ -38,7 +39,7 @@ export function createHuangshanAiBuilderMessages({
         '',
         `User request: ${trimText(userPrompt) || 'Create a practical diagnostics watch screen.'}`,
         '',
-        'Capability mapping hints: environment light -> ambient_light, IMU/motion/steps -> imu, power/VBAT -> battery, BLE -> bluetooth, physical key -> key, RGB LED -> led, vibration -> motor.',
+        'Capability mapping hints: environment light -> ambient_light, IMU/motion/steps -> imu, compass/magnetic -> magnetometer, power/VBAT -> battery, PA34 analog -> adc_gpio, BLE -> bluetooth, physical key -> key, GPIO output -> gpio_output, RGB LED -> led, vibration -> motor, external serial -> uart2.',
         'Prefer 4 to 6 components. Use at most one action component.',
       ].join('\n'),
     },

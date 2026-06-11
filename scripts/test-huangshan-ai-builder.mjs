@@ -20,7 +20,11 @@ assert.match(messages[0].content, /bluetooth/)
 assert.match(messages[0].content, /action/)
 assert.match(messages[0].content, /capability/)
 assert.match(messages[0].content, /ambient_light/)
+assert.match(messages[0].content, /magnetometer/)
+assert.match(messages[0].content, /adc_gpio/)
+assert.match(messages[0].content, /gpio_output/)
 assert.match(messages[0].content, /motor/)
+assert.match(messages[0].content, /UART2 RX\/TX=PA18\/PA19/)
 assert.match(messages[1].content, /Sport Watch/)
 assert.match(messages[1].content, /运动手表首页/)
 
@@ -32,6 +36,7 @@ const fenced = `
   "components": [
     { "type": "status", "capability": "status", "label": "Ready", "value": "Tap to start" },
     { "type": "metric", "capability": "imu", "label": "Heart", "value": "78 bpm" },
+    { "type": "metric", "capability": "magnetometer", "label": "Compass", "value": "Ready" },
     { "type": "metric", "capability": "ambient_light", "label": "Light", "value": "12 lux" },
     { "type": "battery", "capability": "battery", "label": "Battery", "value": "86%" },
     { "type": "bluetooth", "capability": "bluetooth", "label": "BLE", "value": "Linked" },
@@ -53,6 +58,7 @@ assert.deepEqual(parsed.components.map(component => component.type), [
   'status',
   'metric',
   'metric',
+  'metric',
   'battery',
   'bluetooth',
   'action',
@@ -61,13 +67,15 @@ assert.deepEqual(parsed.components.map(component => component.id), [
   'status_0',
   'metric_1',
   'metric_2',
-  'battery_3',
-  'bluetooth_4',
-  'action_5',
+  'metric_3',
+  'battery_4',
+  'bluetooth_5',
+  'action_6',
 ])
 assert.deepEqual(parsed.components.map(component => component.capability), [
   'status',
   'imu',
+  'magnetometer',
   'ambient_light',
   'battery',
   'bluetooth',
