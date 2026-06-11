@@ -10,6 +10,11 @@ import {
   HUANGSHAN_BOARD_PROFILE,
   listHuangshanCapabilities,
 } from '../domain/huangshan/boardProfile'
+import {
+  NORDIC_BOARD_ID,
+  NORDIC_BOARD_PROFILE,
+  listNordicCapabilities,
+} from '../domain/nordic/boardProfile'
 
 // Map Huangshan's per-capability list onto the shared capability families.
 const HUANGSHAN_CAPABILITY_FAMILY = {
@@ -94,10 +99,45 @@ export function adaptHuangshanBoard() {
   })
 }
 
+export function adaptNordicBoard() {
+  const profile = NORDIC_BOARD_PROFILE
+  const capabilities = [...new Set(listNordicCapabilities().map(cap => cap.family).filter(Boolean))]
+  const basePrompt = buildNordicBasePrompt(profile)
+  return normalizeBoardContract({
+    id: NORDIC_BOARD_ID,
+    name: profile.name,
+    chip: profile.chip,
+    description: profile.description,
+    toolchain: TOOLCHAINS.NCS_ZEPHYR,
+    framework: profile.framework,
+    capabilities,
+    skills: listNordicCapabilities().map(cap => ({
+      id: cap.id,
+      name: cap.label,
+      capabilityFamily: cap.family,
+      prompt: `Use Nordic ${profile.framework} and Zephyr APIs for ${cap.label}. Prefer official sample pattern ${cap.sample}.`,
+    })),
+    driverContracts: [],
+    basePrompt,
+    buildSystemPrompt: () => basePrompt,
+    nordicProfile: profile,
+  })
+}
+
 function buildHuangshanBasePrompt(profile) {
   return `You are an expert embedded engineer for the ${profile.name} (${profile.chip}).
 Framework: ${profile.framework}. Build with SCons against target ${profile.targetBoard}.
 Display: ${profile.display.panel} ${profile.display.controller} ${profile.display.resolution.width}x${profile.display.resolution.height} over ${profile.display.interface}.
 Memory: ${profile.memory.sram}, ${profile.memory.psram}, ${profile.memory.flash}.
 Generate RT-Thread application code that matches the verified Huangshan workspace conventions.`
+}
+
+function buildNordicBasePrompt(profile) {
+  return `You are an expert embedded engineer for ${profile.name} (${profile.chip}).
+Use ${profile.framework}, Zephyr RTOS, CMake, Kconfig, Devicetree, and west.
+Board target: ${profile.boardTarget}.
+Generate real project files: CMakeLists.txt, prj.conf, src/main.c, and overlays only when needed.
+Use Zephyr device APIs such as GPIO_DT_SPEC_GET_OR, gpio_pin_configure_dt, gpio_pin_toggle_dt, printk, and Bluetooth APIs when CONFIG_BT is enabled.
+Do not use deprecated nRF5 SDK APIs. Build with: west build -b ${profile.boardTarget} .
+Flash with: west flash.`
 }

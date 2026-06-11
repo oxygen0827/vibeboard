@@ -18,6 +18,7 @@
 export const TOOLCHAINS = {
   ESP_IDF: 'esp-idf',        // idf.py build, esptool / web-serial flash
   SIFLI_SCONS: 'sifli-scons', // SCons build, SiFli flash tooling
+  NCS_ZEPHYR: 'ncs-zephyr',   // west build, nRF Connect SDK / Zephyr
 }
 
 /** Capability families a board can declare it supports. */

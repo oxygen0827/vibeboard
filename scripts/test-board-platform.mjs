@@ -8,6 +8,7 @@ import assert from 'node:assert/strict'
 import { readFile, writeFile, mkdtemp, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 const tmp = await mkdtemp(join(tmpdir(), 'vibeboard-board-platform-'))
 
@@ -24,7 +25,7 @@ async function copyModule(relPath) {
 
 await copyModule('src/context/boardContract.js')
 
-const contract = await import(join(tmp, 'src/context/boardContract.js'))
+const contract = await import(pathToFileURL(join(tmp, 'src/context/boardContract.js')).href)
 const { validateBoardContract, normalizeBoardContract, TOOLCHAINS, CAPABILITY_FAMILIES } = contract
 
 function testValidContractPasses() {
@@ -79,6 +80,7 @@ function testNormalizeFillsArrays() {
 function testBothToolchainsDeclared() {
   assert.equal(TOOLCHAINS.ESP_IDF, 'esp-idf')
   assert.equal(TOOLCHAINS.SIFLI_SCONS, 'sifli-scons')
+  assert.equal(TOOLCHAINS.NCS_ZEPHYR, 'ncs-zephyr')
   assert.ok(CAPABILITY_FAMILIES.has('display'))
 }
 

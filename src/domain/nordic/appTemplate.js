@@ -1,0 +1,165 @@
+import { NORDIC_BOARD_PROFILE } from './boardProfile.js'
+
+export function normalizeNordicAppName(value) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_ -]/g, '')
+    .replace(/[\s-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  return normalized || 'vibeboard_nordic_app'
+}
+
+export function createDefaultNordicConfig() {
+  return {
+    appName: 'vibeboard_nordic_app',
+    displayName: 'Nordic BLE GPIO Demo',
+    description: 'BLE peripheral with GPIO LED heartbeat, button input, UART console logs, and Zephyr-ready project files.',
+    boardTarget: NORDIC_BOARD_PROFILE.boardTarget,
+    capabilities: ['ble_peripheral', 'gpio_led_button', 'uart_console'],
+  }
+}
+
+export function createNordicAppFiles(config = {}) {
+  const merged = { ...createDefaultNordicConfig(), ...config }
+  const appName = normalizeNordicAppName(merged.appName || merged.displayName)
+  const capabilities = new Set(Array.isArray(merged.capabilities) ? merged.capabilities : [])
+  return {
+    'CMakeLists.txt': createCMakeLists(appName),
+    'prj.conf': createPrjConf(capabilities),
+    'src/main.c': createMainC({ ...merged, appName, capabilities }),
+    'README.md': createReadme({ ...merged, appName }),
+  }
+}
+
+function createCMakeLists(appName) {
+  return `cmake_minimum_required(VERSION 3.20.0)
+find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
+project(${appName})
+
+target_sources(app PRIVATE src/main.c)
+`
+}
+
+function createPrjConf(capabilities) {
+  const lines = [
+    'CONFIG_GPIO=y',
+    'CONFIG_SERIAL=y',
+    'CONFIG_CONSOLE=y',
+    'CONFIG_UART_CONSOLE=y',
+    'CONFIG_LOG=y',
+    'CONFIG_PRINTK=y',
+  ]
+  if (capabilities.has('ble_peripheral')) {
+    lines.push(
+      'CONFIG_BT=y',
+      'CONFIG_BT_PERIPHERAL=y',
+      'CONFIG_BT_DEVICE_NAME="VibeBoard nRF"',
+      'CONFIG_BT_DEVICE_APPEARANCE=833',
+    )
+  }
+  if (capabilities.has('i2c_sensor')) {
+    lines.push('CONFIG_I2C=y', 'CONFIG_SENSOR=y')
+  }
+  return `${[...new Set(lines)].join('\n')}\n`
+}
+
+function createMainC({ displayName, description, capabilities }) {
+  const hasBle = capabilities.has('ble_peripheral')
+  const hasGpio = capabilities.has('gpio_led_button')
+  const hasUart = capabilities.has('uart_console')
+  return `#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/sys/printk.h>
+${hasBle ? '#include <zephyr/bluetooth/bluetooth.h>\n#include <zephyr/bluetooth/hci.h>' : ''}
+
+#define APP_NAME "${escapeCString(displayName)}"
+#define APP_DESCRIPTION "${escapeCString(description)}"
+
+${hasGpio ? `#define LED0_NODE DT_ALIAS(led0)
+#define SW0_NODE DT_ALIAS(sw0)
+
+static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET_OR(LED0_NODE, gpios, {0});
+static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET_OR(SW0_NODE, gpios, {0});
+` : ''}
+${hasBle ? `
+static void nordic_ble_ready(int err)
+{
+    if (err) {
+        printk("Bluetooth init failed: %d\\n", err);
+        return;
+    }
+    printk("Bluetooth ready: %s\\n", CONFIG_BT_DEVICE_NAME);
+    err = bt_le_adv_start(BT_LE_ADV_CONN_NAME, NULL, 0, NULL, 0);
+    if (err) {
+        printk("Advertising failed: %d\\n", err);
+        return;
+    }
+    printk("BLE advertising started\\n");
+}
+` : ''}
+
+int main(void)
+{
+    printk("%s\\n", APP_NAME);
+    printk("%s\\n", APP_DESCRIPTION);
+    printk("Board: ${NORDIC_BOARD_PROFILE.boardTarget}\\n");
+
+${hasGpio ? `    if (!gpio_is_ready_dt(&led)) {
+        printk("LED GPIO is not ready\\n");
+    } else {
+        gpio_pin_configure_dt(&led, GPIO_OUTPUT_INACTIVE);
+    }
+
+    if (button.port && gpio_is_ready_dt(&button)) {
+        gpio_pin_configure_dt(&button, GPIO_INPUT);
+        printk("Button GPIO ready\\n");
+    }
+` : ''}
+${hasBle ? `    int err = bt_enable(nordic_ble_ready);
+    if (err) {
+        printk("Bluetooth enable failed: %d\\n", err);
+    }
+` : ''}
+${hasUart ? '    printk("UART console ready\\n");\n' : ''}
+    while (1) {
+${hasGpio ? `        if (led.port && gpio_is_ready_dt(&led)) {
+            gpio_pin_toggle_dt(&led);
+        }
+        if (button.port && gpio_is_ready_dt(&button)) {
+            printk("button=%d\\n", gpio_pin_get_dt(&button));
+        }
+` : '        printk("Nordic app heartbeat\\n");\n'}
+        k_sleep(K_SECONDS(1));
+    }
+    return 0;
+}
+`
+}
+
+function createReadme({ displayName, description, boardTarget }) {
+  return `# ${displayName}
+
+${description}
+
+Generated for ${NORDIC_BOARD_PROFILE.framework}.
+
+Build:
+
+\`\`\`sh
+west build -b ${boardTarget || NORDIC_BOARD_PROFILE.boardTarget} .
+\`\`\`
+
+Flash:
+
+\`\`\`sh
+west flash
+\`\`\`
+`
+}
+
+function escapeCString(value) {
+  return String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ')
+}

@@ -44,6 +44,8 @@
     "test:huangshan-semantic-preview": "node scripts/test-huangshan-semantic-preview.mjs",
     "test:huangshan-real-preview": "node scripts/test-huangshan-real-preview.mjs",
     "test:huangshan-workspace-ui": "node scripts/test-huangshan-workspace-ui-guards.mjs",
+    "test:nordic-app-template": "node scripts/test-nordic-app-template.mjs",
+    "test:nordic-workspace-ui": "node scripts/test-nordic-workspace-ui.mjs",
     "huangshan:service": "node backend/huangshan-service/server.mjs",
     "test:huangshan-service-health": "node backend/huangshan-service/server.mjs --self-test",
     "preview": "vite preview"

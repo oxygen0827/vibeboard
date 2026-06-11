@@ -5,6 +5,7 @@ import SettingsModal from './components/SettingsModal'
 import CompilePanel from './components/CompilePanel'
 import ProjectEditor from './components/ProjectEditor'
 import HuangshanWorkspace from './components/HuangshanWorkspace'
+import NordicWorkspace from './components/NordicWorkspace'
 import { BOARDS, DEFAULT_BOARD_ID, getBoardList, getBoard } from './context/boards'
 import { listPlatformBoards, getPlatformBoard } from './context/boardPlatform'
 import { TOOLCHAINS } from './context/boardContract'
@@ -15,6 +16,7 @@ import { isSourcePath } from './utils/filePlacement'
 import { normalizeGeneratedSourceFiles } from './utils/projectValidation'
 import { normalizeApplicationFiles } from './domain/compilePackage/compilePackage'
 import { DIGITAL_TWIN_MANIFEST_KEY } from './domain/digitalTwin/uiManifest'
+import { NORDIC_BOARD_ID } from './domain/nordic/boardProfile'
 import { stablePreviewFingerprint } from './utils/preview'
 import bspHeader from '../backend/compiler-service/template/components/esp32_s3_szp/esp32_s3_szp.h?raw'
 import bspSource from '../backend/compiler-service/template/components/esp32_s3_szp/esp32_s3_szp.c?raw'
@@ -140,6 +142,10 @@ export default function App() {
       setWorkspaceMode('huangshan')
       return
     }
+    if (platformBoard?.toolchain === TOOLCHAINS.NCS_ZEPHYR) {
+      setWorkspaceMode('nordic')
+      return
+    }
     setWorkspaceMode('esp-idf')
     handleBoardChange(id)
   }
@@ -229,6 +235,7 @@ export default function App() {
       : null
 
   const hasConfig = settings.apiKey && settings.baseUrl && settings.model
+  const currentPlatformBoardId = workspaceMode === 'nordic' ? NORDIC_BOARD_ID : boardId
 
   return (
     <div className="app">
@@ -253,17 +260,20 @@ export default function App() {
             <button className={workspaceMode === 'huangshan' ? 'active' : ''} onClick={() => setWorkspaceMode('huangshan')}>
               Huangshan
             </button>
+            <button className={workspaceMode === 'nordic' ? 'active' : ''} onClick={() => setWorkspaceMode('nordic')}>
+              Nordic
+            </button>
           </div>
-          {workspaceMode === 'esp-idf' && (
+          {workspaceMode !== 'huangshan' && (
             <div className="board-selector">
               <select
                 className="board-select-input"
-                value={boardId}
+                value={currentPlatformBoardId}
                 onChange={e => handlePlatformBoardChange(e.target.value)}
               >
                 {listPlatformBoards().map(b => (
                   <option key={b.id} value={b.id}>
-                    [{b.toolchain === 'esp-idf' ? 'ESP-IDF' : 'SiFli'}] {b.name} ({b.chip})
+                    [{formatToolchainLabel(b.toolchain)}] {b.name} ({b.chip})
                   </option>
                 ))}
               </select>
@@ -287,6 +297,10 @@ export default function App() {
       {workspaceMode === 'huangshan' ? (
         <div className="app-body huangshan-body">
           <HuangshanWorkspace settings={settings} onOpenSettings={() => setShowSettings(true)} />
+        </div>
+      ) : workspaceMode === 'nordic' ? (
+        <div className="app-body huangshan-body">
+          <NordicWorkspace settings={settings} onOpenSettings={() => setShowSettings(true)} />
         </div>
       ) : (
         <div className="app-body">
@@ -385,4 +399,11 @@ export default function App() {
       )}
     </div>
   )
+}
+
+function formatToolchainLabel(toolchain) {
+  if (toolchain === TOOLCHAINS.ESP_IDF) return 'ESP-IDF'
+  if (toolchain === TOOLCHAINS.SIFLI_SCONS) return 'SiFli'
+  if (toolchain === TOOLCHAINS.NCS_ZEPHYR) return 'Nordic'
+  return toolchain
 }

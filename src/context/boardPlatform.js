@@ -11,7 +11,7 @@
 
 import { BOARDS } from './boards'
 import { validateBoardContract } from './boardContract'
-import { adaptEspIdfBoard, adaptHuangshanBoard } from './boardAdapters'
+import { adaptEspIdfBoard, adaptHuangshanBoard, adaptNordicBoard } from './boardAdapters'
 
 function buildRegistry() {
   const entries = []
@@ -23,6 +23,9 @@ function buildRegistry() {
 
   // Huangshan (SiFli + SCons).
   entries.push(adaptHuangshanBoard())
+
+  // Nordic nRF Connect SDK (Zephyr + west).
+  entries.push(adaptNordicBoard())
 
   const registry = {}
   for (const board of entries) {
