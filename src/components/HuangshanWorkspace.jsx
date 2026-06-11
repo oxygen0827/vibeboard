@@ -8,6 +8,7 @@ import {
   normalizeHuangshanBuilderConfig,
 } from '../domain/huangshan/appBuilder'
 import { createHuangshanSemanticPreview } from '../domain/huangshan/semanticPreview'
+import { createHuangshanTruthReport } from '../domain/huangshan/truthReport'
 import {
   buildHuangshanWorkspace,
   flashHuangshanWorkspace,
@@ -53,6 +54,7 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
   const [status, setStatus] = useState('')
   const [buildState, setBuildState] = useState('idle')
   const [buildLog, setBuildLog] = useState([])
+  const [serialLog, setSerialLog] = useState([])
   const [buildEvidence, setBuildEvidence] = useState(null)
   const [serialPorts, setSerialPorts] = useState([])
   const [selectedPort, setSelectedPort] = useState(HUANGSHAN_BOARD_PROFILE.debug.defaultSerialPort)
@@ -72,6 +74,11 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
     description,
     files,
   }), [appDisplayName, description, files])
+  const truthReport = useMemo(() => createHuangshanTruthReport({
+    config: builderConfig,
+    buildEvidence,
+    serialLogLines: serialLog,
+  }), [builderConfig, buildEvidence, serialLog])
 
   useEffect(() => {
     loadHuangshanHealth()
@@ -90,6 +97,7 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
   function resetGeneratedState() {
     setBuildEvidence(null)
     setBuildLog([])
+    setSerialLog([])
     setRealPreview(null)
     setRenderState('idle')
     setRenderError('')
@@ -190,6 +198,7 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
   async function handleBuild() {
     setBuildState('building')
     setBuildLog([])
+    setSerialLog([])
     setBuildEvidence(null)
     setStatus('Building Huangshan project...')
     try {
@@ -231,12 +240,16 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
     setMonitorAbort(controller)
     setMonitorState('monitoring')
     setBuildLog([])
+    setSerialLog([])
     monitorHuangshanSerial({
       port: selectedPort,
       baud: monitorBaud,
       signal: controller.signal,
       onStatus: setStatus,
-      onLog: line => setBuildLog(prev => [...prev, line]),
+      onLog: line => {
+        setBuildLog(prev => [...prev, line])
+        setSerialLog(prev => [...prev, line])
+      },
     }).then(() => {
       setMonitorState('idle')
       setMonitorAbort(null)
@@ -357,6 +370,7 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
             <div className={`huangshan-status ${logState}`}>
               {status || 'Describe a feature, then click AI generate.'}
             </div>
+            <TruthReportPanel report={truthReport} />
             {buildEvidence?.artifactSummary?.artifacts?.length > 0 && (
               <div className="huangshan-artifacts compact">
                 {buildEvidence.artifactSummary.artifacts.map(item => (
@@ -499,6 +513,36 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
       </section>
     </div>
   )
+}
+
+function TruthReportPanel({ report }) {
+  return (
+    <div className="huangshan-truth">
+      <div className="huangshan-heading">Truth report</div>
+      <div className="huangshan-truth-summary">
+        <span>real {report.realCount}</span>
+        <span>placeholder {report.placeholderCount}</span>
+        <span>verified {report.verifiedCount}</span>
+      </div>
+      <div className="huangshan-truth-list">
+        {report.items.map(item => (
+          <div key={item.id} className={`huangshan-truth-item ${item.implementation}`}>
+            <div>
+              <strong>{item.label}</strong>
+              <span>{item.dataSource}</span>
+            </div>
+            <code>{truthBadge(item)}</code>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function truthBadge(item) {
+  if (item.canClaimVerified) return 'verified'
+  if (item.canClaimReal) return 'built'
+  return item.implementation
 }
 
 function HuangshanDevicePreview({ preview, realPreview, renderError, onRender }) {

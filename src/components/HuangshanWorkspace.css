@@ -333,7 +333,8 @@
 
 .huangshan-artifacts,
 .huangshan-log-lines,
-.huangshan-error {
+.huangshan-error,
+.huangshan-truth {
   margin: 10px 0 0;
   padding: 10px;
   background: var(--bg-primary);
@@ -345,6 +346,77 @@
   line-height: 1.45;
   white-space: pre-wrap;
   overflow: auto;
+}
+
+.huangshan-truth {
+  font-family: inherit;
+  white-space: normal;
+}
+
+.huangshan-truth-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.huangshan-truth-summary span {
+  padding: 4px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.huangshan-truth-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.huangshan-truth-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px;
+  border: 1px solid var(--border-muted);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+}
+
+.huangshan-truth-item.real {
+  border-color: var(--accent);
+}
+
+.huangshan-truth-item.placeholder {
+  border-color: #d97706;
+}
+
+.huangshan-truth-item.ui-only {
+  opacity: 0.78;
+}
+
+.huangshan-truth-item strong,
+.huangshan-truth-item span {
+  display: block;
+}
+
+.huangshan-truth-item strong {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.huangshan-truth-item span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.huangshan-truth-item code {
+  flex: 0 0 auto;
+  color: var(--accent-hover);
+  font-family: var(--font-mono);
+  font-size: 11px;
 }
 
 .huangshan-artifacts {

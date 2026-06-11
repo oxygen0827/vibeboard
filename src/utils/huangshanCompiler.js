@@ -2,13 +2,13 @@ import { createHuangshanBuildEvidence } from '../domain/huangshan/buildEvidence'
 
 export async function loadHuangshanHealth() {
   const res = await fetch('/huangshan/health')
-  if (!res.ok) throw new Error(`加载黄山派服务状态失败: HTTP ${res.status}`)
+  if (!res.ok) throw new Error(`Failed to load Huangshan service health: HTTP ${res.status}`)
   return res.json()
 }
 
 export async function loadHuangshanSerialPorts() {
   const res = await fetch('/huangshan/serial-ports')
-  if (!res.ok) throw new Error(`加载黄山派串口失败: HTTP ${res.status}`)
+  if (!res.ok) throw new Error(`Failed to load Huangshan serial ports: HTTP ${res.status}`)
   return res.json()
 }
 
@@ -18,10 +18,10 @@ export async function renderHuangshanLvglPreview({ displayName, description, fil
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ displayName, description, files, tap }),
   })
-  if (!res.ok) throw new Error(`真实 LVGL 渲染服务失败: HTTP ${res.status}`)
+  if (!res.ok) throw new Error(`Huangshan LVGL render service failed: HTTP ${res.status}`)
   const payload = await res.json()
   if (payload.status !== 'success') {
-    throw new Error(payload.error || '真实 LVGL 渲染失败')
+    throw new Error(payload.error || 'Huangshan LVGL render failed')
   }
   return payload
 }
@@ -37,7 +37,7 @@ async function runHuangshanStream({ url, method = 'POST', body, initialStatus, o
     body: body ? JSON.stringify(body) : undefined,
     signal,
   })
-  if (!res.ok) throw new Error(`黄山派服务连接失败: HTTP ${res.status}`)
+  if (!res.ok) throw new Error(`Huangshan service connection failed: HTTP ${res.status}`)
 
   return new Promise((resolve, reject) => {
     const reader = res.body.getReader()
@@ -90,7 +90,7 @@ export async function monitorHuangshanSerial({ port, baud = 1000000, signal, onS
     url: '/huangshan/monitor',
     body: { port, baud },
     signal,
-    initialStatus: `正在连接串口 ${port} ...`,
+    initialStatus: `Connecting serial port ${port}...`,
     onStatus,
     onLog,
   })
@@ -100,7 +100,7 @@ export async function buildHuangshanWorkspace({ files, onStatus, onLog } = {}) {
   const result = await runHuangshanStream({
     url: '/huangshan/build',
     body: { files },
-    initialStatus: '正在连接黄山派构建服务...',
+    initialStatus: 'Connecting Huangshan build service...',
     onStatus,
     onLog,
   })
@@ -111,7 +111,7 @@ export async function flashHuangshanWorkspace({ port, onStatus, onLog } = {}) {
   const result = await runHuangshanStream({
     url: '/huangshan/flash',
     body: { port },
-    initialStatus: '正在连接黄山派烧录服务...',
+    initialStatus: 'Connecting Huangshan flash service...',
     onStatus,
     onLog,
   })

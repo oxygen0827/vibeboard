@@ -1,6 +1,6 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, posix } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createHuangshanSemanticPreview } from '../../src/domain/huangshan/semanticPreview.js'
@@ -14,7 +14,7 @@ function cString(value) {
 }
 
 export function resolveHuangshanLvglSource({ sdk }) {
-  return join(sdk, 'external/lvgl_v8')
+  return posix.join(sdk.replaceAll('\\', '/'), 'external/lvgl_v8')
 }
 
 export function normalizeHuangshanTap(tap, viewport = DEFAULT_VIEWPORT) {
