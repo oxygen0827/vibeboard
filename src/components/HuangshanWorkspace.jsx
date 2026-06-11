@@ -476,6 +476,36 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
           </div>
         </div>
 
+        <div className="huangshan-workbench huangshan-code-workbench">
+          <div className="huangshan-code-pane">
+            <div className="huangshan-files">
+              {filePaths.map(path => (
+                <button
+                  key={path}
+                  className={activeFile === path ? 'active' : ''}
+                  onClick={() => setActiveFile(path)}
+                  title={path}
+                >
+                  {path}
+                </button>
+              ))}
+            </div>
+            <div className="huangshan-editor">
+              <Editor
+                key={activeFile}
+                language={activeFile.endsWith('SConscript') ? 'python' : 'c'}
+                theme="vs-dark"
+                value={activeContent}
+                onChange={value => {
+                  setFiles(prev => ({ ...prev, [activeFile]: value || '' }))
+                  setRealPreview(null)
+                }}
+                options={{ minimap: { enabled: false }, fontSize: 13, scrollBeyondLastLine: false }}
+              />
+            </div>
+          </div>
+        </div>
+
         {showAdvanced && (
           <div className="huangshan-advanced">
             <div className="huangshan-advanced-config">
@@ -556,35 +586,7 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
               </div>
             </div>
 
-            <div className="huangshan-workbench">
-              <div className="huangshan-code-pane">
-                <div className="huangshan-files">
-                  {filePaths.map(path => (
-                    <button
-                      key={path}
-                      className={activeFile === path ? 'active' : ''}
-                      onClick={() => setActiveFile(path)}
-                      title={path}
-                    >
-                      {path}
-                    </button>
-                  ))}
-                </div>
-                <div className="huangshan-editor">
-                  <Editor
-                    key={activeFile}
-                    language={activeFile.endsWith('SConscript') ? 'python' : 'c'}
-                    theme="vs-dark"
-                    value={activeContent}
-                    onChange={value => {
-                      setFiles(prev => ({ ...prev, [activeFile]: value || '' }))
-                      setRealPreview(null)
-                    }}
-                    options={{ minimap: { enabled: false }, fontSize: 13, scrollBeyondLastLine: false }}
-                  />
-                </div>
-              </div>
-
+            <div className="huangshan-workbench huangshan-log-workbench">
               <aside className="huangshan-log">
                 <div className="huangshan-heading">编译日志</div>
                 {buildEvidence?.firstError && (
