@@ -25,6 +25,8 @@ export function createHuangshanAiBuilderMessages({
         'Use concise labels and values that fit a 390x450 round-corner AMOLED watch screen.',
         'Do not return C code, JavaScript, HTML, CSS, shell commands, paths, or unsupported component types.',
         'Use verified Huangshan examples: KEY2=PA43, GPIO output=GPIO20, VBAT ADC=bat1 channel 7, PA34 ADC channel 6, WS2812 rgbled=PA32/GPTIM2_CH1, UART2 RX/TX=PA18/PA19, sensors on I2C3 PA39/PA40.',
+        'Never invent unavailable hardware readings. The board contract does not include heart-rate, step-count, GPS, weather, microphone, speaker, WiFi, or cloud data.',
+        'If the user asks for sports/health data, map it to available Huangshan hardware: IMU motion, VBAT battery, KEY2 start/stop, LED feedback, and BLE status placeholder. Use labels like Motion, Accel, VBAT, KEY2, LED instead of Heart or Steps.',
       ].join('\n'),
     },
     {
@@ -39,11 +41,27 @@ export function createHuangshanAiBuilderMessages({
         '',
         `User request: ${trimText(userPrompt) || 'Create a practical diagnostics watch screen.'}`,
         '',
-        'Capability mapping hints: environment light -> ambient_light, IMU/motion/steps -> imu, compass/magnetic -> magnetometer, power/VBAT -> battery, PA34 analog -> adc_gpio, BLE -> bluetooth, physical key -> key, GPIO output -> gpio_output, RGB LED -> led, vibration -> motor, external serial -> uart2.',
+        'Capability mapping hints: environment light -> ambient_light, IMU/motion/activity -> imu, compass/magnetic -> magnetometer, power/VBAT -> battery, PA34 analog -> adc_gpio, BLE -> bluetooth, physical key -> key, GPIO output -> gpio_output, RGB LED -> led, vibration -> motor, external serial -> uart2.',
         'Prefer 4 to 6 components. Use at most one action component.',
       ].join('\n'),
     },
   ]
+}
+
+function sanitizeUnsupportedMetric(component) {
+  const label = trimText(component.label)
+  const value = trimText(component.value)
+  const text = `${label} ${value}`
+  if (/(heart|hr|bpm|心率|心跳)/i.test(text)) {
+    return { ...component, capability: 'imu', label: 'Motion', value: 'LSM6DSL' }
+  }
+  if (/(step|steps|步数|计步)/i.test(text)) {
+    return { ...component, capability: 'imu', label: 'Accel', value: 'x/y/z' }
+  }
+  if (/(weather|temperature|humidity|gps|audio|mic|speaker|wifi|天气|温度|湿度|定位|音频|麦克风|喇叭)/i.test(text)) {
+    return { ...component, capability: 'status', label: label || 'Status', value: 'Unsupported on board' }
+  }
+  return component
 }
 
 function extractJsonText(text) {
@@ -75,7 +93,7 @@ export function extractHuangshanBuilderConfigFromAiText(text, fallback = {}) {
     components: Array.isArray(parsed.components)
       ? parsed.components
         .filter(component => COMPONENT_TYPES.includes(component?.type))
-        .map(component => ({
+        .map(component => sanitizeUnsupportedMetric({
           ...component,
           capability: CAPABILITY_TYPES.includes(component?.capability) ? component.capability : undefined,
         }))

@@ -25,8 +25,8 @@ assert.equal(preview.title, 'Sensor Dash')
 assert.equal(preview.subtitle, 'Show light and motion data.')
 assert.equal(preview.status, 'Sensor_Dash: ready')
 assert.equal(preview.labels.length >= 3, true)
-assert.equal(preview.launcherItems[0].label, 'Sensor')
-assert.equal(preview.launcherItems[1].label, 'Dash')
+assert.equal(preview.launcherItems[0].label, 'Show light')
+assert.equal(preview.launcherItems[1].label, 'Sensor_Das')
 
 const fallback = createHuangshanSemanticPreview({
   displayName: '',

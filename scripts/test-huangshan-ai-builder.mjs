@@ -25,6 +25,7 @@ assert.match(messages[0].content, /adc_gpio/)
 assert.match(messages[0].content, /gpio_output/)
 assert.match(messages[0].content, /motor/)
 assert.match(messages[0].content, /UART2 RX\/TX=PA18\/PA19/)
+assert.match(messages[0].content, /Never invent unavailable hardware readings/)
 assert.match(messages[1].content, /Sport Watch/)
 assert.match(messages[1].content, /运动手表首页/)
 
@@ -80,6 +81,21 @@ assert.deepEqual(parsed.components.map(component => component.capability), [
   'battery',
   'bluetooth',
   'motor',
+])
+assert.equal(parsed.components[1].label, 'Motion')
+assert.equal(parsed.components[1].value, 'LSM6DSL')
+
+const unsupportedParsed = extractHuangshanBuilderConfigFromAiText(JSON.stringify({
+  displayName: 'Sport',
+  description: 'Unsupported metrics must be grounded.',
+  components: [
+    { type: 'metric', capability: 'imu', label: 'Steps', value: '1024' },
+    { type: 'metric', capability: 'status', label: 'Weather', value: 'Sunny' },
+  ],
+}))
+assert.deepEqual(unsupportedParsed.components.map(component => [component.capability, component.label, component.value]), [
+  ['imu', 'Accel', 'x/y/z'],
+  ['status', 'Weather', 'Unsupported on board'],
 ])
 
 assert.throws(

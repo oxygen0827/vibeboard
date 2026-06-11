@@ -41,12 +41,16 @@ export function extractHuangshanPreviewLabels(files = {}) {
   return compactLabels(labels)
 }
 
-function launcherItemsForTitle(title) {
-  const words = titleize(title).split(' ').filter(Boolean)
-  const base = words.length ? words : ['Huangshan', 'App']
-  return base.slice(0, 4).map((word, index) => ({
-    id: `${word.toLowerCase()}-${index}`,
-    label: word.slice(0, 8),
+function launcherItemsForLabels(labels, title) {
+  const useful = labels
+    .filter(label => label !== 'Back')
+    .filter(label => !/^\w+:\s*ready$/i.test(label))
+    .filter(label => !/^ready$/i.test(label))
+  const fallback = titleize(title).split(' ').filter(Boolean)
+  const base = useful.length ? useful : (fallback.length ? fallback : ['Huangshan', 'App'])
+  return base.slice(0, 4).map((label, index) => ({
+    id: `${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${index}`,
+    label: label.slice(0, 10),
     tone: ['orange', 'blue', 'green', 'white'][index % 4],
   }))
 }
@@ -64,6 +68,6 @@ export function createHuangshanSemanticPreview({ displayName, description, files
     subtitle,
     status,
     labels,
-    launcherItems: launcherItemsForTitle(readableTitle),
+    launcherItems: launcherItemsForLabels(labels, readableTitle),
   }
 }

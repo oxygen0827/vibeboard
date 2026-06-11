@@ -37,7 +37,7 @@ const HUANGSHAN_CAPABILITY_OPTIONS = [
 export default function HuangshanWorkspace({ settings, onOpenSettings }) {
   const [appDisplayName, setAppDisplayName] = useState('Board Diagnostics')
   const [description, setDescription] = useState('Show display, touch, and timer status.')
-  const [aiPrompt, setAiPrompt] = useState('做一个黄山派运动手表首页，显示心率、步数、电量、蓝牙状态和开始运动按钮。')
+  const [aiPrompt, setAiPrompt] = useState('做一个黄山派传感器仪表盘，显示环境光、IMU 加速度、电池 ADC，并提供 LED 测试按钮。')
   const [aiState, setAiState] = useState('idle')
   const [aiError, setAiError] = useState('')
   const [builderConfig, setBuilderConfig] = useState(() => normalizeHuangshanBuilderConfig(createDefaultHuangshanBuilderConfig({

@@ -24,6 +24,15 @@ function cStringLiteral(value) {
     .replace(/\r?\n/g, ' ')
 }
 
+function cIdentifier(value, fallback = 'value') {
+  const normalized = String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  const safe = normalized || fallback
+  return /^[a-z_]/.test(safe) ? safe : `${fallback}_${safe}`
+}
+
 function normalizeComponent(component, index) {
   if (!COMPONENT_TYPES.has(component?.type)) return null
   const label = String(component.label || component.type).trim() || component.type
@@ -125,13 +134,16 @@ function createMainSource(capsule) {
   const hasLed = capabilities.has('led')
   const hasMotor = capabilities.has('motor')
   const hasUart2 = capabilities.has('uart2')
+  const valueLabelFields = infoComponents
+    .map(component => `    lv_obj_t *${cIdentifier(component.id)}_value_label;`)
+    .join('\n')
 
   const infoCalls = infoComponents.map((component, index) => {
     const column = index % 2
     const row = Math.floor(index / 2)
     const x = column === 0 ? -92 : 92
     const y = 142 + row * 74
-    return `    create_info_chip(g_state.root, "${cStringLiteral(component.label)}", "${cStringLiteral(component.value)}", ${x}, ${y});`
+    return `    g_state.${cIdentifier(component.id)}_value_label = create_info_chip(g_state.root, "${cStringLiteral(component.label)}", "${cStringLiteral(component.value)}", ${x}, ${y});`
   }).join('\n')
 
   const actionCalls = actionComponents.map((component, index) => {
@@ -178,6 +190,7 @@ typedef struct
     rt_device_t battery_dev;
     rt_device_t uart2_dev;
     rt_device_t rgbled_dev;
+${valueLabelFields}
 } ${appId}_state_t;
 
 static ${appId}_state_t g_state;
@@ -254,7 +267,7 @@ static lv_obj_t *create_info_chip(lv_obj_t *parent, const char *label_text, cons
     lv_label_set_text(value, value_text);
     lv_obj_set_style_text_color(value, lv_color_hex(0xF8FAFC), 0);
     lv_obj_align(value, LV_ALIGN_BOTTOM_LEFT, 10, -8);
-    return chip;
+    return value;
 }
 
 static lv_obj_t *create_action_button(lv_obj_t *parent, const char *label_text, const char *status_text, const char *capability, int32_t x, int32_t y)
@@ -356,6 +369,7 @@ ${hasAmbientLight ? `    if (g_state.ambient_light_dev)
         struct rt_sensor_data light;
         if (rt_device_read(g_state.ambient_light_dev, 0, &light, 1) == 1)
         {
+${infoComponents.filter(component => component.capability === 'ambient_light').map(component => `            if (g_state.${cIdentifier(component.id)}_value_label) lv_label_set_text_fmt(g_state.${cIdentifier(component.id)}_value_label, "%d lx", light.data.light);`).join('\n')}
             rt_kprintf("[${appName}] light: %d lux\\n", light.data.light);
         }
     }
@@ -365,6 +379,7 @@ ${hasImu ? `    if (g_state.imu_acce_dev)
         struct rt_sensor_data acce;
         if (rt_device_read(g_state.imu_acce_dev, 0, &acce, 1) == 1)
         {
+${infoComponents.filter(component => component.capability === 'imu').map(component => `            if (g_state.${cIdentifier(component.id)}_value_label) lv_label_set_text_fmt(g_state.${cIdentifier(component.id)}_value_label, "%d,%d,%d", acce.data.acce.x, acce.data.acce.y, acce.data.acce.z);`).join('\n')}
             rt_kprintf("[${appName}] acce: %d,%d,%d\\n", acce.data.acce.x, acce.data.acce.y, acce.data.acce.z);
         }
     }
@@ -374,6 +389,7 @@ ${hasMagnetometer ? `    if (g_state.magnetometer_dev)
         struct rt_sensor_data mag;
         if (rt_device_read(g_state.magnetometer_dev, 0, &mag, 1) == 1)
         {
+${infoComponents.filter(component => component.capability === 'magnetometer').map(component => `            if (g_state.${cIdentifier(component.id)}_value_label) lv_label_set_text_fmt(g_state.${cIdentifier(component.id)}_value_label, "%d,%d,%d", mag.data.mag.x, mag.data.mag.y, mag.data.mag.z);`).join('\n')}
             rt_kprintf("[${appName}] mag: %d,%d,%d\\n", mag.data.mag.x, mag.data.mag.y, mag.data.mag.z);
         }
     }
@@ -383,6 +399,7 @@ ${hasBattery ? `    if (g_state.battery_dev)
         rt_adc_enable((rt_adc_device_t)g_state.battery_dev, HUANGSHAN_BAT_CHANNEL);
         rt_uint32_t vbat = rt_adc_read((rt_adc_device_t)g_state.battery_dev, HUANGSHAN_BAT_CHANNEL);
         rt_adc_disable((rt_adc_device_t)g_state.battery_dev, HUANGSHAN_BAT_CHANNEL);
+${infoComponents.filter(component => component.capability === 'battery').map(component => `        if (g_state.${cIdentifier(component.id)}_value_label) lv_label_set_text_fmt(g_state.${cIdentifier(component.id)}_value_label, "%u", vbat);`).join('\n')}
         rt_kprintf("[${appName}] VBAT read value: %u\\n", vbat);
     }
 ` : ''}
@@ -391,6 +408,7 @@ ${hasAdcGpio ? `    if (g_state.battery_dev)
         rt_adc_enable((rt_adc_device_t)g_state.battery_dev, HUANGSHAN_ADC_GPIO_CHANNEL);
         rt_uint32_t gpio_adc = rt_adc_read((rt_adc_device_t)g_state.battery_dev, HUANGSHAN_ADC_GPIO_CHANNEL);
         rt_adc_disable((rt_adc_device_t)g_state.battery_dev, HUANGSHAN_ADC_GPIO_CHANNEL);
+${infoComponents.filter(component => component.capability === 'adc_gpio').map(component => `        if (g_state.${cIdentifier(component.id)}_value_label) lv_label_set_text_fmt(g_state.${cIdentifier(component.id)}_value_label, "%u", gpio_adc);`).join('\n')}
         rt_kprintf("[${appName}] PA34 ADC read value: %u\\n", gpio_adc);
     }
 ` : ''}
