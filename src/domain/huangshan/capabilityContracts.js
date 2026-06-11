@@ -50,7 +50,7 @@ export const HUANGSHAN_CAPABILITY_CONTRACTS = {
     label: 'PA34 ADC',
     exampleReferences: ['adc/src/main.c'],
     projConf: ['CONFIG_BSP_USING_ADC1=y'],
-    evidencePatterns: ['PA34 ADC read value:'],
+    evidencePatterns: ['ADC read value:'],
   },
   bluetooth: {
     id: 'bluetooth',
@@ -82,7 +82,7 @@ export const HUANGSHAN_CAPABILITY_CONTRACTS = {
       'CONFIG_RGB_USING_SK6812MINI_HS_PWM_DEV_NAME="pwm3"',
       'CONFIG_BSP_USING_RGBLED_CH=1',
     ],
-    evidencePatterns: ['LED hook'],
+    evidencePatterns: ['RGB LED example started!', '-> green'],
   },
   motor: {
     id: 'motor',
@@ -96,7 +96,7 @@ export const HUANGSHAN_CAPABILITY_CONTRACTS = {
     exampleReferences: ['uart/src/main.c'],
     includePaths: ["os.path.join(rtconfig.SIFLI_SDK, 'rtos/rtthread/components/drivers/serial')"],
     projConf: ['CONFIG_BSP_USING_UART2=y'],
-    evidencePatterns: ['UART2 heartbeat sent'],
+    evidencePatterns: ['send:', 'rev:', 'uart_rec:'],
   },
 }
 

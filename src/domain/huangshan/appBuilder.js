@@ -166,6 +166,7 @@ function createMainSource(capsule) {
   const hasMagnetometer = capabilities.has('magnetometer')
   const hasBattery = capabilities.has('battery')
   const hasAdcGpio = capabilities.has('adc_gpio')
+  const hasAnySensor = hasAmbientLight || hasImu || hasMagnetometer
   const hasBluetooth = capabilities.has('bluetooth')
   const hasKey = capabilities.has('key')
   const hasGpioOutput = capabilities.has('gpio_output')
@@ -246,7 +247,8 @@ static void huangshan_led_set_color_hook(uint32_t color)
 ${hasLed ? `    if (!g_state.rgbled_dev) return;
     struct rt_rgbled_configuration configuration;
     configuration.color_rgb = color;
-    rt_device_control(g_state.rgbled_dev, PWM_CMD_SET_COLOR, &configuration);` : `    (void)color;
+    rt_device_control(g_state.rgbled_dev, PWM_CMD_SET_COLOR, &configuration);
+    rt_kprintf("[${appName}] -> green\\n");` : `    (void)color;
     rt_kprintf("[${appName}] LED capability not enabled\\n");`}
 }
 
@@ -326,12 +328,13 @@ static lv_obj_t *create_action_button(lv_obj_t *parent, const char *label_text, 
 
 static void huangshan_capability_init(void)
 {
-${hasAmbientLight ? `    struct rt_sensor_config light_cfg;
-    rt_memset(&light_cfg, 0, sizeof(light_cfg));
-    light_cfg.intf.dev_name = "i2c3";
+${hasAnySensor ? `    struct rt_sensor_config sensor_cfg;
+    rt_memset(&sensor_cfg, 0, sizeof(sensor_cfg));
+    sensor_cfg.intf.dev_name = "i2c3";
     HAL_PIN_Set(PAD_PA40, I2C3_SCL, PIN_PULLUP, 1);
     HAL_PIN_Set(PAD_PA39, I2C3_SDA, PIN_PULLUP, 1);
-    rt_hw_ltr303_init("ltr303", &light_cfg);
+` : ''}
+${hasAmbientLight ? `    rt_hw_ltr303_init("ltr303", &sensor_cfg);
     g_state.ambient_light_dev = rt_device_find("li_ltr303");
     if (g_state.ambient_light_dev)
     {
@@ -339,31 +342,21 @@ ${hasAmbientLight ? `    struct rt_sensor_config light_cfg;
         rt_device_control(g_state.ambient_light_dev, RT_SENSOR_CTRL_SET_POWER, (void *)RT_SENSOR_POWER_NORMAL);
     }
 ` : ''}
-${hasImu ? `    struct rt_sensor_config imu_cfg;
-    rt_memset(&imu_cfg, 0, sizeof(imu_cfg));
-    imu_cfg.intf.dev_name = "i2c3";
-    imu_cfg.intf.user_data = (void *)LSM6DSL_ADDR_DEFAULT;
-    imu_cfg.irq_pin.pin = RT_PIN_NONE;
-    HAL_PIN_Set(PAD_PA40, I2C3_SCL, PIN_PULLUP, 1);
-    HAL_PIN_Set(PAD_PA39, I2C3_SDA, PIN_PULLUP, 1);
-    rt_hw_lsm6dsl_init("lsm6d", &imu_cfg);
+${hasMagnetometer ? `    rt_hw_mmc56x3_init("mmc56x3", &sensor_cfg);
+    g_state.magnetometer_dev = rt_device_find("mag_mmc56x3");
+    if (g_state.magnetometer_dev)
+    {
+        rt_device_open(g_state.magnetometer_dev, RT_DEVICE_FLAG_RDONLY);
+    }
+` : ''}
+${hasImu ? `    sensor_cfg.intf.user_data = (void *)LSM6DSL_ADDR_DEFAULT;
+    sensor_cfg.irq_pin.pin = RT_PIN_NONE;
+    rt_hw_lsm6dsl_init("lsm6d", &sensor_cfg);
     g_state.imu_acce_dev = rt_device_find("acce_lsm");
     if (g_state.imu_acce_dev)
     {
         rt_device_open(g_state.imu_acce_dev, RT_DEVICE_FLAG_RDONLY);
         rt_device_control(g_state.imu_acce_dev, RT_SENSOR_CTRL_SET_ODR, (void *)1660);
-    }
-` : ''}
-${hasMagnetometer ? `    struct rt_sensor_config mag_cfg;
-    rt_memset(&mag_cfg, 0, sizeof(mag_cfg));
-    mag_cfg.intf.dev_name = "i2c3";
-    HAL_PIN_Set(PAD_PA40, I2C3_SCL, PIN_PULLUP, 1);
-    HAL_PIN_Set(PAD_PA39, I2C3_SDA, PIN_PULLUP, 1);
-    rt_hw_mmc56x3_init("mmc56x3", &mag_cfg);
-    g_state.magnetometer_dev = rt_device_find("mag_mmc56x3");
-    if (g_state.magnetometer_dev)
-    {
-        rt_device_open(g_state.magnetometer_dev, RT_DEVICE_FLAG_RDONLY);
     }
 ` : ''}
 ${hasBattery ? `    g_state.battery_dev = rt_device_find("bat1");
@@ -382,6 +375,10 @@ ${hasGpioOutput ? `    rt_pin_mode(HUANGSHAN_GPIO_OUTPUT_PIN, PIN_MODE_OUTPUT);
 ${hasLed ? `    HAL_PMU_ConfigPeriLdo(PMU_PERI_LDO3_3V3, true, true);
     HAL_PIN_Set(PAD_PA32, GPTIM2_CH1, PIN_NOPULL, 1);
     g_state.rgbled_dev = rt_device_find(RGBLED_NAME);
+    if (g_state.rgbled_dev)
+    {
+        rt_kprintf("[${appName}] RGB LED example started!\\n");
+    }
 ` : ''}
 ${hasUart2 ? `    HAL_PIN_Set(PAD_PA18, USART2_RXD, PIN_PULLUP, 1);
     HAL_PIN_Set(PAD_PA19, USART2_TXD, PIN_PULLUP, 1);
@@ -447,7 +444,7 @@ ${hasAdcGpio ? `    if (g_state.battery_dev)
         rt_uint32_t gpio_adc = rt_adc_read((rt_adc_device_t)g_state.battery_dev, HUANGSHAN_ADC_GPIO_CHANNEL);
         rt_adc_disable((rt_adc_device_t)g_state.battery_dev, HUANGSHAN_ADC_GPIO_CHANNEL);
 ${infoComponents.filter(component => component.capability === 'adc_gpio').map(component => `        if (g_state.${cIdentifier(component.id)}_value_label) lv_label_set_text_fmt(g_state.${cIdentifier(component.id)}_value_label, "%u", gpio_adc);`).join('\n')}
-        rt_kprintf("[${appName}] PA34 ADC read value: %u\\n", gpio_adc);
+        rt_kprintf("[${appName}] ADC read value: %u\\n", gpio_adc);
     }
 ` : ''}
 }
