@@ -475,14 +475,14 @@
   flex: 0 0 auto;
   display: grid;
   grid-template-columns: minmax(420px, 1fr) minmax(300px, 330px);
-  min-height: 420px;
+  min-height: 340px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-primary);
 }
 
 .huangshan-code-workbench {
   flex: 1;
-  min-height: 380px;
+  min-height: 460px;
   border-top: 1px solid var(--border);
 }
 
@@ -982,7 +982,7 @@
 }
 
 .huangshan-workbench {
-  min-height: 380px;
+  min-height: 460px;
   display: grid;
   grid-template-columns: minmax(520px, 1fr) 360px;
 }
