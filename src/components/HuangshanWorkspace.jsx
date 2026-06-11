@@ -315,6 +315,51 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
 
   return (
     <div className="huangshan-workspace">
+      <aside className="huangshan-status-sidebar">
+        <div className="huangshan-heading">状态</div>
+        <div className={`huangshan-status ${logState}`}>
+          {status || '描述功能后点击 AI 生成代码。'}
+        </div>
+        <HuangshanRunLogStrip
+          buildLog={buildLog}
+          buildState={buildState}
+          flashState={flashState}
+          monitorState={monitorState}
+          onClear={() => {
+            setBuildLog([])
+            setSerialLog([])
+          }}
+        />
+        <TruthReportPanel report={truthReport} />
+        {pendingConfig && (
+          <DraftPlanPanel config={pendingConfig} onApply={handleApplyPendingConfig} />
+        )}
+        <div className="huangshan-stage-actions">
+          <button className="huangshan-secondary" onClick={() => handleRenderPreview()} disabled={renderState === 'rendering'}>
+            {renderState === 'rendering' ? '预览中...' : '预览'}
+          </button>
+          <button className="huangshan-build" onClick={handleBuild} disabled={buildState === 'building'}>
+            {buildState === 'building' ? '编译中...' : '编译'}
+          </button>
+          <button className="huangshan-flash" onClick={handleFlash} disabled={!canFlash}>
+            {flashState === 'flashing' ? '烧录中...' : '烧录'}
+          </button>
+        </div>
+        {buildEvidence?.artifactSummary?.artifacts?.length > 0 && (
+          <div className="huangshan-artifacts compact">
+            {buildEvidence.artifactSummary.artifacts.map(item => (
+              <div key={item.relativePath} className="huangshan-artifact">
+                <div>
+                  <strong>{item.name}</strong>
+                  <span>{item.kind}</span>
+                </div>
+                <code>{formatArtifactSize(item.size)}</code>
+              </div>
+            ))}
+          </div>
+        )}
+      </aside>
+
       <section className="huangshan-command">
         <div className="huangshan-chat-panel">
           <div className="huangshan-chat-header">
@@ -429,50 +474,6 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
               renderError={renderError}
               onRender={handleRenderPreview}
             />
-          </div>
-          <div className="huangshan-stage-status">
-            <div className="huangshan-heading">状态</div>
-            <div className={`huangshan-status ${logState}`}>
-              {status || '描述功能后点击 AI 生成代码。'}
-            </div>
-            <HuangshanRunLogStrip
-              buildLog={buildLog}
-              buildState={buildState}
-              flashState={flashState}
-              monitorState={monitorState}
-              onClear={() => {
-                setBuildLog([])
-                setSerialLog([])
-              }}
-            />
-            <TruthReportPanel report={truthReport} />
-            {pendingConfig && (
-              <DraftPlanPanel config={pendingConfig} onApply={handleApplyPendingConfig} />
-            )}
-            <div className="huangshan-stage-actions">
-              <button className="huangshan-secondary" onClick={() => handleRenderPreview()} disabled={renderState === 'rendering'}>
-                {renderState === 'rendering' ? '预览中...' : '预览'}
-              </button>
-              <button className="huangshan-build" onClick={handleBuild} disabled={buildState === 'building'}>
-                {buildState === 'building' ? '编译中...' : '编译'}
-              </button>
-              <button className="huangshan-flash" onClick={handleFlash} disabled={!canFlash}>
-                {flashState === 'flashing' ? '烧录中...' : '烧录'}
-              </button>
-            </div>
-            {buildEvidence?.artifactSummary?.artifacts?.length > 0 && (
-              <div className="huangshan-artifacts compact">
-                {buildEvidence.artifactSummary.artifacts.map(item => (
-                  <div key={item.relativePath} className="huangshan-artifact">
-                    <div>
-                      <strong>{item.name}</strong>
-                      <span>{item.kind}</span>
-                    </div>
-                    <code>{formatArtifactSize(item.size)}</code>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         </div>
 

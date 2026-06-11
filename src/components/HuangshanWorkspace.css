@@ -1,14 +1,25 @@
 .huangshan-workspace {
   display: grid;
-  grid-template-columns: minmax(0, 55fr) minmax(0, 45fr);
+  grid-template-columns: minmax(220px, 260px) minmax(0, 55fr) minmax(0, 45fr);
   height: 100%;
   min-height: 0;
   background: var(--bg-primary);
   color: var(--text-primary);
 }
 
+.huangshan-status-sidebar {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+}
+
 .huangshan-command {
-  grid-column: 2;
+  grid-column: 3;
   grid-row: 1;
   min-height: 0;
   overflow: hidden;
@@ -462,7 +473,7 @@
 }
 
 .huangshan-main {
-  grid-column: 1;
+  grid-column: 2;
   grid-row: 1;
   min-width: 0;
   min-height: 0;
@@ -474,7 +485,7 @@
 .huangshan-stage {
   flex: 0 0 300px;
   display: grid;
-  grid-template-columns: minmax(420px, 1fr) minmax(300px, 330px);
+  grid-template-columns: minmax(0, 1fr);
   height: 300px;
   min-height: 300px;
   border-bottom: 1px solid var(--border);
@@ -498,14 +509,6 @@
   background: var(--bg-primary);
   overflow: hidden;
   padding: 20px 24px;
-}
-
-.huangshan-stage-status {
-  min-width: 0;
-  overflow: auto;
-  padding: 14px;
-  border-left: 1px solid var(--border);
-  background: var(--bg-secondary);
 }
 
 .huangshan-device-preview {
@@ -1050,9 +1053,23 @@
     grid-template-columns: 1fr;
   }
 
-  .huangshan-command {
+  .huangshan-status-sidebar {
+    grid-column: 1;
+    grid-row: auto;
     border-right: 0;
     border-bottom: 1px solid var(--border);
+  }
+
+  .huangshan-command {
+    grid-column: 1;
+    grid-row: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .huangshan-main {
+    grid-column: 1;
+    grid-row: auto;
   }
 
   .huangshan-stage,
@@ -1061,7 +1078,6 @@
     grid-template-columns: 1fr;
   }
 
-  .huangshan-stage-status,
   .huangshan-log {
     border-left: 0;
     border-top: 1px solid var(--border);
