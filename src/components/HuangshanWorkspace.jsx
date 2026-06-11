@@ -305,29 +305,52 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
   const canFlash = buildEvidence?.status === 'success' && selectedPort && flashState !== 'flashing'
   const canMonitor = selectedPort && monitorState !== 'monitoring'
   const logState = flashState === 'error' || monitorState === 'error' ? 'error' : buildState
+  const workflowSteps = createHuangshanWorkflowSteps({
+    pendingConfig,
+    files,
+    buildState,
+    flashState,
+    verifiedCount: truthReport.verifiedCount,
+  })
 
   return (
     <div className="huangshan-workspace">
       <section className="huangshan-command">
-        <div className="huangshan-board-card">
-          <div>
-            <div className="huangshan-eyebrow">Huangshan Pi</div>
-            <h2>{HUANGSHAN_BOARD_PROFILE.name}</h2>
-            <p>{HUANGSHAN_BOARD_PROFILE.chip} - {HUANGSHAN_BOARD_PROFILE.framework}</p>
-          </div>
-          <div className={`huangshan-health ${health?.ok ? 'ok' : 'error'}`}>
-            {health ? (health.ok ? '编译服务已连接' : `服务不可用：${health.error || '环境检查失败'}`) : '正在检查编译服务...'}
-          </div>
-        </div>
-
         <div className="huangshan-chat-panel">
           <div className="huangshan-chat-header">
             <div>
-              <div className="huangshan-heading">需求对话</div>
-              <strong>先定方案，再生成代码</strong>
+              <div className="huangshan-chat-title">
+                <span>AI 代码助手</span>
+              </div>
+              <div className="huangshan-chat-subtitle">先定方案，再生成代码</div>
             </div>
-            <button className="huangshan-icon-button" onClick={handleClearChat} title="清空对话">清空</button>
+            <div className="huangshan-chat-header-actions">
+              <button className="huangshan-icon-button" onClick={handleClearChat} title="清空对话">清空</button>
+              <span className={`huangshan-status-dot ${health?.ok ? 'online' : 'offline'}`} title={health?.ok ? '编译服务已连接' : '编译服务未连接'} />
+            </div>
           </div>
+
+          <div className="huangshan-board-badge">
+            <span className="huangshan-board-chip">{HUANGSHAN_BOARD_PROFILE.chip}</span>
+            <span className="huangshan-board-name">{HUANGSHAN_BOARD_PROFILE.name}</span>
+            <span className="huangshan-board-idf">SCons</span>
+          </div>
+
+          <div className="huangshan-skill-selector">
+            <span className="huangshan-skill-label">真实例程：</span>
+            {['sensor', 'adc', 'gpio', 'uart2', 'ws2812'].map(skill => (
+              <span key={skill} className="huangshan-skill-tag">{skill}</span>
+            ))}
+          </div>
+
+          <div className="huangshan-workflow-strip">
+            {workflowSteps.map(step => (
+              <div key={step.id} className={`huangshan-workflow-step ${step.status}`}>
+                <span>{step.label}</span>
+              </div>
+            ))}
+          </div>
+
           <div className="huangshan-chat-messages">
             {chatMessages.map((message, index) => (
               <div key={`${message.role}-${index}`} className={`huangshan-message ${message.role}`}>
@@ -345,16 +368,25 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
               <button key={prompt} onClick={() => setAiPrompt(prompt)}>{prompt}</button>
             ))}
           </div>
-          <textarea
-            className="huangshan-chat-input"
-            value={aiPrompt}
-            onChange={event => setAiPrompt(event.target.value)}
-            placeholder="描述需求，AI 会先返回界面方案和真实能力边界..."
-          />
-          <div className="huangshan-chat-actions">
-            <button className="huangshan-primary" onClick={handleGenerateWithAi} disabled={aiState === 'generating' || !aiPrompt.trim()}>
-              {aiState === 'generating' ? '分析中...' : '发送给 AI'}
-            </button>
+
+          <div className="huangshan-chat-input-area">
+            {!settings?.apiKey && (
+              <div className="huangshan-no-config">请先在 AI 设置中配置 API Key</div>
+            )}
+            <div className="huangshan-chat-input-row">
+              <textarea
+                className="huangshan-chat-input"
+                value={aiPrompt}
+                onChange={event => setAiPrompt(event.target.value)}
+                placeholder="描述需求，AI 会先返回界面方案和真实能力边界..."
+              />
+              <button className="huangshan-primary" onClick={handleGenerateWithAi} disabled={aiState === 'generating' || !aiPrompt.trim()}>
+                {aiState === 'generating' ? '分析中...' : '发送'}
+              </button>
+            </div>
+            <div className="huangshan-chat-input-hint">
+              发送只生成方案草稿 · 点击“按方案生成代码”才会写入工程文件
+            </div>
             <button className="huangshan-build" onClick={handleApplyPendingConfig} disabled={!pendingConfig}>
               按方案生成代码
             </button>
@@ -629,6 +661,18 @@ function createDraftMessage(config) {
     placeholders.length ? `占位能力：${placeholders.join('、')}，不会在真实性报告里冒充已验证。` : '占位能力：无。',
     '下一步：确认方案后点击“按方案生成代码”，再预览、编译、烧录。',
   ].join('\n')
+}
+
+function createHuangshanWorkflowSteps({ pendingConfig, files, buildState, flashState, verifiedCount }) {
+  const hasGeneratedFiles = files && Object.keys(files).some(path => path.includes('/gui_apps/'))
+  return [
+    { id: 'intent', label: '需求', status: 'done' },
+    { id: 'plan', label: '方案', status: pendingConfig ? 'active' : (hasGeneratedFiles ? 'done' : 'idle') },
+    { id: 'code', label: '代码', status: hasGeneratedFiles && !pendingConfig ? 'done' : 'idle' },
+    { id: 'build', label: '编译', status: buildState === 'building' ? 'active' : (buildState === 'ok' ? 'done' : (buildState === 'error' ? 'error' : 'idle')) },
+    { id: 'flash', label: '烧录', status: flashState === 'flashing' ? 'active' : (flashState === 'ok' ? 'done' : (flashState === 'error' ? 'error' : 'idle')) },
+    { id: 'verify', label: '验证', status: verifiedCount > 0 ? 'done' : 'idle' },
+  ]
 }
 
 function HuangshanDevicePreview({ preview, realPreview, renderError, onRender }) {
