@@ -1,31 +1,33 @@
 .huangshan-workspace {
   display: grid;
-  grid-template-columns: 300px minmax(640px, 1fr);
+  grid-template-columns: minmax(320px, 380px) minmax(560px, 1fr);
   height: 100%;
   min-height: 0;
   background: var(--bg-primary);
   color: var(--text-primary);
 }
 
-.huangshan-sidebar {
+.huangshan-command {
   min-height: 0;
   overflow: auto;
   background: var(--bg-secondary);
   border-right: 1px solid var(--border);
+  padding: 16px;
 }
 
-.huangshan-log {
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  background: var(--bg-secondary);
-  border-left: 1px solid var(--border);
+.huangshan-board-card,
+.huangshan-prompt-panel,
+.huangshan-device-compact {
+  border: 1px solid var(--border-muted);
+  background: var(--bg-primary);
+  border-radius: 8px;
   padding: 14px;
+  margin-bottom: 12px;
 }
 
-.huangshan-section {
-  padding: 14px;
-  border-bottom: 1px solid var(--border-muted);
+.huangshan-board-card {
+  display: grid;
+  gap: 12px;
 }
 
 .huangshan-eyebrow,
@@ -37,12 +39,13 @@
   margin-bottom: 8px;
 }
 
-.huangshan-section h2 {
-  font-size: 15px;
-  margin: 0 0 8px;
+.huangshan-board-card h2 {
+  font-size: 16px;
+  margin: 0 0 6px;
 }
 
-.huangshan-section p {
+.huangshan-board-card p,
+.huangshan-prompt-panel p {
   margin: 0;
   color: var(--text-secondary);
   font-size: 12px;
@@ -51,8 +54,7 @@
 
 .huangshan-health,
 .huangshan-status {
-  margin-top: 10px;
-  padding: 8px;
+  padding: 9px;
   border-radius: 6px;
   font-size: 12px;
   background: var(--bg-tertiary);
@@ -71,6 +73,8 @@
   color: var(--red);
 }
 
+.huangshan-prompt-panel label,
+.huangshan-device-compact label,
 .huangshan-section label {
   display: flex;
   flex-direction: column;
@@ -80,6 +84,10 @@
   font-size: 12px;
 }
 
+.huangshan-prompt-panel input,
+.huangshan-prompt-panel textarea,
+.huangshan-prompt-panel select,
+.huangshan-device-compact select,
 .huangshan-section input,
 .huangshan-section textarea,
 .huangshan-section select {
@@ -89,56 +97,26 @@
   border: 1px solid var(--border);
   color: var(--text-primary);
   border-radius: 6px;
-  padding: 8px;
+  padding: 9px;
   font: inherit;
 }
 
+.huangshan-prompt-panel textarea {
+  min-height: 180px;
+  resize: vertical;
+  line-height: 1.55;
+}
+
 .huangshan-section textarea {
-  min-height: 72px;
+  min-height: 70px;
   resize: vertical;
 }
 
-.huangshan-builder-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.huangshan-builder-item {
+.huangshan-main-actions {
   display: grid;
-  grid-template-columns: 82px minmax(0, 1fr);
-  gap: 6px;
-  padding: 8px;
-  border: 1px solid var(--border-muted);
-  border-radius: 6px;
-  background: var(--bg-primary);
-}
-
-.huangshan-builder-item.disabled {
-  opacity: 0.58;
-}
-
-.huangshan-builder-toggle {
-  grid-row: span 3;
-  display: flex !important;
-  flex-direction: row !important;
-  align-items: center;
-  gap: 6px !important;
-  margin-bottom: 0 !important;
-  color: var(--text-primary) !important;
-  font-family: var(--font-mono);
-  font-size: 11px !important;
-}
-
-.huangshan-builder-toggle input {
-  width: auto;
-}
-
-.huangshan-builder-item > input,
-.huangshan-builder-item > select {
-  min-width: 0;
-  padding: 6px 7px;
-  font-size: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .huangshan-primary,
@@ -146,9 +124,9 @@
 .huangshan-build,
 .huangshan-flash,
 .huangshan-monitor,
-.huangshan-render {
+.huangshan-advanced-toggle {
   width: 100%;
-  margin-top: 8px;
+  min-height: 38px;
   padding: 9px 10px;
   border-radius: 6px;
   border: 1px solid var(--border);
@@ -156,81 +134,37 @@
   color: var(--text-primary);
 }
 
-.huangshan-secondary {
-  color: var(--text-secondary);
-}
-
-.huangshan-build {
-  border-color: var(--accent);
-}
-
+.huangshan-primary,
+.huangshan-build,
 .huangshan-flash {
   border-color: var(--accent);
 }
 
-.huangshan-monitor {
+.huangshan-secondary,
+.huangshan-monitor,
+.huangshan-advanced-toggle {
   color: var(--text-secondary);
 }
 
-.huangshan-render {
-  width: 260px;
-  margin-top: 0;
-  border-color: var(--accent);
-  font-size: 12px;
+.huangshan-prompt-panel > .huangshan-secondary {
+  margin-top: 8px;
 }
 
+.huangshan-primary:disabled,
+.huangshan-secondary:disabled,
 .huangshan-build:disabled,
 .huangshan-flash:disabled,
-.huangshan-monitor:disabled,
-.huangshan-render:disabled {
+.huangshan-monitor:disabled {
   opacity: 0.6;
   cursor: wait;
 }
 
-.huangshan-ai-section textarea {
-  min-height: 96px;
-}
-
-.huangshan-ai-actions {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 84px;
-  gap: 8px;
-}
-
-.huangshan-ai-actions button {
-  margin-top: 0;
-}
-
-.huangshan-ai-error {
+.huangshan-ai-error,
+.huangshan-render-error {
   margin-top: 8px;
   color: var(--red);
   font-size: 11px;
   line-height: 1.4;
-}
-
-.huangshan-ai-note {
-  margin-top: 8px !important;
-  font-size: 11px !important;
-}
-
-.huangshan-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.huangshan-chip {
-  padding: 4px 7px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  font-size: 11px;
-  font-family: var(--font-mono);
-  color: var(--text-secondary);
-}
-
-.huangshan-chip.first {
-  border-color: var(--accent);
-  color: var(--accent-hover);
 }
 
 .huangshan-main {
@@ -238,13 +172,14 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: auto;
 }
 
 .huangshan-stage {
-  flex: 0 0 400px;
+  flex: 0 0 auto;
   display: grid;
-  grid-template-columns: minmax(420px, 1fr) 360px;
-  min-height: 0;
+  grid-template-columns: minmax(360px, 1fr) minmax(280px, 360px);
+  min-height: 420px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-primary);
 }
@@ -253,11 +188,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(0, 0, 0, 0)),
-    var(--bg-primary);
-  border-bottom: 1px solid var(--border);
+  background: var(--bg-primary);
   overflow: hidden;
+  padding: 24px;
 }
 
 .huangshan-stage-status {
@@ -398,60 +331,9 @@
   font-family: var(--font-mono);
 }
 
-.huangshan-render-error {
-  width: 260px;
-  color: var(--red);
-  font-size: 11px;
-  line-height: 1.4;
-  text-align: center;
-}
-
-.huangshan-workbench {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(520px, 1fr) 360px;
-}
-
-.huangshan-code-pane {
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.huangshan-files {
-  display: flex;
-  overflow-x: auto;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-secondary);
-}
-
-.huangshan-files button {
-  flex: 0 0 auto;
-  padding: 9px 12px;
-  border: 0;
-  border-right: 1px solid var(--border-muted);
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-family: var(--font-mono);
-}
-
-.huangshan-files button.active {
-  color: var(--text-primary);
-  background: var(--bg-primary);
-  border-bottom: 2px solid var(--accent);
-}
-
-.huangshan-editor {
-  flex: 1;
-  min-height: 0;
-}
-
-.huangshan-error,
 .huangshan-artifacts,
-.huangshan-log-lines {
+.huangshan-log-lines,
+.huangshan-error {
   margin: 10px 0 0;
   padding: 10px;
   background: var(--bg-primary);
@@ -470,12 +352,10 @@
   flex-direction: column;
   gap: 8px;
   font-family: inherit;
-  overflow: visible;
 }
 
 .huangshan-artifacts.compact {
-  max-height: 150px;
-  overflow: auto;
+  max-height: 220px;
 }
 
 .huangshan-artifact {
@@ -514,6 +394,137 @@
   font-size: 11px;
 }
 
+.huangshan-advanced {
+  min-height: 0;
+  border-top: 1px solid var(--border);
+}
+
+.huangshan-advanced-config {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+
+.huangshan-section {
+  padding: 14px;
+  border-right: 1px solid var(--border-muted);
+}
+
+.huangshan-builder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.huangshan-builder-item {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr);
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border-muted);
+  border-radius: 6px;
+  background: var(--bg-primary);
+}
+
+.huangshan-builder-item.disabled {
+  opacity: 0.58;
+}
+
+.huangshan-builder-toggle {
+  grid-row: span 3;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 6px !important;
+  margin-bottom: 0 !important;
+  color: var(--text-primary) !important;
+  font-family: var(--font-mono);
+  font-size: 11px !important;
+}
+
+.huangshan-builder-toggle input {
+  width: auto;
+}
+
+.huangshan-builder-item > input,
+.huangshan-builder-item > select {
+  min-width: 0;
+  padding: 6px 7px;
+  font-size: 12px;
+}
+
+.huangshan-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.huangshan-chip {
+  padding: 4px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+.huangshan-chip.first {
+  border-color: var(--accent);
+  color: var(--accent-hover);
+}
+
+.huangshan-workbench {
+  min-height: 420px;
+  display: grid;
+  grid-template-columns: minmax(520px, 1fr) 360px;
+}
+
+.huangshan-code-pane {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.huangshan-files {
+  display: flex;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+
+.huangshan-files button {
+  flex: 0 0 auto;
+  padding: 9px 12px;
+  border: 0;
+  border-right: 1px solid var(--border-muted);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: var(--font-mono);
+}
+
+.huangshan-files button.active {
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border-bottom: 2px solid var(--accent);
+}
+
+.huangshan-editor {
+  flex: 1;
+  min-height: 360px;
+}
+
+.huangshan-log {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border);
+  padding: 14px;
+}
+
 .huangshan-log-lines {
   height: calc(100% - 34px);
 }
@@ -523,18 +534,15 @@
     grid-template-columns: 1fr;
   }
 
-  .huangshan-sidebar {
-    border-left: 0;
+  .huangshan-command {
     border-right: 0;
+    border-bottom: 1px solid var(--border);
   }
 
   .huangshan-stage,
+  .huangshan-advanced-config,
   .huangshan-workbench {
     grid-template-columns: 1fr;
-  }
-
-  .huangshan-stage {
-    flex-basis: auto;
   }
 
   .huangshan-stage-status,

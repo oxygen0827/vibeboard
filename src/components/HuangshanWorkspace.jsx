@@ -23,7 +23,7 @@ const HUANGSHAN_CAPABILITY_OPTIONS = [
   { value: 'status', label: '状态' },
   { value: 'ambient_light', label: '环境光' },
   { value: 'imu', label: 'IMU' },
-  { value: 'magnetometer', label: 'Mag' },
+  { value: 'magnetometer', label: '磁力计' },
   { value: 'adc_gpio', label: 'ADC' },
   { value: 'battery', label: '电池' },
   { value: 'bluetooth', label: '蓝牙' },
@@ -37,7 +37,7 @@ const HUANGSHAN_CAPABILITY_OPTIONS = [
 export default function HuangshanWorkspace({ settings, onOpenSettings }) {
   const [appDisplayName, setAppDisplayName] = useState('Board Diagnostics')
   const [description, setDescription] = useState('Show display, touch, and timer status.')
-  const [aiPrompt, setAiPrompt] = useState('做一个黄山派运动手表首页，显示心率、步数、电量、蓝牙和开始运动按钮。')
+  const [aiPrompt, setAiPrompt] = useState('做一个黄山派运动手表首页，显示心率、步数、电量、蓝牙状态和开始运动按钮。')
   const [aiState, setAiState] = useState('idle')
   const [aiError, setAiError] = useState('')
   const [builderConfig, setBuilderConfig] = useState(() => normalizeHuangshanBuilderConfig(createDefaultHuangshanBuilderConfig({
@@ -63,6 +63,7 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
   const [realPreview, setRealPreview] = useState(null)
   const [renderState, setRenderState] = useState('idle')
   const [renderError, setRenderError] = useState('')
+  const [showAdvanced, setShowAdvanced] = useState(false)
 
   const appName = useMemo(() => normalizeHuangshanAppName(appDisplayName), [appDisplayName])
   const capabilities = useMemo(() => listHuangshanCapabilities(), [])
@@ -86,15 +87,19 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
       .catch(() => setSerialPorts([]))
   }, [])
 
-  function regenerateTemplate() {
-    const next = createHuangshanAppFiles({ displayName: appDisplayName, description })
-    setFiles(next)
-    setActiveFile(Object.keys(next)[0])
+  function resetGeneratedState() {
     setBuildEvidence(null)
     setBuildLog([])
     setRealPreview(null)
     setRenderState('idle')
     setRenderError('')
+  }
+
+  function regenerateTemplate() {
+    const next = createHuangshanAppFiles({ displayName: appDisplayName, description })
+    setFiles(next)
+    setActiveFile(Object.keys(next)[0])
+    resetGeneratedState()
     setStatus(`已生成 ${appName}`)
   }
 
@@ -109,18 +114,14 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
     setBuilderConfig(normalized)
     setFiles(next)
     setActiveFile(Object.keys(next)[0])
-    setBuildEvidence(null)
-    setBuildLog([])
-    setRealPreview(null)
-    setRenderState('idle')
-    setRenderError('')
-    setStatus(`已生成 Builder App: ${appName}`)
+    resetGeneratedState()
+    setStatus(`已生成 ${normalizeHuangshanAppName(normalized.displayName)}`)
   }
 
   async function handleGenerateWithAi() {
     setAiState('generating')
     setAiError('')
-    setStatus('正在用 AI 生成黄山派 Builder 页面...')
+    setStatus('AI 正在生成黄山派应用...')
     try {
       const generated = await generateHuangshanBuilderConfig({
         settings,
@@ -135,13 +136,9 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
       setBuilderConfig(normalized)
       setFiles(next)
       setActiveFile(Object.keys(next)[0])
-      setBuildEvidence(null)
-      setBuildLog([])
-      setRealPreview(null)
-      setRenderState('idle')
-      setRenderError('')
+      resetGeneratedState()
       setAiState('ok')
-      setStatus(`AI 已生成黄山派页面: ${normalizeHuangshanAppName(normalized.displayName)}`)
+      setStatus(`AI 已生成 ${normalizeHuangshanAppName(normalized.displayName)}`)
     } catch (error) {
       setAiState('error')
       setAiError(error.message || 'AI 生成失败')
@@ -175,18 +172,18 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
       : null
     setRenderState('rendering')
     setRenderError('')
-    setStatus(safeTap ? `正在执行触摸渲染 ${safeTap.x}, ${safeTap.y} ...` : '正在执行真实 LVGL 渲染...')
+    setStatus(safeTap ? `正在触摸渲染 ${safeTap.x}, ${safeTap.y}...` : '正在生成真实 LVGL 预览...')
     try {
       const rendered = await renderHuangshanLvglPreview({ displayName: appDisplayName, description, files, tap: safeTap })
       setRealPreview(rendered)
       setRenderState('ok')
       const cacheText = rendered.cache?.hit ? '缓存命中' : '已编译'
-      setStatus(`真实 LVGL 渲染完成: ${rendered.viewport.width}x${rendered.viewport.height} / ${cacheText}`)
+      setStatus(`预览完成: ${rendered.viewport.width}x${rendered.viewport.height} / ${cacheText}`)
     } catch (error) {
       setRealPreview(null)
       setRenderState('error')
-      setRenderError(error.message || '真实 LVGL 渲染失败')
-      setStatus(error.message || '真实 LVGL 渲染失败')
+      setRenderError(error.message || 'LVGL 预览失败')
+      setStatus(error.message || 'LVGL 预览失败')
     }
   }
 
@@ -194,7 +191,7 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
     setBuildState('building')
     setBuildLog([])
     setBuildEvidence(null)
-    setStatus('正在构建黄山派工程...')
+    setStatus('正在编译黄山派工程...')
     try {
       const evidence = await buildHuangshanWorkspace({
         files,
@@ -203,18 +200,18 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
       })
       setBuildEvidence(evidence)
       setBuildState('ok')
-      setStatus('黄山派工程构建成功')
+      setStatus('编译成功，可以烧录')
     } catch (error) {
       setBuildEvidence(error.buildEvidence || null)
       setBuildState('error')
-      setStatus(error.message || '黄山派工程构建失败')
+      setStatus(error.message || '编译失败')
     }
   }
 
   async function handleFlash() {
     setFlashState('flashing')
     setBuildLog([])
-    setStatus(`正在烧录 ${selectedPort} ...`)
+    setStatus(`正在烧录 ${selectedPort}...`)
     try {
       await flashHuangshanWorkspace({
         port: selectedPort,
@@ -222,10 +219,10 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
         onLog: line => setBuildLog(prev => [...prev, line]),
       })
       setFlashState('ok')
-      setStatus('黄山派烧录成功')
+      setStatus('烧录成功')
     } catch (error) {
       setFlashState('error')
-      setStatus(error.message || '黄山派烧录失败')
+      setStatus(error.message || '烧录失败')
     }
   }
 
@@ -269,107 +266,60 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
 
   return (
     <div className="huangshan-workspace">
-      <aside className="huangshan-sidebar">
-        <div className="huangshan-section">
-          <div className="huangshan-eyebrow">Huangshan Workspace</div>
-          <h2>{HUANGSHAN_BOARD_PROFILE.name}</h2>
-          <p>{HUANGSHAN_BOARD_PROFILE.framework}</p>
+      <section className="huangshan-command">
+        <div className="huangshan-board-card">
+          <div>
+            <div className="huangshan-eyebrow">Huangshan Pi</div>
+            <h2>{HUANGSHAN_BOARD_PROFILE.name}</h2>
+            <p>{HUANGSHAN_BOARD_PROFILE.chip} · {HUANGSHAN_BOARD_PROFILE.framework}</p>
+          </div>
           <div className={`huangshan-health ${health?.ok ? 'ok' : 'error'}`}>
-            {health ? (health.ok ? '服务就绪' : `服务未就绪: ${health.error || '路径检查失败'}`) : '检查服务...'}
+            {health ? (health.ok ? '编译服务已连接' : `服务不可用: ${health.error || '环境检查失败'}`) : '检查编译服务...'}
           </div>
         </div>
 
-        <div className="huangshan-section">
+        <div className="huangshan-prompt-panel">
           <label>
-            App name
-            <input value={appDisplayName} onChange={event => {
-              setAppDisplayName(event.target.value)
-              setBuilderConfig(prev => ({ ...prev, displayName: event.target.value }))
-              setRealPreview(null)
-            }} />
-          </label>
-          <label>
-            Description
-            <textarea value={description} onChange={event => {
-              setDescription(event.target.value)
-              setBuilderConfig(prev => ({ ...prev, description: event.target.value }))
-              setRealPreview(null)
-            }} />
-          </label>
-          <button className="huangshan-primary" onClick={regenerateTemplate}>生成 App 模板</button>
-          <button className="huangshan-primary" onClick={handleGenerateBuilderApp}>生成 Builder 页面</button>
-          <button className="huangshan-build" onClick={handleBuild} disabled={buildState === 'building'}>
-            {buildState === 'building' ? '构建中...' : '运行 SCons 构建'}
-          </button>
-        </div>
-
-        <div className="huangshan-section huangshan-ai-section">
-          <div className="huangshan-heading">AI Builder</div>
-          <label>
-            Natural language
+            描述你要做的功能
             <textarea
               value={aiPrompt}
               onChange={event => setAiPrompt(event.target.value)}
-              placeholder="例如：做一个天气手表首页，显示温度、湿度、紫外线、电量和同步按钮。"
+              placeholder="例如：做一个环境监测手表，显示光照、加速度、电量，并提供 LED 测试按钮。"
             />
           </label>
-          <div className="huangshan-ai-actions">
+          <div className="huangshan-main-actions">
             <button
               className="huangshan-primary"
               onClick={handleGenerateWithAi}
               disabled={aiState === 'generating'}
             >
-              {aiState === 'generating' ? 'AI 生成中...' : 'AI 生成页面'}
+              {aiState === 'generating' ? '生成中...' : 'AI 生成代码'}
             </button>
-            <button className="huangshan-secondary" onClick={onOpenSettings} type="button">
-              配置 AI
+            <button
+              className="huangshan-secondary"
+              onClick={() => handleRenderPreview()}
+              disabled={renderState === 'rendering'}
+            >
+              {renderState === 'rendering' ? '预览中...' : '预览'}
             </button>
           </div>
+          <div className="huangshan-main-actions">
+            <button className="huangshan-build" onClick={handleBuild} disabled={buildState === 'building'}>
+              {buildState === 'building' ? '编译中...' : '编译'}
+            </button>
+            <button className="huangshan-flash" onClick={handleFlash} disabled={!canFlash}>
+              {flashState === 'flashing' ? '烧录中...' : '烧录'}
+            </button>
+          </div>
+          <button className="huangshan-secondary" onClick={onOpenSettings} type="button">
+            AI 设置
+          </button>
           {aiError && <div className="huangshan-ai-error">{aiError}</div>}
-          <p className="huangshan-ai-note">当前生成受限在 Builder 组件内，生成后可直接真实 LVGL 渲染。</p>
         </div>
 
-        <div className="huangshan-section">
-          <div className="huangshan-heading">Builder</div>
-          <div className="huangshan-builder-list">
-            {builderConfig.components.map(component => (
-              <div key={component.id || `${component.type}-${component.label}`} className={`huangshan-builder-item ${component.enabled === false ? 'disabled' : ''}`}>
-                <label className="huangshan-builder-toggle">
-                  <input
-                    type="checkbox"
-                    checked={component.enabled !== false}
-                    onChange={() => toggleBuilderComponent(component.id)}
-                  />
-                  <span>{component.type}</span>
-                </label>
-                <input
-                  value={component.label}
-                  onChange={event => updateBuilderComponent(component.id, { label: event.target.value })}
-                  aria-label={`${component.type} label`}
-                />
-                <input
-                  value={component.value}
-                  onChange={event => updateBuilderComponent(component.id, { value: event.target.value })}
-                  aria-label={`${component.type} value`}
-                />
-                <select
-                  value={component.capability || 'status'}
-                  onChange={event => updateBuilderComponent(component.id, { capability: event.target.value })}
-                  aria-label={`${component.type} capability`}
-                >
-                  {HUANGSHAN_CAPABILITY_OPTIONS.map(option => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="huangshan-section">
-          <div className="huangshan-heading">Device</div>
+        <div className="huangshan-device-compact">
           <label>
-            Serial port
+            串口
             <select value={selectedPort} onChange={event => setSelectedPort(event.target.value)}>
               {serialPorts.length === 0 && <option value={selectedPort}>{selectedPort}</option>}
               {serialPorts.map(port => (
@@ -377,35 +327,19 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
               ))}
             </select>
           </label>
-          <label>
-            Monitor baud
-            <select value={monitorBaud} onChange={event => setMonitorBaud(Number(event.target.value))}>
-              <option value={921600}>921600</option>
-              <option value={115200}>115200</option>
-              <option value={1000000}>1000000</option>
-            </select>
-          </label>
-          <button className="huangshan-flash" onClick={handleFlash} disabled={!canFlash}>
-            {flashState === 'flashing' ? '烧录中...' : '烧录到已连接设备'}
-          </button>
           {monitorState === 'monitoring' ? (
-            <button className="huangshan-monitor" onClick={handleStopMonitor}>停止串口监视</button>
+            <button className="huangshan-monitor" onClick={handleStopMonitor}>停止串口</button>
           ) : (
             <button className="huangshan-monitor" onClick={handleStartMonitor} disabled={!canMonitor}>
-              开始串口监视
+              监视串口
             </button>
           )}
         </div>
 
-        <div className="huangshan-section">
-          <div className="huangshan-heading">Capabilities</div>
-          <div className="huangshan-chips">
-            {capabilities.slice(0, 8).map(item => (
-              <span key={item.id} className={`huangshan-chip ${item.priority}`}>{item.id}</span>
-            ))}
-          </div>
-        </div>
-      </aside>
+        <button className="huangshan-advanced-toggle" onClick={() => setShowAdvanced(prev => !prev)}>
+          {showAdvanced ? '隐藏代码和日志' : '查看代码和日志'}
+        </button>
+      </section>
 
       <section className="huangshan-main">
         <div className="huangshan-stage">
@@ -419,9 +353,9 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
             />
           </div>
           <div className="huangshan-stage-status">
-            <div className="huangshan-heading">Session</div>
+            <div className="huangshan-heading">状态</div>
             <div className={`huangshan-status ${logState}`}>
-              {status || '等待操作'}
+              {status || '输入需求后点击 AI 生成代码'}
             </div>
             {buildEvidence?.artifactSummary?.artifacts?.length > 0 && (
               <div className="huangshan-artifacts compact">
@@ -439,47 +373,129 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
           </div>
         </div>
 
-        <div className="huangshan-workbench">
-          <div className="huangshan-code-pane">
-            <div className="huangshan-files">
-              {filePaths.map(path => (
-                <button
-                  key={path}
-                  className={activeFile === path ? 'active' : ''}
-                  onClick={() => setActiveFile(path)}
-                  title={path}
-                >
-                  {path}
-                </button>
-              ))}
+        {showAdvanced && (
+          <div className="huangshan-advanced">
+            <div className="huangshan-advanced-config">
+              <div className="huangshan-section">
+                <div className="huangshan-heading">App</div>
+                <label>
+                  名称
+                  <input value={appDisplayName} onChange={event => {
+                    setAppDisplayName(event.target.value)
+                    setBuilderConfig(prev => ({ ...prev, displayName: event.target.value }))
+                    setRealPreview(null)
+                  }} />
+                </label>
+                <label>
+                  描述
+                  <textarea value={description} onChange={event => {
+                    setDescription(event.target.value)
+                    setBuilderConfig(prev => ({ ...prev, description: event.target.value }))
+                    setRealPreview(null)
+                  }} />
+                </label>
+                <button className="huangshan-secondary" onClick={regenerateTemplate}>生成空模板</button>
+                <button className="huangshan-secondary" onClick={handleGenerateBuilderApp}>按当前组件重建</button>
+              </div>
+
+              <div className="huangshan-section">
+                <div className="huangshan-heading">组件</div>
+                <div className="huangshan-builder-list">
+                  {builderConfig.components.map(component => (
+                    <div key={component.id || `${component.type}-${component.label}`} className={`huangshan-builder-item ${component.enabled === false ? 'disabled' : ''}`}>
+                      <label className="huangshan-builder-toggle">
+                        <input
+                          type="checkbox"
+                          checked={component.enabled !== false}
+                          onChange={() => toggleBuilderComponent(component.id)}
+                        />
+                        <span>{component.type}</span>
+                      </label>
+                      <input
+                        value={component.label}
+                        onChange={event => updateBuilderComponent(component.id, { label: event.target.value })}
+                        aria-label={`${component.type} label`}
+                      />
+                      <input
+                        value={component.value}
+                        onChange={event => updateBuilderComponent(component.id, { value: event.target.value })}
+                        aria-label={`${component.type} value`}
+                      />
+                      <select
+                        value={component.capability || 'status'}
+                        onChange={event => updateBuilderComponent(component.id, { capability: event.target.value })}
+                        aria-label={`${component.type} capability`}
+                      >
+                        {HUANGSHAN_CAPABILITY_OPTIONS.map(option => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="huangshan-section">
+                <div className="huangshan-heading">设备</div>
+                <label>
+                  波特率
+                  <select value={monitorBaud} onChange={event => setMonitorBaud(Number(event.target.value))}>
+                    <option value={921600}>921600</option>
+                    <option value={115200}>115200</option>
+                    <option value={1000000}>1000000</option>
+                  </select>
+                </label>
+                <div className="huangshan-chips">
+                  {capabilities.slice(0, 8).map(item => (
+                    <span key={item.id} className={`huangshan-chip ${item.priority}`}>{item.id}</span>
+                  ))}
+                </div>
+              </div>
             </div>
-            <div className="huangshan-editor">
-              <Editor
-                key={activeFile}
-                language={activeFile.endsWith('SConscript') ? 'python' : 'c'}
-                theme="vs-dark"
-                value={activeContent}
-                onChange={value => {
-                  setFiles(prev => ({ ...prev, [activeFile]: value || '' }))
-                  setRealPreview(null)
-                }}
-                options={{ minimap: { enabled: false }, fontSize: 13, scrollBeyondLastLine: false }}
-              />
+
+            <div className="huangshan-workbench">
+              <div className="huangshan-code-pane">
+                <div className="huangshan-files">
+                  {filePaths.map(path => (
+                    <button
+                      key={path}
+                      className={activeFile === path ? 'active' : ''}
+                      onClick={() => setActiveFile(path)}
+                      title={path}
+                    >
+                      {path}
+                    </button>
+                  ))}
+                </div>
+                <div className="huangshan-editor">
+                  <Editor
+                    key={activeFile}
+                    language={activeFile.endsWith('SConscript') ? 'python' : 'c'}
+                    theme="vs-dark"
+                    value={activeContent}
+                    onChange={value => {
+                      setFiles(prev => ({ ...prev, [activeFile]: value || '' }))
+                      setRealPreview(null)
+                    }}
+                    options={{ minimap: { enabled: false }, fontSize: 13, scrollBeyondLastLine: false }}
+                  />
+                </div>
+              </div>
+
+              <aside className="huangshan-log">
+                <div className="huangshan-heading">编译日志</div>
+                {buildEvidence?.firstError && (
+                  <pre className="huangshan-error">{buildEvidence.firstError.context.join('\n')}</pre>
+                )}
+                <div className="huangshan-log-lines">
+                  {buildLog.slice(-160).map((line, index) => (
+                    <div key={`${index}-${line}`}>{line}</div>
+                  ))}
+                </div>
+              </aside>
             </div>
           </div>
-
-          <aside className="huangshan-log">
-            <div className="huangshan-heading">Build Evidence</div>
-            {buildEvidence?.firstError && (
-              <pre className="huangshan-error">{buildEvidence.firstError.context.join('\n')}</pre>
-            )}
-            <div className="huangshan-log-lines">
-              {buildLog.slice(-160).map((line, index) => (
-                <div key={`${index}-${line}`}>{line}</div>
-              ))}
-            </div>
-          </aside>
-        </div>
+        )}
       </section>
     </div>
   )
@@ -517,17 +533,10 @@ function HuangshanDevicePreview({ preview, realPreview, renderState, renderError
       </div>
       <div className="huangshan-preview-meta">
         <span>{preview.viewport.width} x {preview.viewport.height}</span>
-        <span>{hasRealPreview ? realPreview.renderer : 'Semantic LVGL preview'}</span>
+        <span>{hasRealPreview ? realPreview.renderer : 'semantic preview'}</span>
         {hasRealPreview && <span>{realPreview.cache?.hit ? 'cache hit' : 'compiled'}</span>}
         {realPreview?.tap && <span>tap {realPreview.tap.x},{realPreview.tap.y}</span>}
       </div>
-      <button
-        className="huangshan-render"
-        onClick={() => onRender()}
-        disabled={renderState === 'rendering'}
-      >
-        {renderState === 'rendering' ? '渲染中...' : '真实 LVGL 渲染'}
-      </button>
       {renderError && <div className="huangshan-render-error">{renderError}</div>}
     </div>
   )
