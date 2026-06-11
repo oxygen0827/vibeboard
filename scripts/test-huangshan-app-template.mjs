@@ -45,4 +45,11 @@ const escaped = createHuangshanAppFiles({
 })
 assert.ok(escaped['src/gui_apps/Quote_Test/main.c'].includes('Status \\"quoted\\" \\\\ path'))
 
+const asciiOnly = createHuangshanAppFiles({
+  displayName: '传感器 面板',
+  description: '环境光 状态',
+})
+assert.ok(asciiOnly['src/gui_apps/Codex_App/main.c'])
+assert.doesNotMatch(asciiOnly['src/gui_apps/Codex_App/main.c'], /[\u4e00-\u9fff]/)
+
 console.log('huangshan app template tests passed')

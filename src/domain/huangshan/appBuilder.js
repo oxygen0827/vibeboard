@@ -33,12 +33,50 @@ function cIdentifier(value, fallback = 'value') {
   return /^[a-z_]/.test(safe) ? safe : `${fallback}_${safe}`
 }
 
+function asciiText(value, fallback) {
+  const cleaned = String(value || '')
+    .replace(/[^\x20-\x7E]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return cleaned || fallback
+}
+
+function fallbackLabelForCapability(capability, type) {
+  if (capability === 'ambient_light') return 'Light'
+  if (capability === 'imu') return 'Accel'
+  if (capability === 'magnetometer') return 'Compass'
+  if (capability === 'battery') return 'VBAT'
+  if (capability === 'adc_gpio') return 'PA34'
+  if (capability === 'bluetooth') return 'BLE'
+  if (capability === 'key') return 'KEY2'
+  if (capability === 'gpio_output') return 'GPIO20'
+  if (capability === 'led') return 'LED'
+  if (capability === 'motor') return 'Motor'
+  if (capability === 'uart2') return 'UART2'
+  return type === 'status' ? 'Status' : 'Value'
+}
+
+function fallbackValueForCapability(capability) {
+  if (capability === 'ambient_light') return 'LTR303'
+  if (capability === 'imu') return 'LSM6DSL'
+  if (capability === 'magnetometer') return 'MMC56X3'
+  if (capability === 'battery') return 'ADC ch7'
+  if (capability === 'adc_gpio') return 'ADC ch6'
+  if (capability === 'bluetooth') return 'BLE status'
+  if (capability === 'key') return 'KEY2 pressed'
+  if (capability === 'gpio_output') return 'GPIO pulse'
+  if (capability === 'led') return 'LED test'
+  if (capability === 'motor') return 'Motor hook'
+  if (capability === 'uart2') return 'UART heartbeat'
+  return 'Ready'
+}
+
 function normalizeComponent(component, index) {
   if (!COMPONENT_TYPES.has(component?.type)) return null
-  const label = String(component.label || component.type).trim() || component.type
-  const value = String(component.value || '').trim() || 'Ready'
   const requestedCapability = String(component.capability || '').trim()
   const capability = CAPABILITY_TYPES.has(requestedCapability) ? requestedCapability : defaultCapabilityForType(component.type)
+  const label = asciiText(component.label, fallbackLabelForCapability(capability, component.type))
+  const value = asciiText(component.value, fallbackValueForCapability(capability))
   return {
     id: `${component.type}_${index}`,
     type: component.type,
@@ -77,8 +115,8 @@ export function normalizeHuangshanBuilderConfig(config = {}) {
     .slice(0, 8)
 
   return {
-    displayName: String(config.displayName || fallback.displayName || 'Board Diagnostics').trim() || 'Board Diagnostics',
-    description: String(config.description || fallback.description || '').trim() || 'Generated Huangshan watch UI.',
+    displayName: asciiText(config.displayName || fallback.displayName, 'Board Diagnostics'),
+    description: asciiText(config.description || fallback.description, 'Generated Huangshan watch UI.'),
     components: components.length ? components : fallback.components.map(normalizeComponent).filter(Boolean),
   }
 }

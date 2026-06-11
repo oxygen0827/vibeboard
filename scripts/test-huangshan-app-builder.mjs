@@ -131,4 +131,14 @@ assert.match(
   /#define APP_ID "[a-z0-9_]{1,15}"/,
 )
 
+const asciiFiles = createHuangshanAppFilesFromBuilder({
+  displayName: '黄山派传感器',
+  description: '环境光 状态',
+  components: [{ type: 'metric', label: '环境光', value: '读取中', capability: 'ambient_light' }],
+})
+const asciiMain = asciiFiles['src/gui_apps/Board_Diagnostics/main.c']
+assert.match(asciiMain, /lv_label_set_text\(title, "Board Diagnostics"\)/)
+assert.match(asciiMain, /create_info_chip\(g_state\.root, "Light", "LTR303"/)
+assert.doesNotMatch(asciiMain, /[\u4e00-\u9fff]/)
+
 console.log('huangshan app builder tests passed')

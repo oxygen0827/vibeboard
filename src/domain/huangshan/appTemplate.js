@@ -34,6 +34,14 @@ function cStringLiteral(value) {
     .replace(/\r?\n/g, ' ')
 }
 
+function asciiText(value, fallback) {
+  const cleaned = String(value || '')
+    .replace(/[^\x20-\x7E]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return cleaned || fallback
+}
+
 export function validateHuangshanAppFiles(files = {}, { appName } = {}) {
   const appDir = `src/gui_apps/${appName || 'App'}`
   const accepted = {}
@@ -64,11 +72,13 @@ export function validateHuangshanAppFiles(files = {}, { appName } = {}) {
 }
 
 export function createHuangshanAppFiles({ displayName = 'Codex App', description = 'Generated Huangshan LVGL app.' } = {}) {
-  const appName = normalizeHuangshanAppName(displayName)
-  const appId = normalizeHuangshanAppId(displayName)
+  const safeDisplayName = asciiText(displayName, 'Codex App')
+  const safeDescriptionText = asciiText(description, 'Generated Huangshan LVGL app.')
+  const appName = normalizeHuangshanAppName(safeDisplayName)
+  const appId = normalizeHuangshanAppId(safeDisplayName)
   const tag = appName
   const baseDir = `src/gui_apps/${appName}`
-  const safeDescription = cStringLiteral(description)
+  const safeDescription = cStringLiteral(safeDescriptionText)
 
   return {
     [`${baseDir}/SConscript`]: `from building import *
