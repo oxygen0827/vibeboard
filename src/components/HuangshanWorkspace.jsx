@@ -435,6 +435,16 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
             <div className={`huangshan-status ${logState}`}>
               {status || '描述功能后点击 AI 生成代码。'}
             </div>
+            <HuangshanRunLogStrip
+              buildLog={buildLog}
+              buildState={buildState}
+              flashState={flashState}
+              monitorState={monitorState}
+              onClear={() => {
+                setBuildLog([])
+                setSerialLog([])
+              }}
+            />
             <TruthReportPanel report={truthReport} />
             {pendingConfig && (
               <DraftPlanPanel config={pendingConfig} onApply={handleApplyPendingConfig} />
@@ -616,6 +626,40 @@ function TruthReportPanel({ report }) {
       </div>
     </div>
   )
+}
+
+function HuangshanRunLogStrip({ buildLog, buildState, flashState, monitorState, onClear }) {
+  const recent = buildLog.slice(-8)
+  const hasLogs = recent.length > 0
+  return (
+    <div className="huangshan-run-log">
+      <div className="huangshan-run-log-head">
+        <div className="huangshan-heading">运行日志</div>
+        <button type="button" onClick={onClear} disabled={!hasLogs}>清空</button>
+      </div>
+      <div className="huangshan-run-states">
+        <span className={buildState}>编译 {stateText(buildState)}</span>
+        <span className={flashState}>烧录 {stateText(flashState)}</span>
+        <span className={monitorState}>串口 {stateText(monitorState)}</span>
+      </div>
+      <div className="huangshan-run-lines">
+        {hasLogs ? recent.map((line, index) => (
+          <div key={`${index}-${line}`}>{line}</div>
+        )) : (
+          <div className="empty">预览、编译、烧录或监视串口后，这里会显示最近日志。</div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function stateText(state) {
+  if (state === 'ok') return '成功'
+  if (state === 'error') return '失败'
+  if (state === 'building') return '进行中'
+  if (state === 'flashing') return '进行中'
+  if (state === 'monitoring') return '运行中'
+  return '待命'
 }
 
 function DraftPlanPanel({ config, onApply }) {
