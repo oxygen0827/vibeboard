@@ -1,6 +1,6 @@
 .huangshan-workspace {
   display: grid;
-  grid-template-columns: minmax(680px, 1fr) minmax(440px, 520px);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   height: 100%;
   min-height: 0;
   background: var(--bg-primary);
