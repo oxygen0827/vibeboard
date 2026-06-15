@@ -1,0 +1,63 @@
+name: vibeboard-backends
+
+services:
+  esp32-compiler:
+    build:
+      context: ../backend/compiler-service
+      args:
+        HTTP_PROXY: ${VIBEBOARD_DOCKER_PROXY:-}
+        HTTPS_PROXY: ${VIBEBOARD_DOCKER_PROXY:-}
+        http_proxy: ${VIBEBOARD_DOCKER_PROXY:-}
+        https_proxy: ${VIBEBOARD_DOCKER_PROXY:-}
+        NO_PROXY: localhost,127.0.0.1,host.docker.internal
+        no_proxy: localhost,127.0.0.1,host.docker.internal
+    image: esp32-compiler:latest
+    container_name: esp32-compiler
+    restart: unless-stopped
+    ports:
+      - "8760:8760"
+    environment:
+      BUILD_BASE: /tmp/builds
+      REMOTE_OTA_DIR: /tmp/vibeboard-remote-ota
+    volumes:
+      - vibeboard-compiler-build-cache:/tmp/builds
+      - vibeboard-remote-ota-state:/tmp/vibeboard-remote-ota
+
+  huangshan-service:
+    build:
+      context: ..
+      dockerfile: backend/huangshan-service/Dockerfile
+      args:
+        HTTP_PROXY: ${VIBEBOARD_DOCKER_PROXY:-}
+        HTTPS_PROXY: ${VIBEBOARD_DOCKER_PROXY:-}
+        http_proxy: ${VIBEBOARD_DOCKER_PROXY:-}
+        https_proxy: ${VIBEBOARD_DOCKER_PROXY:-}
+        NO_PROXY: localhost,127.0.0.1,host.docker.internal
+        no_proxy: localhost,127.0.0.1,host.docker.internal
+    image: vibeboard-huangshan-service:latest
+    container_name: vibeboard-huangshan-service
+    restart: unless-stopped
+    ports:
+      - "8771:8771"
+    environment:
+      HUANGSHAN_SERVICE_HOST: 0.0.0.0
+      HUANGSHAN_SERVICE_PORT: 8771
+      HUANGSHAN_WORKSPACE: /workspaces/huangshan-pi-sf32-dev
+      SIFLI_SDK_PATH: /opt/sifli-sdk
+      SIFLI_SDK_TOOLS_PATH: /opt/sifli-tools
+      HUANGSHAN_BUILD_JOBS: 4
+      HTTP_PROXY: ${VIBEBOARD_DOCKER_PROXY:-}
+      HTTPS_PROXY: ${VIBEBOARD_DOCKER_PROXY:-}
+      http_proxy: ${VIBEBOARD_DOCKER_PROXY:-}
+      https_proxy: ${VIBEBOARD_DOCKER_PROXY:-}
+      NO_PROXY: localhost,127.0.0.1,host.docker.internal
+      no_proxy: localhost,127.0.0.1,host.docker.internal
+    volumes:
+      - ../hardware/huangshan/huangshan-pi-sf32-dev:/workspaces/huangshan-pi-sf32-dev
+      - ../hardware/huangshan/sifli-sdk:/opt/sifli-sdk:ro
+      - vibeboard-sifli-tools:/opt/sifli-tools
+
+volumes:
+  vibeboard-compiler-build-cache:
+  vibeboard-remote-ota-state:
+  vibeboard-sifli-tools:

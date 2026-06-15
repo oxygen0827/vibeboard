@@ -1,20 +1,10 @@
+import { createHuangshanSourcePaths } from './sourcePaths.js'
+
 export const HUANGSHAN_BOARD_ID = 'huangshan_pi_sf32lb52'
 
-const DEFAULT_WORKSPACE = typeof process !== 'undefined' && process.env?.HUANGSHAN_WORKSPACE
-  ? process.env.HUANGSHAN_WORKSPACE
-  : '/Users/wq/huangshan-pi-workspace/huangshan-pi-sf32-dev'
-const DEFAULT_SDK = typeof process !== 'undefined' && process.env?.SIFLI_SDK_PATH
-  ? process.env.SIFLI_SDK_PATH
-  : '/Users/wq/huangshan-pi-workspace/sifli-sdk'
-const DEFAULT_EXAMPLES = typeof process !== 'undefined' && process.env?.HUANGSHAN_EXAMPLES_PATH
-  ? process.env.HUANGSHAN_EXAMPLES_PATH
-  : '/Users/wq/huangshan-pi-workspace/lckfb-hspi-ulp_example'
-
-export const HUANGSHAN_SOURCE_PATHS = {
-  workspace: DEFAULT_WORKSPACE,
-  sdk: DEFAULT_SDK,
-  examples: DEFAULT_EXAMPLES,
-}
+export const HUANGSHAN_SOURCE_PATHS = createHuangshanSourcePaths(
+  typeof process !== 'undefined' ? process.env : {},
+)
 
 export const HUANGSHAN_BOARD_PROFILE = {
   id: HUANGSHAN_BOARD_ID,

@@ -7,6 +7,7 @@ import {
   listHuangshanCapabilities,
   listHuangshanExampleRecipes,
 } from '../src/domain/huangshan/boardProfile.js'
+import { HUANGSHAN_REPO_SOURCE_PATHS } from '../src/domain/huangshan/sourcePaths.js'
 
 assert.equal(HUANGSHAN_BOARD_ID, 'huangshan_pi_sf32lb52')
 assert.equal(HUANGSHAN_BOARD_PROFILE.id, 'huangshan_pi_sf32lb52')
@@ -36,15 +37,15 @@ assert.equal(recipes.find(recipe => recipe.id === 'i2c3_sensors').capabilities.i
 
 assert.equal(
   HUANGSHAN_SOURCE_PATHS.workspace,
-  process.env.HUANGSHAN_WORKSPACE || '/Users/wq/huangshan-pi-workspace/huangshan-pi-sf32-dev',
+  process.env.HUANGSHAN_WORKSPACE || HUANGSHAN_REPO_SOURCE_PATHS.workspace,
 )
 assert.equal(
   HUANGSHAN_SOURCE_PATHS.sdk,
-  process.env.SIFLI_SDK_PATH || '/Users/wq/huangshan-pi-workspace/sifli-sdk',
+  process.env.SIFLI_SDK_PATH || HUANGSHAN_REPO_SOURCE_PATHS.sdk,
 )
 assert.equal(
   HUANGSHAN_SOURCE_PATHS.examples,
-  process.env.HUANGSHAN_EXAMPLES_PATH || '/Users/wq/huangshan-pi-workspace/lckfb-hspi-ulp_example',
+  process.env.HUANGSHAN_EXAMPLES_PATH || HUANGSHAN_REPO_SOURCE_PATHS.examples,
 )
 
 console.log('huangshan capability profile tests passed')

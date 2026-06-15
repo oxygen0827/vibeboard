@@ -118,6 +118,64 @@ This capsule is similar in purpose to the ESP-IDF Program Manifest, but it is no
 the same shape. It describes an app mounted into an existing SiFli board
 workspace, not a whole firmware project assembled from scratch.
 
+## Huangshan Runtime App Package
+
+The dynamic update unit is a Huangshan Runtime App Package:
+
+```text
+manifest.json
+main.lua
+assets/theme.json
+README.md
+```
+
+The package is derived from the same Builder JSON and App Capsule, but it targets
+the one-time VibeBoard Runtime firmware rather than the SCons firmware project.
+The install location is:
+
+```text
+/sdcard/apps/<appId>
+/sdcard/apps/.active
+```
+
+The target Runtime firmware owns board drivers and long-lived services:
+
+```text
+LCD, touch, SD card, WiFi/HTTP installer, LVGL, Lua VM, timers, file system,
+launcher, app lifecycle, and the VibeBoard hardware API.
+```
+
+Current implementation status: VibeBoard can generate the Runtime App Package,
+install it into a host-side SD-card mirror, generate `VibeBoard_Runtime`, and
+build that Runtime firmware through SiFli/SCons. The generated Runtime firmware
+currently loads `.active`, reads the App manifest, renders manifest-driven LVGL
+metrics and action buttons, and owns default hardware bindings for LTR303,
+LSM6DSL, MMC56X3, VBAT/PA34 ADC, GPIO20, WS2812 `rgbled`, and UART2. Those
+bindings are exposed through `vibeboard_runtime_read/write`, while weak hooks
+still allow a later board-specific override or Lua adapter. The Runtime also
+exports MSH commands for board-side verification and app switching:
+
+```text
+vb_runtime_status
+vb_runtime_reload
+vb_runtime_select <appId>
+```
+
+That means the non-flash update loop is now represented in the firmware itself:
+install or sync `/sdcard/apps/<appId>`, select it through `.active`, and reload
+the launcher. Board-side Lua execution and upload transport still need to be
+linked into the Runtime firmware before Huangshan fully matches the ESP32
+Runtime feature set. The local SiFli SDK includes QuickJS/MicroPython material
+and WebClient, but no ready Lua VM or HTTP server integration for this board;
+the Huangshan Pi profile also does not list onboard WiFi, so an ESP32-style
+WiFi/HTTP install service needs an explicit network transport decision first.
+
+The App package may use only Runtime-exposed APIs such as LVGL, timers, file
+access, and `vibeboard.hardware.read/write`. Replacing this package must not
+require SCons, `main.bin`, or a firmware flash. If a requested feature needs a
+new low-level driver or a new Runtime API, that is a Runtime firmware change, not
+an App package change.
+
 ## Capability Binding
 
 Capabilities should be bound to verified Huangshan facts:

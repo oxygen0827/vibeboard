@@ -7,11 +7,15 @@ import {
   createHuangshanAppFilesFromBuilder,
   normalizeHuangshanBuilderConfig,
 } from '../domain/huangshan/appBuilder'
+import { createHuangshanRuntimeAppPackageFromBuilder } from '../domain/huangshan/runtimeApp'
+import { createHuangshanRuntimeFirmwareManifest } from '../domain/huangshan/runtimeFirmware'
 import { createHuangshanSemanticPreview } from '../domain/huangshan/semanticPreview'
 import { createHuangshanTruthReport } from '../domain/huangshan/truthReport'
 import {
+  applyHuangshanRuntimeFirmware,
   buildHuangshanWorkspace,
   flashHuangshanWorkspace,
+  installHuangshanRuntimeApp,
   loadHuangshanHealth,
   loadHuangshanSerialPorts,
   monitorHuangshanSerial,
@@ -50,6 +54,10 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
     displayName: '传感器仪表盘',
     description: '显示黄山派真实传感器和 ADC 读数。',
   })))
+  const [runtimePackage, setRuntimePackage] = useState(() => createHuangshanRuntimeAppPackageFromBuilder(createDefaultHuangshanBuilderConfig({
+    displayName: '传感器仪表盘',
+    description: '显示黄山派真实传感器和 ADC 读数。',
+  })))
   const [files, setFiles] = useState(() => createHuangshanAppFiles({
     displayName: '传感器仪表盘',
     description: '显示黄山派真实传感器和 ADC 读数。',
@@ -61,9 +69,13 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
   const [buildLog, setBuildLog] = useState([])
   const [serialLog, setSerialLog] = useState([])
   const [buildEvidence, setBuildEvidence] = useState(null)
+  const [installEvidence, setInstallEvidence] = useState(null)
+  const [runtimeFirmwareEvidence, setRuntimeFirmwareEvidence] = useState(null)
   const [serialPorts, setSerialPorts] = useState([])
   const [selectedPort, setSelectedPort] = useState(HUANGSHAN_BOARD_PROFILE.debug.defaultSerialPort)
   const [monitorBaud, setMonitorBaud] = useState(921600)
+  const [installState, setInstallState] = useState('idle')
+  const [runtimeFirmwareState, setRuntimeFirmwareState] = useState('idle')
   const [flashState, setFlashState] = useState('idle')
   const [monitorState, setMonitorState] = useState('idle')
   const [monitorAbort, setMonitorAbort] = useState(null)
@@ -84,6 +96,8 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
     buildEvidence,
     serialLogLines: serialLog,
   }), [builderConfig, buildEvidence, serialLog])
+  const runtimeFiles = useMemo(() => runtimePackage?.files || {}, [runtimePackage])
+  const runtimeFirmwareManifest = useMemo(() => createHuangshanRuntimeFirmwareManifest(), [])
 
   useEffect(() => {
     loadHuangshanHealth()
@@ -101,8 +115,12 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
 
   function resetGeneratedState() {
     setBuildEvidence(null)
+    setInstallEvidence(null)
+    setRuntimeFirmwareEvidence(null)
     setBuildLog([])
     setSerialLog([])
+    setInstallState('idle')
+    setRuntimeFirmwareState('idle')
     setRealPreview(null)
     setRenderState('idle')
     setRenderError('')
@@ -110,7 +128,13 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
 
   function regenerateTemplate() {
     const next = createHuangshanAppFiles({ displayName: appDisplayName, description })
+    const normalized = normalizeHuangshanBuilderConfig({
+      ...builderConfig,
+      displayName: appDisplayName,
+      description,
+    })
     setFiles(next)
+    setRuntimePackage(createHuangshanRuntimeAppPackageFromBuilder(normalized))
     setActiveFile(Object.keys(next)[0])
     resetGeneratedState()
     setStatus(`已生成 ${appName}`)
@@ -118,14 +142,16 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
 
   function applyBuilderConfig(normalized, statusText = null) {
     const next = createHuangshanAppFilesFromBuilder(normalized)
+    const nextRuntimePackage = createHuangshanRuntimeAppPackageFromBuilder(normalized)
     setAppDisplayName(normalized.displayName)
     setDescription(normalized.description)
     setBuilderConfig(normalized)
+    setRuntimePackage(nextRuntimePackage)
     setFiles(next)
     setActiveFile(Object.keys(next)[0])
     setPendingConfig(null)
     resetGeneratedState()
-    setStatus(statusText || `已生成 ${normalizeHuangshanAppName(normalized.displayName)}`)
+    setStatus(statusText || `已生成 ${nextRuntimePackage.app.packageId} App 包`)
   }
 
   function handleGenerateBuilderApp() {
@@ -170,7 +196,7 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
     applyBuilderConfig(pendingConfig, `已按方案生成 ${normalizeHuangshanAppName(pendingConfig.displayName)}`)
     setChatMessages(prev => [...prev, {
       role: 'assistant',
-      content: '代码已写入工程文件。现在可以先预览界面，再编译；编译产物和串口日志会进入真实性报告。',
+      content: '代码和 Runtime App 包已生成。阶段目标路径是先预览，再安装 App 包；编译/烧录保留给底层 Runtime 固件调试。',
     }])
   }
 
@@ -246,6 +272,51 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
     }
   }
 
+  async function handleInstallRuntimeApp() {
+    if (!runtimePackage) return
+    setInstallState('installing')
+    setInstallEvidence(null)
+    setBuildLog([])
+    setStatus(`正在安装 ${runtimePackage.app.packageId} App 包...`)
+    try {
+      const evidence = await installHuangshanRuntimeApp({
+        runtimePackage,
+        onStatus: setStatus,
+        onLog: line => setBuildLog(prev => [...prev, line]),
+      })
+      setInstallEvidence(evidence)
+      setInstallState('ok')
+      const install = evidence.runtimeInstall
+      setStatus(install?.deviceInstallPath
+        ? `App 包已安装到 ${install.deviceInstallPath}，未烧录固件。`
+        : 'App 包已安装，未烧录固件。')
+    } catch (error) {
+      setInstallEvidence(error.buildEvidence || null)
+      setInstallState('error')
+      setStatus(error.message || 'App 包安装失败')
+    }
+  }
+
+  async function handleApplyRuntimeFirmware() {
+    setRuntimeFirmwareState('applying')
+    setRuntimeFirmwareEvidence(null)
+    setBuildLog([])
+    setStatus('正在写入黄山派一次性 Runtime 固件工程文件...')
+    try {
+      const evidence = await applyHuangshanRuntimeFirmware({
+        onStatus: setStatus,
+        onLog: line => setBuildLog(prev => [...prev, line]),
+      })
+      setRuntimeFirmwareEvidence(evidence)
+      setRuntimeFirmwareState('ok')
+      setStatus('Runtime 固件工程已写入。底层 API 变化时再编译/烧录；普通 App 更新只安装 App 包。')
+    } catch (error) {
+      setRuntimeFirmwareEvidence(error.buildEvidence || null)
+      setRuntimeFirmwareState('error')
+      setStatus(error.message || 'Runtime 固件工程写入失败')
+    }
+  }
+
   async function handleFlash() {
     setFlashState('flashing')
     setBuildLog([])
@@ -303,12 +374,16 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
   const filePaths = Object.keys(files)
   const activeContent = files[activeFile] || ''
   const canFlash = buildEvidence?.status === 'success' && selectedPort && flashState !== 'flashing'
+  const canInstall = runtimePackage && installState !== 'installing'
+  const canApplyRuntimeFirmware = runtimeFirmwareState !== 'applying'
   const canMonitor = selectedPort && monitorState !== 'monitoring'
-  const logState = flashState === 'error' || monitorState === 'error' ? 'error' : buildState
+  const logState = installState === 'error' || flashState === 'error' || monitorState === 'error' ? 'error' : (installState === 'ok' ? 'ok' : buildState)
   const workflowSteps = createHuangshanWorkflowSteps({
     pendingConfig,
     files,
     buildState,
+    installState,
+    runtimeFirmwareState,
     flashState,
     verifiedCount: truthReport.verifiedCount,
   })
@@ -323,6 +398,8 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
         <HuangshanRunLogStrip
           buildLog={buildLog}
           buildState={buildState}
+          installState={installState}
+          runtimeFirmwareState={runtimeFirmwareState}
           flashState={flashState}
           monitorState={monitorState}
           onClear={() => {
@@ -337,6 +414,9 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
         <div className="huangshan-stage-actions">
           <button className="huangshan-secondary" onClick={() => handleRenderPreview()} disabled={renderState === 'rendering'}>
             {renderState === 'rendering' ? '预览中...' : '预览'}
+          </button>
+          <button className="huangshan-install" onClick={handleInstallRuntimeApp} disabled={!canInstall}>
+            {installState === 'installing' ? '安装中...' : '安装 App 包'}
           </button>
           <button className="huangshan-build" onClick={handleBuild} disabled={buildState === 'building'}>
             {buildState === 'building' ? '编译中...' : '编译'}
@@ -357,6 +437,9 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
               </div>
             ))}
           </div>
+        )}
+        {installEvidence?.runtimeInstall && (
+          <RuntimePackagePanel runtimePackage={runtimePackage} install={installEvidence.runtimeInstall} />
         )}
       </aside>
 
@@ -430,7 +513,7 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
               </button>
             </div>
             <div className="huangshan-chat-input-hint">
-              发送只生成方案草稿 · 点击“按方案生成代码”才会写入工程文件
+              发送只生成方案草稿 · 确认后生成代码和可替换 Runtime App 包
             </div>
             <button className="huangshan-build" onClick={handleApplyPendingConfig} disabled={!pendingConfig}>
               按方案生成代码
@@ -571,6 +654,17 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
 
               <div className="huangshan-section">
                 <div className="huangshan-heading">设备</div>
+                <div className="huangshan-runtime-firmware">
+                  <strong>Runtime 固件</strong>
+                  <span>{runtimeFirmwareManifest.appRoot}</span>
+                  <span>{runtimeFirmwareManifest.runtimeApiVersion}</span>
+                  <button className="huangshan-secondary" onClick={handleApplyRuntimeFirmware} disabled={!canApplyRuntimeFirmware}>
+                    {runtimeFirmwareState === 'applying' ? '写入中...' : '生成 Runtime 固件工程'}
+                  </button>
+                  {runtimeFirmwareEvidence?.runtimeFirmware && (
+                    <code>{runtimeFirmwareEvidence.runtimeFirmware.workspaceFiles.written.join(', ')}</code>
+                  )}
+                </div>
                 <label>
                   波特率
                   <select value={monitorBaud} onChange={event => setMonitorBaud(Number(event.target.value))}>
@@ -588,6 +682,19 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
             </div>
 
             <div className="huangshan-workbench huangshan-log-workbench">
+              <aside className="huangshan-runtime-package">
+                <div className="huangshan-heading">Runtime App 包</div>
+                <div className="huangshan-runtime-meta">
+                  <span>{runtimePackage.app.packageId}</span>
+                  <span>{runtimePackage.app.installPath}</span>
+                  <span>{runtimePackage.runtime.apiVersion}</span>
+                </div>
+                <div className="huangshan-runtime-files">
+                  {Object.keys(runtimeFiles).map(path => (
+                    <code key={path}>{path}</code>
+                  ))}
+                </div>
+              </aside>
               <aside className="huangshan-log">
                 <div className="huangshan-heading">编译日志</div>
                 {buildEvidence?.firstError && (
@@ -631,7 +738,7 @@ function TruthReportPanel({ report }) {
   )
 }
 
-function HuangshanRunLogStrip({ buildLog, buildState, flashState, monitorState, onClear }) {
+function HuangshanRunLogStrip({ buildLog, buildState, installState, runtimeFirmwareState, flashState, monitorState, onClear }) {
   const recent = buildLog.slice(-8)
   const hasLogs = recent.length > 0
   return (
@@ -641,6 +748,8 @@ function HuangshanRunLogStrip({ buildLog, buildState, flashState, monitorState, 
         <button type="button" onClick={onClear} disabled={!hasLogs}>清空</button>
       </div>
       <div className="huangshan-run-states">
+        <span className={installState}>安装 {stateText(installState)}</span>
+        <span className={runtimeFirmwareState}>Runtime {stateText(runtimeFirmwareState)}</span>
         <span className={buildState}>编译 {stateText(buildState)}</span>
         <span className={flashState}>烧录 {stateText(flashState)}</span>
         <span className={monitorState}>串口 {stateText(monitorState)}</span>
@@ -659,10 +768,45 @@ function HuangshanRunLogStrip({ buildLog, buildState, flashState, monitorState, 
 function stateText(state) {
   if (state === 'ok') return '成功'
   if (state === 'error') return '失败'
+  if (state === 'installing') return '进行中'
+  if (state === 'applying') return '进行中'
   if (state === 'building') return '进行中'
   if (state === 'flashing') return '进行中'
   if (state === 'monitoring') return '运行中'
   return '待命'
+}
+
+function RuntimePackagePanel({ runtimePackage, install }) {
+  if (!runtimePackage || !install) return null
+  return (
+    <div className="huangshan-runtime-install">
+      <div className="huangshan-heading">App 包安装</div>
+      <div className="huangshan-runtime-install-row">
+        <span>App</span>
+        <code>{install.packageId}</code>
+      </div>
+      <div className="huangshan-runtime-install-row">
+        <span>设备路径</span>
+        <code>{install.deviceInstallPath}</code>
+      </div>
+      <div className="huangshan-runtime-install-row">
+        <span>本机镜像</span>
+        <code>{install.installPath}</code>
+      </div>
+      <div className="huangshan-runtime-install-row">
+        <span>固件烧录</span>
+        <code>{runtimePackage.runtime.requiresFirmwareFlash ? '需要' : '不需要'}</code>
+      </div>
+      <div className="huangshan-runtime-install-row">
+        <span>板端状态</span>
+        <code>vb_runtime_status</code>
+      </div>
+      <div className="huangshan-runtime-install-row">
+        <span>切换命令</span>
+        <code>{`vb_runtime_select ${install.packageId}`}</code>
+      </div>
+    </div>
+  )
 }
 
 function DraftPlanPanel({ config, onApply }) {
@@ -706,16 +850,18 @@ function createDraftMessage(config) {
     config.description,
     real.length ? `真实例程能力：${real.join('、')}` : '真实例程能力：暂无，需要继续明确。',
     placeholders.length ? `占位能力：${placeholders.join('、')}，不会在真实性报告里冒充已验证。` : '占位能力：无。',
-    '下一步：确认方案后点击“按方案生成代码”，再预览、编译、烧录。',
+    '下一步：确认方案后点击“按方案生成代码”，再预览并安装 App 包。编译/烧录只用于底层 Runtime 调试。',
   ].join('\n')
 }
 
-function createHuangshanWorkflowSteps({ pendingConfig, files, buildState, flashState, verifiedCount }) {
+function createHuangshanWorkflowSteps({ pendingConfig, files, buildState, installState, runtimeFirmwareState, flashState, verifiedCount }) {
   const hasGeneratedFiles = files && Object.keys(files).some(path => path.includes('/gui_apps/'))
   return [
     { id: 'intent', label: '需求', status: 'done' },
     { id: 'plan', label: '方案', status: pendingConfig ? 'active' : (hasGeneratedFiles ? 'done' : 'idle') },
-    { id: 'code', label: '代码', status: hasGeneratedFiles && !pendingConfig ? 'done' : 'idle' },
+    { id: 'code', label: 'App 包', status: hasGeneratedFiles && !pendingConfig ? 'done' : 'idle' },
+    { id: 'install', label: '安装', status: installState === 'installing' ? 'active' : (installState === 'ok' ? 'done' : (installState === 'error' ? 'error' : 'idle')) },
+    { id: 'runtime', label: 'Runtime', status: runtimeFirmwareState === 'applying' ? 'active' : (runtimeFirmwareState === 'ok' ? 'done' : (runtimeFirmwareState === 'error' ? 'error' : 'idle')) },
     { id: 'build', label: '编译', status: buildState === 'building' ? 'active' : (buildState === 'ok' ? 'done' : (buildState === 'error' ? 'error' : 'idle')) },
     { id: 'flash', label: '烧录', status: flashState === 'flashing' ? 'active' : (flashState === 'ok' ? 'done' : (flashState === 'error' ? 'error' : 'idle')) },
     { id: 'verify', label: '验证', status: verifiedCount > 0 ? 'done' : 'idle' },

@@ -210,7 +210,15 @@ static void msg_handler(gui_app_msg_type_t msg, void *param)
 }
 
 LV_IMG_DECLARE(img_LiChuang);
-BUILTIN_APP_EXPORT(LV_EXT_STR_ID(${appId}), LV_EXT_IMG_GET(img_LiChuang), APP_ID, msg_handler);
+
+static int app_main(intent_t i)
+{
+    (void)i;
+    gui_app_regist_msg_handler(APP_ID, msg_handler);
+    return 0;
+}
+
+BUILTIN_APP_EXPORT(LV_EXT_STR_ID(${appId}), LV_EXT_IMG_GET(img_LiChuang), APP_ID, app_main);
 `,
   }
 }

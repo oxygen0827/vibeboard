@@ -1,0 +1,20 @@
+node_modules/
+dist/
+.git/
+.worktrees/
+.compiler-build-cache/
+.remote-ota-state/
+.venv/
+.venv312/
+__pycache__/
+*.log
+.DS_Store
+
+# Local hardware SDKs and downloaded reference workspaces are host-side deps.
+hardware/huangshan/
+
+# Local artifacts and source-material folders
+outputs/
+图片/
+小光/
+*.zip

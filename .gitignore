@@ -3,10 +3,18 @@ dist/
 .worktrees/
 .compiler-build-cache/
 .remote-ota-state/
+.venv/
+.venv312/
 __pycache__/
 .env
 *.log
 .DS_Store
+
+# Local hardware SDKs and downloaded reference examples
+hardware/huangshan/sifli-sdk/
+hardware/huangshan/lckfb-hspi-ulp_example/
+hardware/huangshan/huangshan-pi-sf32-dev/
+hardware/huangshan/runtime-sdcard/
 
 # Local presentation/source-material workspaces
 outputs/

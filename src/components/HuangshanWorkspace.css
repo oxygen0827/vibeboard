@@ -251,7 +251,7 @@
 
 .huangshan-workflow-strip {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(8, minmax(0, 1fr));
   gap: 1px;
   background: var(--border-muted);
   border-bottom: 1px solid var(--border-muted);
@@ -412,7 +412,7 @@
 }
 
 .huangshan-stage-actions {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-top: 10px;
 }
 
@@ -425,6 +425,7 @@
 
 .huangshan-primary,
 .huangshan-secondary,
+.huangshan-install,
 .huangshan-build,
 .huangshan-flash,
 .huangshan-monitor,
@@ -439,6 +440,7 @@
 }
 
 .huangshan-primary,
+.huangshan-install,
 .huangshan-build,
 .huangshan-flash {
   border-color: var(--accent);
@@ -457,6 +459,7 @@
 
 .huangshan-primary:disabled,
 .huangshan-secondary:disabled,
+.huangshan-install:disabled,
 .huangshan-build:disabled,
 .huangshan-flash:disabled,
 .huangshan-monitor:disabled {
@@ -645,7 +648,9 @@
 .huangshan-log-lines,
 .huangshan-error,
 .huangshan-truth,
-.huangshan-draft-plan {
+.huangshan-draft-plan,
+.huangshan-runtime-install,
+.huangshan-runtime-package {
   margin: 10px 0 0;
   padding: 10px;
   background: var(--bg-primary);
@@ -659,7 +664,9 @@
   overflow: auto;
 }
 
-.huangshan-truth {
+.huangshan-truth,
+.huangshan-runtime-install,
+.huangshan-runtime-package {
   font-family: inherit;
   white-space: normal;
 }
@@ -698,7 +705,7 @@
 
 .huangshan-run-states {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
   margin: 9px 0;
 }
@@ -727,10 +734,39 @@
 }
 
 .huangshan-run-states .building,
+.huangshan-run-states .installing,
+.huangshan-run-states .applying,
 .huangshan-run-states .flashing,
 .huangshan-run-states .monitoring {
   border-color: var(--orange);
   color: var(--orange);
+}
+
+.huangshan-runtime-install {
+  display: grid;
+  gap: 7px;
+}
+
+.huangshan-runtime-install-row {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.huangshan-runtime-install-row span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.huangshan-runtime-install-row code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--accent-hover);
+  font-family: var(--font-mono);
+  font-size: 11px;
 }
 
 .huangshan-run-lines {
@@ -905,6 +941,36 @@
   font-size: 11px;
 }
 
+.huangshan-runtime-package {
+  margin: 0;
+  overflow: hidden;
+}
+
+.huangshan-runtime-meta,
+.huangshan-runtime-files {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.huangshan-runtime-meta span,
+.huangshan-runtime-files code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 5px 7px;
+  border: 1px solid var(--border-muted);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.huangshan-runtime-files {
+  margin-top: 8px;
+}
+
 .huangshan-advanced {
   min-height: 0;
   border-top: 1px solid var(--border);
@@ -971,6 +1037,41 @@
   gap: 6px;
 }
 
+.huangshan-runtime-firmware {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 12px;
+  padding: 9px;
+  border: 1px solid var(--border-muted);
+  border-radius: 6px;
+  background: var(--bg-primary);
+}
+
+.huangshan-runtime-firmware strong,
+.huangshan-runtime-firmware span,
+.huangshan-runtime-firmware code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.huangshan-runtime-firmware strong {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.huangshan-runtime-firmware span,
+.huangshan-runtime-firmware code {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.huangshan-runtime-firmware code {
+  color: var(--accent-hover);
+}
+
 .huangshan-chip {
   padding: 4px 7px;
   border: 1px solid var(--border);
@@ -996,7 +1097,9 @@
 }
 
 .huangshan-log-workbench {
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px;
 }
 
 .huangshan-code-pane {

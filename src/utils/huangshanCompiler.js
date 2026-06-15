@@ -107,6 +107,32 @@ export async function buildHuangshanWorkspace({ files, onStatus, onLog } = {}) {
   return result.evidence
 }
 
+export async function installHuangshanRuntimeApp({ runtimePackage, activate = true, onStatus, onLog } = {}) {
+  const result = await runHuangshanStream({
+    url: '/huangshan/install-app',
+    body: { runtimePackage, activate },
+    initialStatus: 'Connecting Huangshan runtime app installer...',
+    onStatus,
+    onLog,
+  })
+  const evidence = result.evidence
+  evidence.runtimeInstall = result.message.runtimeInstall || null
+  return evidence
+}
+
+export async function applyHuangshanRuntimeFirmware({ onStatus, onLog } = {}) {
+  const result = await runHuangshanStream({
+    url: '/huangshan/apply-runtime-firmware',
+    body: {},
+    initialStatus: 'Connecting Huangshan runtime firmware service...',
+    onStatus,
+    onLog,
+  })
+  const evidence = result.evidence
+  evidence.runtimeFirmware = result.message.runtimeFirmware || null
+  return evidence
+}
+
 export async function flashHuangshanWorkspace({ port, onStatus, onLog } = {}) {
   const result = await runHuangshanStream({
     url: '/huangshan/flash',

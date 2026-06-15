@@ -5,14 +5,30 @@ import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { renderHuangshanLvglPreview } from './lvglRender.mjs'
+import {
+  createHuangshanRuntimeFirmwareFiles,
+  createHuangshanRuntimeFirmwareManifest,
+} from '../../src/domain/huangshan/runtimeFirmware.js'
+import {
+  HUANGSHAN_RUNTIME_APP_PACKAGE_KIND,
+  HUANGSHAN_RUNTIME_APP_ROOT,
+  sanitizeHuangshanRuntimePackageFilePath,
+  validateHuangshanRuntimeAppPackage,
+} from '../../src/domain/huangshan/runtimeApp.js'
+import {
+  HUANGSHAN_HOME_WORKSPACE_ROOT,
+  HUANGSHAN_REPO_LOCAL_ROOT,
+  HUANGSHAN_SOURCE_DIR_NAMES,
+} from '../../src/domain/huangshan/sourcePaths.js'
 
-const DEFAULT_WORKSPACE = '/Users/wq/huangshan-pi-workspace/huangshan-pi-sf32-dev'
-const DEFAULT_SDK = '/Users/wq/huangshan-pi-workspace/sifli-sdk'
 const PORT = Number(process.env.HUANGSHAN_SERVICE_PORT || 8771)
+const HOST = process.env.HUANGSHAN_SERVICE_HOST || '127.0.0.1'
 const SERVICE_DIR = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = resolve(SERVICE_DIR, '../..')
 const REPO_PARENT = resolve(REPO_ROOT, '..')
+const LOCAL_HUANGSHAN_ROOT = join(REPO_ROOT, HUANGSHAN_REPO_LOCAL_ROOT)
 const PREVIEW_RUNNER_DIR = join(REPO_ROOT, 'backend/compiler-service/preview_runner')
+const DEFAULT_RUNTIME_APP_INSTALL_ROOT = join(LOCAL_HUANGSHAN_ROOT, 'runtime-sdcard/apps')
 
 function json(res, status, payload) {
   res.writeHead(status, { 'Content-Type': 'application/json' })
@@ -45,22 +61,22 @@ function readJson(req) {
   })
 }
 
-function firstExistingPath(candidates) {
-  return candidates.find(candidate => candidate && existsSync(candidate)) || candidates.find(Boolean)
+function firstExistingPath(candidates, exists = existsSync) {
+  return candidates.find(candidate => candidate && exists(candidate)) || candidates.find(Boolean)
 }
 
-function resolveWorkspace({ env = process.env, platform = process.platform } = {}) {
+function resolveWorkspace({ env = process.env, platform = process.platform, exists = existsSync } = {}) {
   const home = homedir()
   const workspace = resolve(env.HUANGSHAN_WORKSPACE || firstExistingPath([
-    join(REPO_PARENT, 'huangshan-pi-sf32-dev'),
-    join(home, 'huangshan-pi-workspace', 'huangshan-pi-sf32-dev'),
-    DEFAULT_WORKSPACE,
-  ]))
+    join(LOCAL_HUANGSHAN_ROOT, HUANGSHAN_SOURCE_DIR_NAMES.workspace),
+    join(REPO_PARENT, HUANGSHAN_SOURCE_DIR_NAMES.workspace),
+    join(home, HUANGSHAN_HOME_WORKSPACE_ROOT, HUANGSHAN_SOURCE_DIR_NAMES.workspace),
+  ], exists))
   const sdk = resolve(env.SIFLI_SDK_PATH || firstExistingPath([
-    join(REPO_PARENT, 'sifli-sdk'),
-    join(home, 'huangshan-pi-workspace', 'sifli-sdk'),
-    DEFAULT_SDK,
-  ]))
+    join(LOCAL_HUANGSHAN_ROOT, HUANGSHAN_SOURCE_DIR_NAMES.sdk),
+    join(REPO_PARENT, HUANGSHAN_SOURCE_DIR_NAMES.sdk),
+    join(home, HUANGSHAN_HOME_WORKSPACE_ROOT, HUANGSHAN_SOURCE_DIR_NAMES.sdk),
+  ], exists))
   const isWindows = platform === 'win32'
   return {
     workspace,
@@ -107,6 +123,61 @@ function sanitizeHuangshanWorkspaceFilePath(path) {
     throw new Error(`Unsafe Huangshan file path: ${path}`)
   }
   return path
+}
+
+function resolveHuangshanRuntimeAppInstallRoot({ env = process.env } = {}) {
+  return resolve(env.HUANGSHAN_RUNTIME_APP_ROOT || DEFAULT_RUNTIME_APP_INSTALL_ROOT)
+}
+
+function assertSafeRuntimePackageId(packageId) {
+  if (typeof packageId !== 'string' || !/^[a-z][a-z0-9_]{0,14}$/.test(packageId)) {
+    throw new Error(`Unsafe Huangshan runtime app id: ${packageId || ''}`)
+  }
+}
+
+function applyHuangshanRuntimeAppPackage({
+  installRoot = resolveHuangshanRuntimeAppInstallRoot(),
+  runtimePackage,
+  activate = true,
+} = {}) {
+  if (!runtimePackage || runtimePackage.kind !== HUANGSHAN_RUNTIME_APP_PACKAGE_KIND) {
+    throw new Error('Invalid Huangshan runtime app package.')
+  }
+  const validation = validateHuangshanRuntimeAppPackage(runtimePackage)
+  if (!validation.ok) {
+    throw new Error(validation.message || 'Invalid Huangshan runtime app package.')
+  }
+
+  const packageId = runtimePackage.app.packageId
+  assertSafeRuntimePackageId(packageId)
+  const root = resolve(installRoot)
+  const appDir = join(root, packageId)
+  const written = []
+  mkdirSync(appDir, { recursive: true })
+
+  for (const [path, contents] of Object.entries(runtimePackage.files || {})) {
+    const safePath = sanitizeHuangshanRuntimePackageFilePath(path)
+    const absolutePath = join(appDir, safePath)
+    mkdirSync(dirname(absolutePath), { recursive: true })
+    writeFileSync(absolutePath, String(contents ?? ''))
+    written.push(`${packageId}/${safePath}`)
+  }
+
+  if (activate) {
+    mkdirSync(root, { recursive: true })
+    writeFileSync(join(root, '.active'), `${packageId}\n`)
+    written.push('.active')
+  }
+
+  return {
+    installRoot: root,
+    deviceRoot: HUANGSHAN_RUNTIME_APP_ROOT,
+    packageId,
+    installPath: join(root, packageId),
+    deviceInstallPath: `${HUANGSHAN_RUNTIME_APP_ROOT}/${packageId}`,
+    active: activate ? packageId : null,
+    written,
+  }
 }
 
 function mergeProjectConfig(existing, generated) {
@@ -193,16 +264,108 @@ function createHuangshanMonitorSetupCommand({ port, baud = 921600, platform = pr
   }
 }
 
+function readSifliSdkMajorMinor({ sdk, exists = existsSync, readFile = readFileSync } = {}) {
+  const versionFile = join(sdk, 'version.txt')
+  if (!exists(versionFile)) return null
+  const match = String(readFile(versionFile, 'utf8')).trim().match(/^v?(\d+\.\d+)/)
+  return match ? match[1] : null
+}
+
+function createSifliPythonEnvExecutable({ pythonEnvPath, platform = process.platform } = {}) {
+  return join(
+    pythonEnvPath,
+    platform === 'win32' ? 'Scripts' : 'bin',
+    platform === 'win32' ? 'python.exe' : 'python',
+  )
+}
+
+function detectSifliPythonEnv({
+  sdk,
+  env = process.env,
+  platform = process.platform,
+  exists = existsSync,
+  readFile = readFileSync,
+  readdir = readdirSync,
+  home = homedir(),
+} = {}) {
+  const configured = env.SIFLI_SDK_PYTHON_ENV_PATH
+  if (configured) {
+    const pythonEnvPath = resolve(configured)
+    const python = createSifliPythonEnvExecutable({ pythonEnvPath, platform })
+    return {
+      path: pythonEnvPath,
+      python,
+      exists: exists(python),
+      source: 'env',
+    }
+  }
+
+  const sdkVersion = readSifliSdkMajorMinor({ sdk, exists, readFile })
+  if (!sdkVersion) return null
+
+  const pythonEnvRoot = join(home, '.sifli/python_env')
+  if (!exists(pythonEnvRoot)) return null
+
+  const candidates = readdir(pythonEnvRoot)
+    .filter(name => name.startsWith(`sifli-sdk${sdkVersion}_py`) && name.endsWith('_env'))
+    .sort((left, right) => right.localeCompare(left, undefined, { numeric: true }))
+
+  for (const name of candidates) {
+    const pythonEnvPath = join(pythonEnvRoot, name)
+    const versionFile = join(pythonEnvPath, 'sifli_sdk_version.txt')
+    const python = createSifliPythonEnvExecutable({ pythonEnvPath, platform })
+    if (!exists(versionFile) || !exists(python)) continue
+    if (String(readFile(versionFile, 'utf8')).trim() !== sdkVersion) continue
+    return {
+      path: pythonEnvPath,
+      python,
+      exists: true,
+      source: 'auto',
+      sdkVersion,
+    }
+  }
+
+  return null
+}
+
+function createHuangshanBuildEnvironment(paths, {
+  env = process.env,
+  platform = process.platform,
+  exists = existsSync,
+  readFile = readFileSync,
+  readdir = readdirSync,
+  home = homedir(),
+} = {}) {
+  const pythonEnv = detectSifliPythonEnv({
+    sdk: paths.sdk,
+    env,
+    platform,
+    exists,
+    readFile,
+    readdir,
+    home,
+  })
+  return {
+    ...env,
+    SIFLI_SDK_PATH: paths.sdk,
+    ...(pythonEnv?.exists ? { SIFLI_SDK_PYTHON_ENV_PATH: pythonEnv.path } : {}),
+  }
+}
+
 function healthPayload() {
   const paths = resolveWorkspace()
+  const pythonEnv = detectSifliPythonEnv({ sdk: paths.sdk, platform: paths.platform })
+  const pythonEnvOk = paths.platform === 'win32' || Boolean(pythonEnv?.exists)
   return {
     service: 'huangshan-service',
     workspace: paths.workspace,
     sdk: paths.sdk,
-    ok: existsSync(paths.buildScript) && existsSync(paths.sdkExport),
+    pythonEnv,
+    ok: existsSync(paths.buildScript) && existsSync(paths.sdkExport) && pythonEnvOk,
     checks: {
       buildScript: existsSync(paths.buildScript),
       sdkExport: existsSync(paths.sdkExport),
+      pythonEnv: pythonEnvOk,
     },
   }
 }
@@ -328,7 +491,12 @@ function createHuangshanBuildCommand(paths) {
 function runBuild(res, { files } = {}) {
   const paths = resolveWorkspace()
   if (!existsSync(paths.buildScript) || !existsSync(paths.sdkExport)) {
-    sse(res, { done: true, error: 'Huangshan workspace or SiFli SDK missing', health: healthPayload() })
+    sse(res, {
+      done: true,
+      status: 'failure',
+      error: 'Huangshan workspace or SiFli SDK missing',
+      health: healthPayload(),
+    })
     res.end()
     return
   }
@@ -344,12 +512,13 @@ function runBuild(res, { files } = {}) {
 
   const startedAt = Date.now()
   const build = createHuangshanBuildCommand(paths)
+  const env = createHuangshanBuildEnvironment(paths)
+  if (env.SIFLI_SDK_PYTHON_ENV_PATH) {
+    sse(res, { log: `Using SiFli Python env: ${env.SIFLI_SDK_PYTHON_ENV_PATH}` })
+  }
   const child = spawn(build.command, build.args, {
     cwd: build.cwd,
-    env: {
-      ...process.env,
-      SIFLI_SDK_PATH: paths.sdk,
-    },
+    env,
   })
 
   runChildAsSse(res, child, {
@@ -360,6 +529,66 @@ function runBuild(res, { files } = {}) {
       workspaceFiles: fileResult,
     },
   })
+}
+
+function runInstallApp(res, { runtimePackage, activate = true } = {}) {
+  const startedAt = Date.now()
+  let installResult
+  try {
+    installResult = applyHuangshanRuntimeAppPackage({ runtimePackage, activate })
+  } catch (error) {
+    sse(res, { done: true, status: 'failure', error: error.message })
+    res.end()
+    return
+  }
+
+  sse(res, {
+    log: `Installed ${installResult.packageId} to ${installResult.installPath}`,
+  })
+  if (installResult.active) {
+    sse(res, {
+      log: `Activated ${installResult.packageId} via ${join(installResult.installRoot, '.active')}`,
+    })
+  }
+  sse(res, {
+    done: true,
+    status: 'success',
+    command: 'huangshan runtime app install',
+    elapsedMs: Date.now() - startedAt,
+    runtimeInstall: installResult,
+  })
+  res.end()
+}
+
+function runApplyRuntimeFirmware(res) {
+  const paths = resolveWorkspace()
+  const startedAt = Date.now()
+  let fileResult
+  const files = createHuangshanRuntimeFirmwareFiles()
+  try {
+    fileResult = applyHuangshanWorkspaceFiles({ workspace: paths.workspace, files })
+  } catch (error) {
+    sse(res, { done: true, status: 'failure', error: error.message })
+    res.end()
+    return
+  }
+
+  const manifest = createHuangshanRuntimeFirmwareManifest()
+  sse(res, { log: `Applied ${manifest.appName} runtime firmware files` })
+  for (const path of fileResult.written) {
+    sse(res, { log: `Runtime file: ${path}` })
+  }
+  sse(res, {
+    done: true,
+    status: 'success',
+    command: 'huangshan runtime firmware apply',
+    elapsedMs: Date.now() - startedAt,
+    runtimeFirmware: {
+      manifest,
+      workspaceFiles: fileResult,
+    },
+  })
+  res.end()
 }
 
 function runFlash(res, { port }) {
@@ -444,6 +673,37 @@ function createServer() {
         })
       return
     }
+    if (req.method === 'POST' && req.url === '/huangshan/install-app') {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      })
+      readJson(req)
+        .then(body => runInstallApp(res, {
+          runtimePackage: body.runtimePackage,
+          activate: body.activate !== false,
+        }))
+        .catch(error => {
+          sse(res, { done: true, status: 'failure', error: error.message })
+          res.end()
+        })
+      return
+    }
+    if (req.method === 'POST' && req.url === '/huangshan/apply-runtime-firmware') {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      })
+      readJson(req)
+        .then(() => runApplyRuntimeFirmware(res))
+        .catch(error => {
+          sse(res, { done: true, status: 'failure', error: error.message })
+          res.end()
+        })
+      return
+    }
     if (req.method === 'POST' && req.url === '/huangshan/flash') {
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
@@ -501,20 +761,25 @@ if (process.argv.includes('--self-test')) {
 
 const isMain = process.argv[1] === fileURLToPath(import.meta.url)
 if (isMain) {
-  createServer().listen(PORT, '127.0.0.1', () => {
-    console.log(`huangshan-service listening on http://127.0.0.1:${PORT}`)
+  createServer().listen(PORT, HOST, () => {
+    console.log(`huangshan-service listening on http://${HOST}:${PORT}`)
   })
 }
 
 export {
   applyHuangshanWorkspaceFiles,
+  applyHuangshanRuntimeAppPackage,
+  createHuangshanBuildEnvironment,
   createHuangshanArtifactSummary,
   createHuangshanBuildCommand,
   createHuangshanFlashCommand,
   createHuangshanMonitorSetupCommand,
   createServer,
+  detectSifliPythonEnv,
   healthPayload,
   listHuangshanSerialPorts,
+  readSifliSdkMajorMinor,
+  resolveHuangshanRuntimeAppInstallRoot,
   resolveWorkspace,
   sanitizeHuangshanWorkspaceFilePath,
 }

@@ -1,11 +1,18 @@
 import assert from 'node:assert/strict'
 import {
+  createHuangshanBuildEnvironment,
   createHuangshanBuildCommand,
   createHuangshanFlashCommand,
   createHuangshanMonitorSetupCommand,
+  detectSifliPythonEnv,
   listHuangshanSerialPorts,
+  readSifliSdkMajorMinor,
   resolveWorkspace,
 } from '../backend/huangshan-service/server.mjs'
+import {
+  HUANGSHAN_REPO_LOCAL_ROOT,
+  HUANGSHAN_SOURCE_DIR_NAMES,
+} from '../src/domain/huangshan/sourcePaths.js'
 
 const ports = listHuangshanSerialPorts({
   platform: 'darwin',
@@ -62,6 +69,78 @@ const windowsBuild = createHuangshanBuildCommand(windowsPaths)
 assert.equal(windowsBuild.command, 'powershell.exe')
 assert.deepEqual(windowsBuild.args.slice(0, 4), ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File'])
 assert.equal(windowsBuild.label, '.\\scripts\\build.ps1')
+
+const fakeHome = '/Users/example'
+const fakeSdk = '/repo/hardware/huangshan/sifli-sdk'
+const fakePythonEnv = `${fakeHome}/.sifli/python_env/sifli-sdk2.4_py3.9_env`
+const fakeFiles = new Map([
+  [`${fakeSdk}/version.txt`, 'v2.4.6\n'],
+  [`${fakePythonEnv}/sifli_sdk_version.txt`, '2.4\n'],
+  [`${fakePythonEnv}/bin/python`, ''],
+])
+const fakeExists = path => fakeFiles.has(path) || path === `${fakeHome}/.sifli/python_env`
+const fakeRead = path => fakeFiles.get(path)
+const fakeReaddir = path => {
+  assert.equal(path, `${fakeHome}/.sifli/python_env`)
+  return ['sifli-sdk2.4_py3.9_env']
+}
+assert.equal(readSifliSdkMajorMinor({
+  sdk: fakeSdk,
+  exists: fakeExists,
+  readFile: fakeRead,
+}), '2.4')
+const autoPythonEnv = detectSifliPythonEnv({
+  sdk: fakeSdk,
+  env: {},
+  platform: 'darwin',
+  exists: fakeExists,
+  readFile: fakeRead,
+  readdir: fakeReaddir,
+  home: fakeHome,
+})
+assert.equal(autoPythonEnv.path, fakePythonEnv)
+assert.equal(autoPythonEnv.source, 'auto')
+assert.equal(autoPythonEnv.exists, true)
+
+const explicitPythonEnv = detectSifliPythonEnv({
+  sdk: fakeSdk,
+  env: { SIFLI_SDK_PYTHON_ENV_PATH: '/custom/sifli-env' },
+  platform: 'darwin',
+  exists: path => path === '/custom/sifli-env/bin/python',
+  home: fakeHome,
+})
+assert.equal(explicitPythonEnv.path, '/custom/sifli-env')
+assert.equal(explicitPythonEnv.source, 'env')
+assert.equal(explicitPythonEnv.exists, true)
+
+const buildEnv = createHuangshanBuildEnvironment(
+  { sdk: fakeSdk },
+  {
+    env: { PATH: '/bin' },
+    platform: 'darwin',
+    exists: fakeExists,
+    readFile: fakeRead,
+    readdir: fakeReaddir,
+    home: fakeHome,
+  },
+)
+assert.equal(buildEnv.SIFLI_SDK_PATH, fakeSdk)
+assert.equal(buildEnv.SIFLI_SDK_PYTHON_ENV_PATH, fakePythonEnv)
+
+const repoLocalPaths = resolveWorkspace({
+  env: {},
+  platform: 'darwin',
+  exists: path => path.includes(`${HUANGSHAN_REPO_LOCAL_ROOT}/${HUANGSHAN_SOURCE_DIR_NAMES.workspace}`) ||
+    path.includes(`${HUANGSHAN_REPO_LOCAL_ROOT}/${HUANGSHAN_SOURCE_DIR_NAMES.sdk}`),
+})
+assert.match(
+  repoLocalPaths.workspace,
+  new RegExp(`${HUANGSHAN_REPO_LOCAL_ROOT}/${HUANGSHAN_SOURCE_DIR_NAMES.workspace}`),
+)
+assert.match(
+  repoLocalPaths.sdk,
+  new RegExp(`${HUANGSHAN_REPO_LOCAL_ROOT}/${HUANGSHAN_SOURCE_DIR_NAMES.sdk}`),
+)
 
 assert.throws(() => createHuangshanFlashCommand({
   port: '../bad',
