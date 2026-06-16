@@ -454,29 +454,32 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
             </div>
             <div className="huangshan-chat-header-actions">
               <button className="huangshan-icon-button" onClick={handleClearChat} title="清空对话">清空</button>
+              <button className="huangshan-icon-button" onClick={onOpenSettings} type="button">AI 设置</button>
               <span className={`huangshan-status-dot ${health?.ok ? 'online' : 'offline'}`} title={health?.ok ? '编译服务已连接' : '编译服务未连接'} />
             </div>
           </div>
 
-          <div className="huangshan-board-badge">
-            <span className="huangshan-board-chip">{HUANGSHAN_BOARD_PROFILE.chip}</span>
-            <span className="huangshan-board-name">{HUANGSHAN_BOARD_PROFILE.name}</span>
-            <span className="huangshan-board-idf">SCons</span>
-          </div>
+          <div className="huangshan-chat-context">
+            <div className="huangshan-board-badge">
+              <span className="huangshan-board-chip">{HUANGSHAN_BOARD_PROFILE.chip}</span>
+              <span className="huangshan-board-name">{HUANGSHAN_BOARD_PROFILE.name}</span>
+              <span className="huangshan-board-idf">SCons</span>
+            </div>
 
-          <div className="huangshan-skill-selector">
-            <span className="huangshan-skill-label">真实例程：</span>
-            {['sensor', 'adc', 'gpio', 'uart2', 'ws2812'].map(skill => (
-              <span key={skill} className="huangshan-skill-tag">{skill}</span>
-            ))}
-          </div>
+            <div className="huangshan-skill-selector">
+              <span className="huangshan-skill-label">真实例程：</span>
+              {['sensor', 'adc', 'gpio', 'uart2', 'ws2812'].map(skill => (
+                <span key={skill} className="huangshan-skill-tag">{skill}</span>
+              ))}
+            </div>
 
-          <div className="huangshan-workflow-strip">
-            {workflowSteps.map(step => (
-              <div key={step.id} className={`huangshan-workflow-step ${step.status}`}>
-                <span>{step.label}</span>
-              </div>
-            ))}
+            <div className="huangshan-workflow-strip">
+              {workflowSteps.map(step => (
+                <div key={step.id} className={`huangshan-workflow-step ${step.status}`}>
+                  <span>{step.label}</span>
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="huangshan-chat-messages">
@@ -508,43 +511,46 @@ export default function HuangshanWorkspace({ settings, onOpenSettings }) {
                 onChange={event => setAiPrompt(event.target.value)}
                 placeholder="描述需求，AI 会先返回界面方案和真实能力边界..."
               />
-              <button className="huangshan-primary" onClick={handleGenerateWithAi} disabled={aiState === 'generating' || !aiPrompt.trim()}>
-                {aiState === 'generating' ? '分析中...' : '发送'}
-              </button>
+              <div className="huangshan-input-actions">
+                <button className="huangshan-primary" onClick={handleGenerateWithAi} disabled={aiState === 'generating' || !aiPrompt.trim()}>
+                  {aiState === 'generating' ? '分析中...' : '发送'}
+                </button>
+                <button className="huangshan-build" onClick={handleApplyPendingConfig} disabled={!pendingConfig}>
+                  生成代码
+                </button>
+              </div>
             </div>
             <div className="huangshan-chat-input-hint">
               发送只生成方案草稿 · 确认后生成代码和可替换 Runtime App 包
             </div>
-            <button className="huangshan-build" onClick={handleApplyPendingConfig} disabled={!pendingConfig}>
-              按方案生成代码
-            </button>
+            {aiError && <div className="huangshan-ai-error">{aiError}</div>}
           </div>
-          <button className="huangshan-secondary" onClick={onOpenSettings} type="button">AI 设置</button>
-          {aiError && <div className="huangshan-ai-error">{aiError}</div>}
         </div>
 
-        <div className="huangshan-device-compact">
-          <label>
-            串口
-            <select value={selectedPort} onChange={event => setSelectedPort(event.target.value)}>
-              {serialPorts.length === 0 && <option value={selectedPort}>{selectedPort}</option>}
-              {serialPorts.map(port => (
-                <option key={port.path} value={port.path}>{port.path}</option>
-              ))}
-            </select>
-          </label>
-          {monitorState === 'monitoring' ? (
-            <button className="huangshan-monitor" onClick={handleStopMonitor}>停止串口</button>
-          ) : (
-            <button className="huangshan-monitor" onClick={handleStartMonitor} disabled={!canMonitor}>
-              监视串口
-            </button>
-          )}
-        </div>
+        <div className="huangshan-command-footer">
+          <div className="huangshan-device-compact">
+            <label>
+              <span>串口</span>
+              <select value={selectedPort} onChange={event => setSelectedPort(event.target.value)}>
+                {serialPorts.length === 0 && <option value={selectedPort}>{selectedPort}</option>}
+                {serialPorts.map(port => (
+                  <option key={port.path} value={port.path}>{port.path}</option>
+                ))}
+              </select>
+            </label>
+            {monitorState === 'monitoring' ? (
+              <button className="huangshan-monitor" onClick={handleStopMonitor}>停止串口</button>
+            ) : (
+              <button className="huangshan-monitor" onClick={handleStartMonitor} disabled={!canMonitor}>
+                监视串口
+              </button>
+            )}
+          </div>
 
-        <button className="huangshan-advanced-toggle" onClick={() => setShowAdvanced(prev => !prev)}>
-          {showAdvanced ? '隐藏代码和日志' : '查看代码和日志'}
-        </button>
+          <button className="huangshan-advanced-toggle" onClick={() => setShowAdvanced(prev => !prev)}>
+            {showAdvanced ? '隐藏代码和日志' : '查看代码和日志'}
+          </button>
+        </div>
       </section>
 
       <section className="huangshan-main">
